@@ -4,7 +4,7 @@ Kassa back-office API. Fastify 5 + TypeScript, per [docs/TECH-STACK.md](../../do
 
 ## Status
 
-Scaffold only ([KASA-22](/KASA/issues/KASA-22)). Every business endpoint is a placeholder that returns HTTP 501 with `{ error: { code: "not_implemented", ... } }`. `/v1/health` is the only live endpoint.
+Scaffold only ([KASA-22](/KASA/issues/KASA-22)). Every business endpoint is a placeholder that returns HTTP 501 with `{ error: { code: "not_implemented", ... } }`. `GET /health` is the only live endpoint and is intentionally **unversioned** so external uptime monitors ([docs/TECH-STACK.md](../../docs/TECH-STACK.md) §12, line "Synthetic checks on POS shell and API `/health`") never need to track API versions.
 
 Subsequent issues wire real behaviour in:
 
@@ -32,7 +32,7 @@ pnpm --filter @kassa/api test
 pnpm --filter @kassa/api typecheck
 ```
 
-The server listens on `http://$HOST:$PORT` (defaults: `0.0.0.0:3000`) and mounts all routes under the `/v1` prefix.
+The server listens on `http://$HOST:$PORT` (defaults: `0.0.0.0:3000`). `GET /health` is mounted at the root for monitor stability; all domain routes live under the `/v1` prefix.
 
 ## Configuration
 
@@ -49,7 +49,7 @@ All configuration is via environment variables, validated by Zod on boot. Missin
 
 | Method | Path | Status |
 |--------|------|--------|
-| GET | `/v1/health` | Live |
+| GET | `/health` | Live (unversioned, for uptime monitors) |
 | POST | `/v1/auth/enroll` | 501 |
 | POST | `/v1/auth/heartbeat` | 501 |
 | POST | `/v1/auth/pin/verify` | 501 |

@@ -1,4 +1,4 @@
-import type { FastifyReply } from "fastify";
+import type { FastifyReply, FastifyRequest } from "fastify";
 
 export interface ApiErrorBody {
   error: {
@@ -19,11 +19,11 @@ export function sendError(
   return reply.code(status).send(body);
 }
 
-export function notImplemented(reply: FastifyReply, endpoint: string): FastifyReply {
+export function notImplemented(req: FastifyRequest, reply: FastifyReply): FastifyReply {
   return sendError(
     reply,
     501,
     "not_implemented",
-    `Endpoint ${endpoint} is not implemented yet.`,
+    `Endpoint ${req.method} ${req.url} is not implemented yet.`,
   );
 }

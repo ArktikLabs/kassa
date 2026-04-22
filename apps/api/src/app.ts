@@ -5,7 +5,8 @@ import Fastify, {
   type FastifyRequest,
   type FastifyServerOptions,
 } from "fastify";
-import { registerRoutes } from "./routes/index.js";
+import { healthRoutes } from "./routes/health.js";
+import { registerV1Routes } from "./routes/index.js";
 import { sendError } from "./lib/errors.js";
 
 export interface BuildAppOptions {
@@ -17,9 +18,6 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     logger: options.logger ?? false,
     disableRequestLogging: false,
     trustProxy: true,
-    ajv: {
-      customOptions: { removeAdditional: "all", useDefaults: true },
-    },
   });
 
   app.setNotFoundHandler((req, reply) => {
@@ -34,7 +32,8 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     sendError(reply, status, code, message);
   });
 
-  await app.register(registerRoutes, { prefix: "/v1" });
+  await app.register(healthRoutes);
+  await app.register(registerV1Routes, { prefix: "/v1" });
 
   return app;
 }

@@ -1,5 +1,4 @@
 import type { FastifyInstance } from "fastify";
-import { healthRoutes } from "./health.js";
 import { authRoutes } from "./auth.js";
 import { catalogRoutes } from "./catalog.js";
 import { outletsRoutes } from "./outlets.js";
@@ -8,8 +7,7 @@ import { salesRoutes } from "./sales.js";
 import { paymentsRoutes } from "./payments.js";
 import { eodRoutes } from "./eod.js";
 
-export async function registerRoutes(app: FastifyInstance): Promise<void> {
-  await app.register(healthRoutes);
+export async function registerV1Routes(app: FastifyInstance): Promise<void> {
   await app.register(authRoutes, { prefix: "/auth" });
   await app.register(catalogRoutes, { prefix: "/catalog" });
   await app.register(outletsRoutes, { prefix: "/outlets" });

@@ -14,9 +14,9 @@ describe("api scaffold", () => {
     await app.close();
   });
 
-  describe("GET /v1/health", () => {
-    it("returns 200 with a health payload", async () => {
-      const res = await app.inject({ method: "GET", url: "/v1/health" });
+  describe("GET /health", () => {
+    it("is reachable at the unversioned path and returns a health payload", async () => {
+      const res = await app.inject({ method: "GET", url: "/health" });
       expect(res.statusCode).toBe(200);
       const body = res.json() as {
         status: string;
@@ -30,6 +30,13 @@ describe("api scaffold", () => {
       expect(typeof body.version).toBe("string");
       expect(body.uptimeSeconds).toBeGreaterThanOrEqual(0);
       expect(() => new Date(body.timestamp).toISOString()).not.toThrow();
+    });
+
+    it("is NOT mounted under the /v1 prefix (monitor contract is version-stable)", async () => {
+      const res = await app.inject({ method: "GET", url: "/v1/health" });
+      expect(res.statusCode).toBe(404);
+      const body = res.json() as { error: { code: string } };
+      expect(body.error.code).toBe("not_found");
     });
   });
 
