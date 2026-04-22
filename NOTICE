@@ -1,0 +1,37 @@
+Kassa
+Copyright (c) 2026 Kassa contributors.
+
+Kassa is an offline-capable Progressive Web App POS terminal for Indonesian
+merchants, backed by a Frappe/ERPNext back office.
+
+This product is licensed under the GNU Affero General Public License,
+Version 3 or (at your option) any later version (AGPL-3.0-or-later).
+See the LICENSE file for the full license text, or
+<https://www.gnu.org/licenses/agpl-3.0.html>.
+
+----------------------------------------------------------------------
+Third-party attributions
+----------------------------------------------------------------------
+
+Kassa incorporates or depends on third-party software distributed under
+its own license terms. Attributions for bundled and runtime dependencies
+will be listed in this section as the codebase is scaffolded.
+
+Currently tracked upstream components (non-exhaustive):
+
+- Frappe Framework            — MIT
+- ERPNext                     — GPL-3.0-only
+- React                       — MIT
+- Vite                        — MIT
+- Tailwind CSS                — MIT
+- Dexie.js                    — Apache-2.0
+- Workbox                     — MIT
+- Zustand                     — MIT
+- TanStack Query              — MIT
+- react-hook-form             — MIT
+- Zod                         — MIT
+- Midtrans Core API client    — MIT (per upstream SDK)
+
+A complete, machine-generated attribution list will replace the summary
+above once the PWA and Frappe app packages are scaffolded and their
+dependency manifests are available (see KASA architecture docs).
