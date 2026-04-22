@@ -1,0 +1,17 @@
+{
+  "name": "kassa",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Kassa — offline-first POS for Indonesian merchants. Monorepo root.",
+  "license": "AGPL-3.0-or-later",
+  "packageManager": "pnpm@9.12.0",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "scripts": {
+    "dev": "pnpm --filter ./apps/* dev",
+    "build": "pnpm --filter ./apps/* --filter ./packages/* build",
+    "test": "pnpm --filter ./apps/* --filter ./packages/* test",
+    "typecheck": "pnpm --filter ./apps/* --filter ./packages/* typecheck"
+  }
+}
