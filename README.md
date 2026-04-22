@@ -50,6 +50,10 @@ This repository will host both the PWA frontend and Frappe back-office customisa
 - Two required approvals: Code Reviewer + Product Owner
 - See [docs/git-workflow.md](./docs/git-workflow.md) and [docs/pr-conventions.md](./docs/pr-conventions.md) once added
 
+## Contributing
+
+We welcome contributions. Before your first PR, please read [CONTRIBUTING.md](./CONTRIBUTING.md) and sign the applicable Contributor License Agreement ([ICLA](./legal/ICLA.md) for individuals, [CCLA](./legal/CCLA.md) for corporate contributors). All participation is governed by our [Code of Conduct](./CODE_OF_CONDUCT.md).
+
 ## License
 
-TBD.
+Kassa is licensed under the **GNU Affero General Public License, version 3 or (at your option) any later version** (AGPL-3.0-or-later). See [LICENSE](./LICENSE) for the full text and [NOTICE](./NOTICE) for attribution.
