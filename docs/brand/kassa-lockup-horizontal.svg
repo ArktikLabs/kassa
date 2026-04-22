@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 64" width="320" height="64" fill="none" role="img" aria-label="Kassa">
+  <title>Kassa</title>
+  <!-- Mark: 24-grid, scaled to 56x56, vertically centered. Cap height of wordmark = 35 → mark height (56) ≈ cap × 1.6. -->
+  <g transform="translate(8 4) scale(2.333)" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+    <line x1="7" y1="4" x2="7" y2="20"/>
+    <line x1="7" y1="12" x2="19" y2="4"/>
+    <line x1="7" y1="12" x2="19" y2="20"/>
+  </g>
+  <!-- Wordmark, gap from mark = 0.5 × cap height ≈ 18px → start x ≈ 8 + 56 + 18 = 82 -->
+  <text x="82" y="46"
+        font-family="'Plus Jakarta Sans', 'Inter', system-ui, sans-serif"
+        font-weight="700"
+        font-size="48"
+        letter-spacing="-0.96"
+        fill="currentColor">Kassa</text>
+</svg>

@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200" fill="none" role="img" aria-label="Kassa">
+  <title>Kassa</title>
+  <!-- Mark: 24-grid scaled to 96x96, horizontally centered (52, 24) -->
+  <g transform="translate(52 24) scale(4)" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+    <line x1="7" y1="4" x2="7" y2="20"/>
+    <line x1="7" y1="12" x2="19" y2="4"/>
+    <line x1="7" y1="12" x2="19" y2="20"/>
+  </g>
+  <!-- Wordmark below, centered -->
+  <text x="100" y="172"
+        text-anchor="middle"
+        font-family="'Plus Jakarta Sans', 'Inter', system-ui, sans-serif"
+        font-weight="700"
+        font-size="48"
+        letter-spacing="-0.96"
+        fill="currentColor">Kassa</text>
+</svg>
