@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="Kassa">
+  <title>Kassa</title>
+  <!-- Full-bleed brand fill. Maskable: launcher may crop to circle/squircle/rounded square; mark sits inside the central 80% safe area. -->
+  <rect width="512" height="512" fill="#0D9488"/>
+  <!--
+    Mark: 24-unit grid. Visible bbox is x∈[7,19], y∈[4,20] → width 12u, height 16u.
+    Scale 20 → visible mark = 240×320 (~47% of 512 width, ~63% of height; stays inside the 80% safe area).
+    Centered at (256,256): translate_x = 256 − 13×20 = −4; translate_y = 256 − 12×20 = 16.
+    Stroke 3u × 20 = 60px (2:1 ratio of stroke-to-grid, preserved at every export size).
+  -->
+  <g transform="translate(-4 16) scale(20)" fill="none" stroke="#FFFFFF" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+    <line x1="7" y1="4" x2="7" y2="20"/>
+    <line x1="7" y1="12" x2="19" y2="4"/>
+    <line x1="7" y1="12" x2="19" y2="20"/>
+  </g>
+</svg>
