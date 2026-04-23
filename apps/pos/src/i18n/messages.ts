@@ -27,6 +27,9 @@ const id: MessageMap = {
   "conn.syncing": "Sinkronisasi · {count}",
   "conn.offline": "Offline — tersimpan lokal",
   "conn.error": "Sync gagal — ketuk untuk coba lagi",
+  "pwa.updateAvailable": "Update tersedia — muat ulang",
+  "pwa.updateAccept": "Muat ulang",
+  "pwa.offlineReady": "Siap untuk dipakai offline",
   "enrol.heading": "Enrol perangkat",
   "enrol.intro":
     "Daftarkan tablet ini ke outlet Anda untuk mulai menerima pesanan. Langkah ini akan diisi pada ticket enrolment berikutnya.",
@@ -60,6 +63,9 @@ const en: MessageMap = {
   "conn.syncing": "Syncing · {count}",
   "conn.offline": "Offline — saved locally",
   "conn.error": "Sync failed — tap to retry",
+  "pwa.updateAvailable": "Update available — reload to apply",
+  "pwa.updateAccept": "Reload",
+  "pwa.offlineReady": "Ready to use offline",
   "enrol.heading": "Enrol device",
   "enrol.intro":
     "Register this tablet to your outlet to start taking orders. This step will be filled in by the upcoming enrolment ticket.",

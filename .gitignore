@@ -32,6 +32,11 @@ pnpm-debug.log*
 .next/
 .turbo/
 
+# Playwright
+test-results/
+playwright-report/
+playwright/.cache/
+
 # Local DB / caches
 *.sqlite
 *.sqlite3
