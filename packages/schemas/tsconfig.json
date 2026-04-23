@@ -12,13 +12,8 @@
     "forceConsistentCasingInFileNames": true,
     "resolveJsonModule": true,
     "skipLibCheck": true,
-    "outDir": "dist",
-    "types": ["node"],
-    "baseUrl": ".",
-    "paths": {
-      "@kassa/schemas": ["../../packages/schemas/src/index.ts"],
-      "@kassa/schemas/auth": ["../../packages/schemas/src/auth.ts"]
-    }
+    "declaration": true,
+    "outDir": "dist"
   },
-  "include": ["src", "test"]
+  "include": ["src"]
 }
