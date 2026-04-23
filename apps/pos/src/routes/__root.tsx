@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { Link } from "@tanstack/react-router";
 import { FormattedMessage } from "react-intl";
 import { ConnectionPill } from "../components/ConnectionPill";
+import { ToastViewport } from "../components/Toast";
 
 export function RootLayout({ children }: { children: ReactNode }) {
   return (
@@ -13,13 +14,13 @@ export function RootLayout({ children }: { children: ReactNode }) {
         <ConnectionPill state="online" />
       </header>
       <main className="flex-1 px-4 py-6">{children}</main>
-      <nav className="grid grid-cols-5 border-t border-neutral-200 bg-white text-[12px] font-semibold text-neutral-600">
+      <nav className="grid grid-cols-4 border-t border-neutral-200 bg-white text-[12px] font-semibold text-neutral-600">
         <NavItem to="/catalog" labelId="nav.catalog" />
         <NavItem to="/cart" labelId="nav.cart" />
         <NavItem to="/tender/cash" labelId="nav.tender.cash" />
-        <NavItem to="/enrol" labelId="nav.enrol" />
         <NavItem to="/admin" labelId="nav.admin" />
       </nav>
+      <ToastViewport />
     </div>
   );
 }
