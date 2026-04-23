@@ -53,7 +53,6 @@ describe("api scaffold", () => {
       { method: "POST", url: "/v1/sales" },
       { method: "POST", url: "/v1/sales/sync" },
       { method: "POST", url: "/v1/payments/qris" },
-      { method: "POST", url: "/v1/payments/webhooks/midtrans" },
       { method: "POST", url: "/v1/eod/close" },
       { method: "GET", url: "/v1/eod/report" },
     ];

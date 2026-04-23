@@ -15,6 +15,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@kassa/payments": "workspace:*",
     "fastify": "^5.1.0",
     "zod": "^3.23.8"
   },

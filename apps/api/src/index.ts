@@ -1,8 +1,18 @@
+import { createMidtransProvider, type PaymentProvider } from "@kassa/payments";
 import { buildApp } from "./app.js";
 import { loadEnv } from "./config.js";
 
 async function main(): Promise<void> {
   const env = loadEnv();
+
+  let midtransProvider: PaymentProvider | undefined;
+  if (env.MIDTRANS_SERVER_KEY) {
+    midtransProvider = createMidtransProvider({
+      serverKey: env.MIDTRANS_SERVER_KEY,
+      environment: env.MIDTRANS_ENVIRONMENT,
+    });
+  }
+
   const app = await buildApp({
     logger: {
       level: env.LOG_LEVEL,
@@ -10,7 +20,14 @@ async function main(): Promise<void> {
         ? { transport: { target: "pino-pretty", options: { colorize: true } } }
         : {}),
     },
+    midtransProvider,
   });
+
+  if (!midtransProvider) {
+    app.log.warn(
+      "MIDTRANS_SERVER_KEY not set; /v1/payments/* will respond 503 until configured",
+    );
+  }
 
   try {
     await app.listen({ host: env.HOST, port: env.PORT });
