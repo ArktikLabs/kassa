@@ -144,6 +144,73 @@ describe("createQris", () => {
     });
   });
 
+  it("maps expiryMinutes to custom_expiry in Asia/Jakarta; omits when absent; rejects invalid", async () => {
+    let capturedBody: Record<string, unknown> = {};
+    const okResponse = () =>
+      new Response(
+        JSON.stringify({ order_id: "O", qr_string: "qris:mock" }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+
+    // Present: 15:30:00 UTC on 2026-04-22 → 22:30:00 +0700.
+    const withExpiry = createMidtransProvider({
+      serverKey: SERVER_KEY,
+      now: () => new Date("2026-04-22T15:30:00.000Z"),
+      fetchImpl: stubFetch((_url, init) => {
+        capturedBody = JSON.parse(init?.body as string);
+        return okResponse();
+      }),
+    });
+    await withExpiry.createQris({
+      orderId: "O-WITH",
+      grossAmount: 25000,
+      currency: "IDR",
+      outletId: "outlet-a",
+      expiryMinutes: 7,
+    });
+    expect(capturedBody["custom_expiry"]).toEqual({
+      order_time: "2026-04-22 22:30:00 +0700",
+      expiry_duration: 7,
+      unit: "minute",
+    });
+
+    // Absent: no custom_expiry key at all.
+    const withoutExpiry = createMidtransProvider({
+      serverKey: SERVER_KEY,
+      fetchImpl: stubFetch((_url, init) => {
+        capturedBody = JSON.parse(init?.body as string);
+        return okResponse();
+      }),
+    });
+    await withoutExpiry.createQris({
+      orderId: "O-NONE",
+      grossAmount: 25000,
+      currency: "IDR",
+      outletId: "outlet-a",
+    });
+    expect(capturedBody).not.toHaveProperty("custom_expiry");
+
+    // Invalid: non-positive or non-integer is rejected at the boundary
+    // without touching the HTTP client.
+    const rejecter = createMidtransProvider({
+      serverKey: SERVER_KEY,
+      fetchImpl: stubFetch(() => {
+        throw new Error("fetch should not be called for invalid expiryMinutes");
+      }),
+    });
+    for (const bad of [0, -5, 1.5]) {
+      await expect(
+        rejecter.createQris({
+          orderId: "O-BAD",
+          grossAmount: 1,
+          currency: "IDR",
+          outletId: "o",
+          expiryMinutes: bad,
+        }),
+      ).rejects.toMatchObject({ code: "invalid_expiry_minutes" });
+    }
+  });
+
   it("throws when response lacks a QR string", async () => {
     const provider = createMidtransProvider({
       serverKey: SERVER_KEY,

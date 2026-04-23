@@ -63,6 +63,18 @@ export function createMidtransProvider(config: MidtransConfig): PaymentProvider 
   const authHeader = `Basic ${Buffer.from(`${config.serverKey}:`).toString("base64")}`;
 
   async function chargeQris(order: QrisOrderRequest): Promise<QrisOrderResult> {
+    if (order.expiryMinutes !== undefined) {
+      if (
+        !Number.isInteger(order.expiryMinutes) ||
+        order.expiryMinutes <= 0
+      ) {
+        throw new PaymentProviderError(
+          "invalid_expiry_minutes",
+          "expiryMinutes must be a positive integer.",
+        );
+      }
+    }
+
     const body: Record<string, unknown> = {
       payment_type: "qris",
       transaction_details: {
@@ -74,6 +86,14 @@ export function createMidtransProvider(config: MidtransConfig): PaymentProvider 
       },
       custom_field1: order.outletId,
     };
+
+    if (order.expiryMinutes !== undefined) {
+      body["custom_expiry"] = {
+        order_time: formatJakartaTimestamp(now()),
+        expiry_duration: order.expiryMinutes,
+        unit: "minute",
+      };
+    }
 
     const response = await fetchImpl(`${baseUrl}/v2/charge`, {
       method: "POST",
@@ -330,6 +350,20 @@ function readQrImageUrl(json: Record<string, unknown>): string | undefined {
     }
   }
   return undefined;
+}
+
+// Midtrans `custom_expiry.order_time` must be formatted as
+// `yyyy-MM-dd HH:mm:ss Z` in the merchant's local timezone. Indonesia observes
+// no DST, so Asia/Jakarta is a fixed +0700 offset.
+function formatJakartaTimestamp(date: Date): string {
+  const shifted = new Date(date.getTime() + 7 * 60 * 60 * 1000);
+  const yyyy = shifted.getUTCFullYear();
+  const mm = String(shifted.getUTCMonth() + 1).padStart(2, "0");
+  const dd = String(shifted.getUTCDate()).padStart(2, "0");
+  const hh = String(shifted.getUTCHours()).padStart(2, "0");
+  const mi = String(shifted.getUTCMinutes()).padStart(2, "0");
+  const ss = String(shifted.getUTCSeconds()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd} ${hh}:${mi}:${ss} +0700`;
 }
 
 async function safeJson(response: Response): Promise<unknown> {
