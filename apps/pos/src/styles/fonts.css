@@ -1,9 +1,4 @@
-/*
- * Font declarations. Font binaries are vendored into /public/fonts
- * by a follow-up ticket (DESIGN-SYSTEM.md §3.1 requires self-hosting
- * — the PWA must work offline). Until then, font-display:swap falls
- * through to the system-ui stack declared in tokens.css.
- */
+/* Self-hosted brand stack. Binaries live at apps/pos/public/fonts/. */
 
 @font-face {
   font-family: "Plus Jakarta Sans";
