@@ -1,0 +1,91 @@
+/*
+ * Domain types for the back-office scaffold.
+ *
+ * These mirror the entity list in ARCHITECTURE.md §4 (Outlet, Item,
+ * BOM, BOM Item, Staff, Device). They are intentionally narrower than
+ * the server-side row shapes — the UI only touches the fields a
+ * manager edits in the scaffolded CRUD forms. Real Zod contracts for
+ * each resource land in `@kassa/schemas` alongside the corresponding
+ * API endpoints.
+ */
+
+import type { StaffRole } from "../lib/session";
+
+export type UnitOfMeasure = "pcs" | "g" | "kg" | "ml" | "l" | "pack" | "porsi";
+
+export const UNIT_OF_MEASURE_OPTIONS: readonly UnitOfMeasure[] = [
+  "pcs",
+  "g",
+  "kg",
+  "ml",
+  "l",
+  "pack",
+  "porsi",
+];
+
+export type CatalogItem = {
+  id: string;
+  sku: string;
+  name: string;
+  priceIdr: number;
+  uom: UnitOfMeasure;
+  imageUrl: string | null;
+  isStockTracked: boolean;
+  isActive: boolean;
+};
+
+export type BomComponent = {
+  componentItemId: string;
+  qty: number;
+  uom: UnitOfMeasure;
+};
+
+export type Bom = {
+  id: string;
+  parentItemId: string;
+  components: BomComponent[];
+  effectiveFrom: string;
+  effectiveTo: string | null;
+};
+
+export type Outlet = {
+  id: string;
+  name: string;
+  taxProfile: "none" | "ppn_11";
+  receiptHeader: string;
+  addressLine: string;
+};
+
+export type Staff = {
+  id: string;
+  displayName: string;
+  email: string;
+  role: StaffRole;
+  pin: string;
+  isActive: boolean;
+};
+
+export type EnrolmentCode = {
+  code: string;
+  outletId: string;
+  expiresAt: string;
+  status: "active" | "used" | "revoked";
+};
+
+export type Device = {
+  id: string;
+  label: string;
+  outletId: string;
+  lastSeenAt: string | null;
+  status: "active" | "revoked";
+};
+
+export type ReconciliationRow = {
+  id: string;
+  outletId: string;
+  businessDate: string;
+  staticQrisCounted: number;
+  midtransSettled: number;
+  variance: number;
+  status: "zero_variance" | "variance" | "pending";
+};
