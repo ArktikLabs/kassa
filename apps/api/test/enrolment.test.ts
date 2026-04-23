@@ -240,6 +240,38 @@ describe("POST /v1/auth/enroll", () => {
   });
 });
 
+describe("POST /v1/auth/enroll rate limiting", () => {
+  it("returns 429 once the per-minute budget is exhausted", async () => {
+    const repo = new InMemoryEnrolmentRepository();
+    repo.seedOutlet({
+      outlet: { id: OUTLET_ID, name: "Warung Bu Tini — Cikini" },
+      merchant: { id: MERCHANT_ID, name: "Warung Bu Tini" },
+    });
+    const service = new EnrolmentService({ repository: repo });
+    const app = await buildApp({
+      enrolment: {
+        service,
+        staffBootstrapToken: STAFF_TOKEN,
+        enrollRateLimitPerMinute: 2,
+      },
+    });
+    await app.ready();
+
+    const statuses: number[] = [];
+    for (let i = 0; i < 3; i++) {
+      const res = await app.inject({
+        method: "POST",
+        url: "/v1/auth/enroll",
+        payload: { code: "ABCDEFGH", deviceFingerprint: "tablet-burst" },
+      });
+      statuses.push(res.statusCode);
+    }
+    // First 2 reach the handler (404 not_found); the 3rd is rejected by the limiter.
+    expect(statuses).toEqual([404, 404, 429]);
+    await app.close();
+  });
+});
+
 describe("staff endpoint without bootstrap token", () => {
   it("returns 503 when STAFF_BOOTSTRAP_TOKEN is unset", async () => {
     const repo = new InMemoryEnrolmentRepository();

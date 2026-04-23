@@ -55,7 +55,7 @@ All configuration is via environment variables, validated by Zod on boot. Missin
 |--------|------|--------|
 | GET | `/health` | Live (unversioned, for uptime monitors) |
 | POST | `/v1/auth/enrolment-codes` | Live — staff-only, issues an 8-char code bound to an outlet (10-min TTL). |
-| POST | `/v1/auth/enroll` | Live — exchanges a code + device fingerprint for `{ deviceId, apiKey, apiSecret, outlet, merchant }`. |
+| POST | `/v1/auth/enroll` | Live — exchanges a code + device fingerprint for `{ deviceId, apiKey, apiSecret, outlet, merchant }`. Rate-limited (10/min/IP, in-memory). |
 | POST | `/v1/auth/heartbeat` | 501 |
 | POST | `/v1/auth/pin/verify` | 501 |
 | POST | `/v1/auth/session/login` | 501 |

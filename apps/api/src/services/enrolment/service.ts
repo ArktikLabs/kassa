@@ -33,6 +33,9 @@ export interface IssueCodeResult {
 
 export interface EnrolDeviceInput {
   code: string;
+  // Reserved for the `devices.fingerprint` column added in KASA-21; today
+  // it is surfaced to the route layer for the structured `device.enrolled`
+  // audit log line and is not persisted on the device row.
   deviceFingerprint: string;
 }
 

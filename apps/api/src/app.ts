@@ -15,6 +15,7 @@ export interface BuildAppOptions {
   enrolment?: {
     service: EnrolmentService;
     staffBootstrapToken?: string;
+    enrollRateLimitPerMinute?: number;
   };
 }
 
@@ -46,6 +47,9 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       enrolment: enrolment.service,
       ...(enrolment.staffBootstrapToken !== undefined
         ? { staffBootstrapToken: enrolment.staffBootstrapToken }
+        : {}),
+      ...(enrolment.enrollRateLimitPerMinute !== undefined
+        ? { enrollRateLimitPerMinute: enrolment.enrollRateLimitPerMinute }
         : {}),
     },
   };

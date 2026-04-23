@@ -1,4 +1,5 @@
 import type { FastifyInstance } from "fastify";
+import rateLimit from "@fastify/rate-limit";
 import {
   deviceEnrolRequest,
   enrolmentCodeIssueRequest,
@@ -12,6 +13,8 @@ import { makeStaffBootstrapPreHandler } from "../auth/staff-bootstrap.js";
 export interface AuthRouteDeps {
   enrolment: EnrolmentService;
   staffBootstrapToken?: string;
+  /** Per-IP requests per minute against `/v1/auth/enroll`. Defaults to 10. */
+  enrollRateLimitPerMinute?: number;
 }
 
 export function authRoutes(deps: AuthRouteDeps) {
@@ -19,6 +22,11 @@ export function authRoutes(deps: AuthRouteDeps) {
     const requireStaff = deps.staffBootstrapToken
       ? makeStaffBootstrapPreHandler(deps.staffBootstrapToken)
       : null;
+
+    // In-memory limiter; KASA-21/devops will swap the store to the Redis
+    // chosen for BullMQ once the Fly.io worker plane has more than one
+    // instance, otherwise per-instance counters defeat the limit.
+    await app.register(rateLimit, { global: false });
 
     app.post(
       "/enrolment-codes",
@@ -69,40 +77,64 @@ export function authRoutes(deps: AuthRouteDeps) {
       },
     );
 
-    app.post("/enroll", async (req, reply) => {
-      const parsed = deviceEnrolRequest.safeParse(req.body);
-      if (!parsed.success) {
-        sendError(reply, 400, "bad_request", "Invalid request body.", parsed.error.flatten());
-        return reply;
-      }
-      try {
-        const result = await deps.enrolment.enrolDevice({
-          code: parsed.data.code,
-          deviceFingerprint: parsed.data.deviceFingerprint,
-        });
-        const body: DeviceEnrolResponse = {
-          deviceId: result.deviceId,
-          apiKey: result.apiKey,
-          apiSecret: result.apiSecret,
-          outlet: result.outlet,
-          merchant: result.merchant,
-        };
-        reply.code(201).send(body);
-        return reply;
-      } catch (err) {
-        if (err instanceof EnrolmentError) {
-          if (err.code === "code_not_found") {
-            sendError(reply, 404, "code_not_found", err.message);
-            return reply;
-          }
-          if (err.code === "code_expired" || err.code === "code_already_used") {
-            sendError(reply, 410, err.code, err.message);
-            return reply;
-          }
+    app.post(
+      "/enroll",
+      {
+        config: {
+          rateLimit: {
+            max: deps.enrollRateLimitPerMinute ?? 10,
+            timeWindow: "1 minute",
+          },
+        },
+      },
+      async (req, reply) => {
+        const parsed = deviceEnrolRequest.safeParse(req.body);
+        if (!parsed.success) {
+          sendError(reply, 400, "bad_request", "Invalid request body.", parsed.error.flatten());
+          return reply;
         }
-        throw err;
-      }
-    });
+        try {
+          const result = await deps.enrolment.enrolDevice({
+            code: parsed.data.code,
+            deviceFingerprint: parsed.data.deviceFingerprint,
+          });
+          // Audit trail until `devices.fingerprint` lands in KASA-21. The
+          // fingerprint identifies the tablet across reinstalls; ops needs it
+          // to correlate device-replacement incidents with the enrolment row.
+          req.log.info(
+            {
+              event: "device.enrolled",
+              deviceId: result.deviceId,
+              outletId: result.outlet.id,
+              merchantId: result.merchant.id,
+              deviceFingerprint: parsed.data.deviceFingerprint,
+            },
+            "device enrolled",
+          );
+          const body: DeviceEnrolResponse = {
+            deviceId: result.deviceId,
+            apiKey: result.apiKey,
+            apiSecret: result.apiSecret,
+            outlet: result.outlet,
+            merchant: result.merchant,
+          };
+          reply.code(201).send(body);
+          return reply;
+        } catch (err) {
+          if (err instanceof EnrolmentError) {
+            if (err.code === "code_not_found") {
+              sendError(reply, 404, "code_not_found", err.message);
+              return reply;
+            }
+            if (err.code === "code_expired" || err.code === "code_already_used") {
+              sendError(reply, 410, err.code, err.message);
+              return reply;
+            }
+          }
+          throw err;
+        }
+      },
+    );
 
     app.post("/heartbeat", async (req, reply) => notImplemented(req, reply));
     app.post("/pin/verify", async (req, reply) => notImplemented(req, reply));
