@@ -96,7 +96,7 @@ Single Fastify 5 service on Node.js 22 LTS. All routes are under the `/v1` prefi
 | Layer | Content | Notes |
 |-------|---------|-------|
 | `src/server.ts`, `src/app.ts` | Fastify factory: logging, error hook, config, route registration. | Pino (JSON), env validated by Zod on boot. |
-| `src/routes/v1/*` | One file per resource group: `health`, `auth`, `catalog`, `outlets`, `stock`, `sales`, `payments`, `eod`. | Route handlers are thin; they parse, delegate to services, and format responses. |
+| `src/routes/*` | One file per resource group: `health`, `auth`, `catalog`, `outlets`, `stock`, `sales`, `payments`, `eod`. `routes/index.ts` registers every business group under the `/v1` prefix; `health.ts` is mounted unversioned at the root for uptime-monitor stability. Handlers are thin; they parse, delegate to services, and format responses. |
 | `src/services/*` | Business logic: `sales`, `payments`, `eod`, `catalog`, `stock`, `auth`. | Unit-testable without the Fastify request context. |
 | `src/db/schema/*` | Drizzle schema: one file per domain aggregate. | `drizzle-kit generate` writes SQL into `db/migrations/` ([KASA-21](/KASA/issues/KASA-21)). |
 | `src/db/client.ts` | `pg` + Drizzle client factory; transaction helper. | `db.transaction(async tx => …)` at the boundary of any multi-row mutation. |
@@ -243,7 +243,7 @@ These are the v0 primitives. Full field lists live in Drizzle schema files (`app
 | Tender | `tender` | `id` | Payment instrument applied to a sale. Method, amount, Midtrans order ref, `verified` flag. |
 | End of Day | `end_of_day` | `(outlet_id, business_date)` | Counted cash, variance, breakdown by tender. |
 | Sync Log | `sync_log` | `id` | Diagnostic trail of client pushes (request id, outcome). Purged after 30 days by a BullMQ cron. |
-| Transaction Event | `transaction_event` | `id` | Append-only audit log of money-movement events (double-entry style). The summary rows above are derivable from this log. |
+| Transaction Event | `transaction_events` | `id` | Append-only audit log of money-movement events (double-entry style). The summary rows above are derivable from this log. |
 
 **Idempotency key**: every client-originated write carries a `local_sale_id` (or `local_*_id`) generated client-side as UUIDv7 at the moment of user action. The server enforces `UNIQUE (merchant_id, local_sale_id)` and collapses duplicate pushes on retry — not the HTTP `Idempotency-Key` header.
 
@@ -265,7 +265,7 @@ The route map is authoritatively documented in [apps/api/README.md](../apps/api/
 
 | Endpoint | Method | Purpose | Flow |
 |----------|--------|---------|------|
-| `/v1/health` | GET | Liveness probe. Unauthenticated. | — |
+| `/health` | GET | Liveness probe. Unauthenticated, **unversioned** (mounted at root) so external uptime monitors never have to track API versions. | — |
 | `/v1/auth/enroll` | POST | One-time: exchange an enrolment code (scanned from back office) for device credentials. | Bootstrap |
 | `/v1/auth/heartbeat` | POST | Cheap liveness + server-time sync; used by the connection indicator. | — |
 | `/v1/auth/session/login` | POST | Staff email + password → session cookie. | Bootstrap |
@@ -385,7 +385,7 @@ The "full sales day offline" acceptance test (vision success metric) is a Playwr
 ### 5.4 Deploy
 
 **API → Fly.io (Singapore)**:
-- GitHub Actions on push to `main` builds the Docker image, runs `drizzle-kit migrate` against Neon (forward-only), and `fly deploy --ha` rolls the `web` + `worker` processes. Healthchecks hit `/v1/health`.
+- GitHub Actions on push to `main` builds the Docker image, runs `drizzle-kit migrate` against Neon (forward-only), and `fly deploy --ha` rolls the `web` + `worker` processes. Healthchecks hit `/health` (unversioned, see §4.1).
 - PR preview: a Fly preview app scaled to 1, sleeping on idle, pointed at a Neon PR branch seeded with demo catalog.
 - Rollback: `fly releases` + `fly deploy --image` pointed at the previous image digest; migrations are forward-only in v0 and reversal is manual and rare.
 
@@ -401,7 +401,7 @@ The "full sales day offline" acceptance test (vision success metric) is a Playwr
 
 ### 5.5 Operations
 
-- **Monitoring**: Sentry for errors (both tiers). Better Stack for synthetic checks on `POS shell` and API `/v1/health`. Fly's built-in healthchecks + process restarts cover process-level failures.
+- **Monitoring**: Sentry for errors (both tiers). Better Stack for synthetic checks on `POS shell` and API `/health`. Fly's built-in healthchecks + process restarts cover process-level failures.
 - **Logging**: Pino JSON logs from the API go to Fly's log stream, shipped to Sentry (errors) and a log aggregator (operational logs). PWA logs to console in dev; Sentry breadcrumbs in prod.
 - **Metrics**: OpenTelemetry (API) + provider-native ingest. Frontend RUM via PostHog (captured page views, custom events) until a dedicated RUM story is justified.
 - **Backups**: Neon retains point-in-time recovery in its tier; we document the restore runbook in `docs/ops/` once it lands. Out-of-region export is a v1 concern.
@@ -508,7 +508,7 @@ Every item above has a clear upgrade path if needed; none are on the v0 critical
 
 The architecture must be buildable incrementally. The 30-day plan (mirrored to the milestones in `VISION.md`) is:
 
-1. **M0 — Foundation (Days 1–7)**: monorepo scaffolded; `@kassa/api` Fastify skeleton with `/v1/health` live and every business route returning `501` ([KASA-22](/KASA/issues/KASA-22), shipped); Biome ([KASA-13](/KASA/issues/KASA-13)/[KASA-14](/KASA/issues/KASA-14)), Vitest ([KASA-15](/KASA/issues/KASA-15)/[KASA-16](/KASA/issues/KASA-16)), build ([KASA-17](/KASA/issues/KASA-17)), Fly deploy ([KASA-18](/KASA/issues/KASA-18)/[KASA-19](/KASA/issues/KASA-19)) in place; PWA shell scaffolded with routing, Dexie schema, Sentry; CI green on every package.
+1. **M0 — Foundation (Days 1–7)**: monorepo scaffolded; `@kassa/api` Fastify skeleton with `/health` live and every business route returning `501` ([KASA-22](/KASA/issues/KASA-22), shipped); Biome ([KASA-13](/KASA/issues/KASA-13)/[KASA-14](/KASA/issues/KASA-14)), Vitest ([KASA-15](/KASA/issues/KASA-15)/[KASA-16](/KASA/issues/KASA-16)), build ([KASA-17](/KASA/issues/KASA-17)), Fly deploy ([KASA-18](/KASA/issues/KASA-18)/[KASA-19](/KASA/issues/KASA-19)) in place; PWA shell scaffolded with routing, Dexie schema, Sentry; CI green on every package.
 2. **M1 — Core API (Days 8–14)**: Drizzle schema and migrations ([KASA-21](/KASA/issues/KASA-21)) for all §3.2 entities; catalog/outlet/stock/sales endpoints implemented ([KASA-23](/KASA/issues/KASA-23)) with shared Zod validation wiring ([KASA-24](/KASA/issues/KASA-24)); device enrolment + staff auth + RBAC ([KASA-25](/KASA/issues/KASA-25), [KASA-26](/KASA/issues/KASA-26)); OpenAPI-from-Zod ([KASA-27](/KASA/issues/KASA-27)); integration tests for Flow A + B ([KASA-28](/KASA/issues/KASA-28)).
 3. **M2 — PWA shell (Days 15–21)**: catalog UI, cart, cash tender, sync engine live; PWA works fully offline; transactions reliably push on reconnect; receipts print via `window.print`.
 4. **M3 — Multi-outlet + Reconciliation (Days 22–28)**: per-outlet stock snapshot and optimistic decrement; BOM-based consumption on sale commit; QRIS dynamic + static fallback; EOD close + variance report.
@@ -524,3 +524,4 @@ Each milestone produces a deployable increment; no milestone ends with a non-wor
 |------|--------|--------|
 | 2026-04-22 | v0 initial architecture, written from settled tech stack + vision. | Engineer (KASA-6) |
 | 2026-04-22 | Refresh to match current tech stack — Fastify + Node 22 + Postgres + Drizzle + Fly.io; drop residual Frappe/ERPNext references; align route map with shipped `@kassa/api` scaffold. | Engineer ([KASA-51](/KASA/issues/KASA-51)) |
+| 2026-04-22 | Review fixup: health endpoint is `/health` (unversioned) per [KASA-22](/KASA/issues/KASA-22) — corrected §2.2, §4.1, §5.4, §5.5, §8. Routes layout is `src/routes/*` with `/v1` applied by `routes/index.ts`. `transaction_event` → `transaction_events` aligned with [TECH-STACK.md](./TECH-STACK.md) §6.3. | Engineer ([KASA-51](/KASA/issues/KASA-51)) |
