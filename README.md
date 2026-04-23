@@ -1,6 +1,6 @@
 # Kassa
 
-Offline-capable Progressive Web App POS terminal for Indonesian merchants, backed by a Frappe/ERPNext back office.
+Offline-capable Progressive Web App POS terminal for Indonesian merchants, backed by a TypeScript + Fastify back-office API.
 
 ## Vision
 
@@ -19,28 +19,43 @@ Every Indonesian merchant — from warung to chain — runs a reliable, offline-
 
 | Layer | Tech |
 |-------|------|
-| Back office | Frappe 15 + ERPNext 15 (Python 3.11, MariaDB 10.6, Redis 7) |
-| POS runtime | Installable PWA (service worker + Workbox) |
-| POS frontend | React 18 + TypeScript 5 (strict) + Vite 5 |
-| Offline store | IndexedDB via Dexie.js |
-| UI | Tailwind CSS + Headless UI |
+| Shared language | TypeScript 5.x (strict) |
+| Backend runtime | Node.js 22 LTS |
+| API framework | Fastify 5 (REST + JSON, OpenAPI 3.1 from Zod) |
+| Database | PostgreSQL 16 (Neon, Singapore) |
+| ORM / migrations | Drizzle ORM + drizzle-kit |
+| Cache / queue | Redis 7 + BullMQ |
+| POS runtime | Installable PWA (Workbox service worker) |
+| POS frontend | React 19 + Vite 7 |
+| Client routing | TanStack Router |
+| Offline store | IndexedDB via Dexie 4 |
+| UI | Tailwind CSS v4 + Lucide |
 | State | Zustand + TanStack Query |
-| Forms | react-hook-form + Zod |
+| Forms / validation | React Hook Form + Zod (shared via `@kassa/schemas`) |
 | Payments | Midtrans Core API (QRIS) |
-| CI | GitHub Actions |
-| Hosting | Single VPS (Frappe) + Cloudflare Pages (PWA) |
+| Lint / format | Biome |
+| Testing | Vitest + React Testing Library + Playwright |
+| CI | GitHub Actions + Turborepo remote cache |
+| Hosting | Fly.io (API, `sin`) + Neon (Postgres) + Cloudflare Pages (PWA) |
 
-See [docs/](./docs/) for the full tech stack, design system, market analysis, and vision.
+See [docs/TECH-STACK.md](./docs/TECH-STACK.md) for decisive rationale on every slot, [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) for system shape and data flow, and [docs/DESIGN-SYSTEM.md](./docs/DESIGN-SYSTEM.md) for the visual foundation.
 
 ## Repository Layout
 
-This repository will host both the PWA frontend and Frappe back-office customisations as subsystems are scaffolded in upcoming tickets.
+TypeScript monorepo driven by pnpm workspaces (Turborepo integration lands in a later ticket). Subsystems are scaffolded incrementally.
 
 ```
 .
-├── docs/        # Design system, tech stack, workflows
+├── apps/
+│   └── api/           # Fastify back-office API (scaffolded in KASA-22)
+├── docs/              # Tech stack, architecture, design system, workflows
+├── legal/             # CLAs and legal notices
+├── package.json       # Workspace root
+├── pnpm-workspace.yaml
 └── README.md
 ```
+
+Planned additions as tickets land: `apps/pos` (PWA client), `apps/back-office` (staff admin UI), `packages/schemas` (shared Zod), `packages/ui`, `packages/config`.
 
 ## Workflow
 
@@ -48,7 +63,7 @@ This repository will host both the PWA frontend and Frappe back-office customisa
 - Branch naming: `kasa-<N>/<short-description>` (lowercase issue prefix)
 - PR-based review for code/schema/infra changes; direct-to-main for typos and doc fixes
 - Two required approvals: Code Reviewer + Product Owner
-- See [docs/git-workflow.md](./docs/git-workflow.md) and [docs/pr-conventions.md](./docs/pr-conventions.md) once added
+- See [docs/git-workflow.md](./docs/git-workflow.md) and [docs/pr-conventions.md](./docs/pr-conventions.md)
 
 ## Contributing
 

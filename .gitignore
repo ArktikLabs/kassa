@@ -27,21 +27,6 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 
-# Python / Frappe
-__pycache__/
-*.py[cod]
-*$py.class
-*.egg-info/
-.pytest_cache/
-.ruff_cache/
-.mypy_cache/
-.venv/
-venv/
-sites/
-logs/
-apps.txt
-apps.json
-
 # Build artefacts
 *.tsbuildinfo
 .next/
