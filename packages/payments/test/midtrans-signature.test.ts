@@ -49,7 +49,7 @@ describe("createMidtransProvider.verifyWebhookSignature", () => {
     expect(event.providerOrderId).toBe("ORDER-ABC-123");
     expect(event.status).toBe("paid");
     expect(event.grossAmount).toBe(15000);
-    expect(event.occurredAt).toBe("2026-04-22 20:30:00");
+    expect(event.occurredAt).toBe("2026-04-22T20:30:00+07:00");
   });
 
   it("rejects a payload with a tampered signature", () => {
@@ -112,5 +112,58 @@ describe("createMidtransProvider.verifyWebhookSignature", () => {
     });
     const event = provider.verifyWebhookSignature(payload, {});
     expect(event.status).toBe("failed");
+  });
+});
+
+// KASA-93: NormalizedWebhookEvent.occurredAt must be ISO-8601 with an explicit
+// offset on both branches so consumers can call `new Date(occurredAt)` without
+// hitting implementation-defined behavior on the Midtrans-local-time path.
+describe("createMidtransProvider.verifyWebhookSignature occurredAt contract", () => {
+  it("converts Midtrans transaction_time (Asia/Jakarta) to ISO-8601 with +07:00 offset", () => {
+    const provider = createMidtransProvider({
+      serverKey: SERVER_KEY,
+      now: () => new Date("2026-04-22T20:30:00.000Z"),
+    });
+    const payload = buildPayload({ transaction_time: "2026-04-22 20:30:00" });
+    const event = provider.verifyWebhookSignature(payload, {});
+
+    expect(event.occurredAt).toBe("2026-04-22T20:30:00+07:00");
+    const parsed = Date.parse(event.occurredAt);
+    expect(Number.isFinite(parsed)).toBe(true);
+    expect(
+      Math.abs(parsed - Date.UTC(2026, 3, 22, 13, 30, 0)),
+    ).toBeLessThanOrEqual(1000);
+  });
+
+  it("falls back to now().toISOString() (UTC, Z suffix) when transaction_time is absent", () => {
+    const fixedNow = new Date("2026-04-22T13:30:05.000Z");
+    const provider = createMidtransProvider({
+      serverKey: SERVER_KEY,
+      now: () => fixedNow,
+    });
+    const withoutTime: Record<string, string> = { ...buildPayload() };
+    delete withoutTime.transaction_time;
+    const event = provider.verifyWebhookSignature(withoutTime, {});
+
+    expect(event.occurredAt).toBe("2026-04-22T13:30:05.000Z");
+    const parsed = Date.parse(event.occurredAt);
+    expect(Number.isFinite(parsed)).toBe(true);
+    expect(Math.abs(parsed - fixedNow.getTime())).toBeLessThanOrEqual(1000);
+  });
+
+  it("falls back to now() when transaction_time is malformed", () => {
+    // If Midtrans ever ships a malformed value, leaking it through would break
+    // the contract. Fall back to the caller's clock rather than failing the
+    // webhook over a cosmetic field.
+    const fixedNow = new Date("2026-04-22T13:30:05.000Z");
+    const provider = createMidtransProvider({
+      serverKey: SERVER_KEY,
+      now: () => fixedNow,
+    });
+    const payload = buildPayload({ transaction_time: "nonsense" });
+    const event = provider.verifyWebhookSignature(payload, {});
+
+    expect(event.occurredAt).toBe("2026-04-22T13:30:05.000Z");
+    expect(Number.isFinite(Date.parse(event.occurredAt))).toBe(true);
   });
 });
