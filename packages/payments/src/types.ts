@@ -35,6 +35,13 @@ export interface NormalizedWebhookEvent {
   grossAmount: number;
   signatureVerified: boolean;
   rawPayload: unknown;
+  /**
+   * ISO-8601 timestamp with an explicit timezone offset, so `new Date(occurredAt)`
+   * is unambiguous across runtimes (ECMA-262 §21.4.3.2 leaves offset-less strings
+   * implementation-defined). Providers MUST emit one of:
+   * - `YYYY-MM-DDTHH:mm:ss.sssZ` (UTC fallback, e.g. `2026-04-22T13:30:05.000Z`)
+   * - `YYYY-MM-DDTHH:mm:ss±HH:MM` (explicit offset, e.g. `2026-04-22T20:30:00+07:00`)
+   */
   occurredAt: string;
 }
 
