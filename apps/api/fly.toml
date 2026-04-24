@@ -23,6 +23,12 @@ primary_region = "sin"
 # dockerfile path here would break because `apps/api/Dockerfile` is relative to
 # the build context, not to fly.toml's directory.
 
+# Applies pending Drizzle migrations before any new web/worker machine starts
+# serving traffic. Idempotent; safe on re-deploy. `DATABASE_URL` must be set
+# as a Fly secret — see apps/api/README.md §Configuration.
+[deploy]
+  release_command = "node apps/api/dist/db/migrate.js"
+
 # Two entrypoints from the same image. Fly runs each as its own machine group.
 [processes]
   web = "node apps/api/dist/index.js"

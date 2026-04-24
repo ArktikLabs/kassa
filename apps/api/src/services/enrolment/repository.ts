@@ -8,6 +8,7 @@ export interface OutletWithMerchant {
 
 export interface CreateEnrolmentCodeInput {
   code: string;
+  merchantId: string;
   outletId: string;
   createdByUserId: string;
   expiresAt: Date;
@@ -15,8 +16,10 @@ export interface CreateEnrolmentCodeInput {
 
 export interface CreateDeviceInput {
   id: string;
+  merchantId: string;
   outletId: string;
   apiKeyHash: string;
+  fingerprint: string | null;
   status: DeviceStatus;
 }
 
@@ -27,10 +30,12 @@ export interface ConsumeEnrolmentCodeInput {
 }
 
 /**
- * The data plane behind the enrolment endpoints. The Postgres-backed Drizzle
- * implementation will land in KASA-21 / KASA-23; an in-memory implementation
- * lives in `./memory-repository.ts` and is the one wired into both `dev` and
- * `test` runs until then.
+ * The data plane behind the enrolment endpoints. KASA-21 shipped the Drizzle
+ * table definitions plus the `merchantId` / `fingerprint` contract for
+ * persistence; the Postgres-backed implementation of this interface lands in a
+ * follow-up alongside the transactional `consume + create` method called out
+ * in the KASA-53 hand-off note. `./memory-repository.ts` is the in-memory
+ * implementation wired into `dev` and `test`.
  */
 export interface EnrolmentRepository {
   findOutlet(outletId: string): Promise<OutletWithMerchant | null>;

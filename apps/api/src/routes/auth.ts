@@ -23,9 +23,9 @@ export function authRoutes(deps: AuthRouteDeps) {
       ? makeStaffBootstrapPreHandler(deps.staffBootstrapToken)
       : null;
 
-    // In-memory limiter; KASA-21/devops will swap the store to the Redis
-    // chosen for BullMQ once the Fly.io worker plane has more than one
-    // instance, otherwise per-instance counters defeat the limit.
+    // In-memory limiter; devops will swap the store to the Redis chosen for
+    // BullMQ once the Fly.io worker plane has more than one instance,
+    // otherwise per-instance counters defeat the limit.
     await app.register(rateLimit, { global: false });
 
     app.post(
@@ -98,9 +98,9 @@ export function authRoutes(deps: AuthRouteDeps) {
             code: parsed.data.code,
             deviceFingerprint: parsed.data.deviceFingerprint,
           });
-          // Audit trail until `devices.fingerprint` lands in KASA-21. The
-          // fingerprint identifies the tablet across reinstalls; ops needs it
-          // to correlate device-replacement incidents with the enrolment row.
+          // Structured audit line: the fingerprint is persisted on
+          // `devices.fingerprint`, but the log keeps ops correlation cheap
+          // for the "recent enrolments" view without a DB round-trip.
           req.log.info(
             {
               event: "device.enrolled",
