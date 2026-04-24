@@ -12,7 +12,7 @@
 #   4. With DEPLOY_ENABLED=true, the next green CI on `main` will trigger
 #      `.github/workflows/cd.yml` → `deploy-api-staging`.
 #
-# See docs/CI-CD.md §3.6 for the rollback runbook.
+# See docs/CI-CD.md §3.8 for the rollback runbook (§3.7 for the deploy path).
 
 app = "kassa-api-staging"
 primary_region = "sin"

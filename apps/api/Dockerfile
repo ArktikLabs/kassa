@@ -37,8 +37,8 @@ COPY apps/api/package.json ./apps/api/package.json
 COPY packages/payments/package.json ./packages/payments/package.json
 COPY packages/schemas/package.json ./packages/schemas/package.json
 
-# --prod skips devDependencies; --frozen-lockfile fails on drift;
-# --ignore-scripts=false lets argon2's node-gyp rebuild fire.
+# --prod skips devDependencies; --frozen-lockfile fails on drift.
+# Install scripts run by default, which lets argon2's node-gyp rebuild fire.
 RUN pnpm install --prod --frozen-lockfile
 
 # Drop compiled JS into the workspace. node_modules already points into these.
