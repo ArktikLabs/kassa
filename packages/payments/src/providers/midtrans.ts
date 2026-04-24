@@ -233,9 +233,12 @@ export function createMidtransProvider(config: MidtransConfig): PaymentProvider 
       parsed.transaction_status,
       parsed.fraud_status,
     );
-    const occurredAt = resolveOccurredAt(parsed.transaction_time, now());
+    const { occurredAt, malformedProviderTimestamp } = resolveOccurredAt(
+      parsed.transaction_time,
+      now(),
+    );
 
-    return {
+    const event: NormalizedWebhookEvent = {
       providerOrderId: parsed.order_id,
       status,
       grossAmount: parseAmount(parsed.gross_amount),
@@ -243,6 +246,10 @@ export function createMidtransProvider(config: MidtransConfig): PaymentProvider 
       rawPayload: parsed,
       occurredAt,
     };
+    if (malformedProviderTimestamp !== undefined) {
+      event.malformedProviderTimestamp = malformedProviderTimestamp;
+    }
+    return event;
   }
 
   return {
@@ -410,12 +417,27 @@ function formatJakartaTimestamp(date: Date): string {
 const JAKARTA_TRANSACTION_TIME_RE =
   /^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2})$/;
 
-function resolveOccurredAt(raw: string | undefined, fallback: Date): string {
+interface ResolvedOccurredAt {
+  occurredAt: string;
+  // Populated only when `raw` was provided but didn't parse — i.e. a silent
+  // clock swap happened and downstream log sites should flag it. "Missing" is
+  // a valid Midtrans shape (e.g. pending webhooks) and does not set this.
+  malformedProviderTimestamp?: string;
+}
+
+function resolveOccurredAt(
+  raw: string | undefined,
+  fallback: Date,
+): ResolvedOccurredAt {
   if (raw !== undefined) {
     const iso = jakartaTimestampToIsoOffset(raw);
-    if (iso !== null) return iso;
+    if (iso !== null) return { occurredAt: iso };
+    return {
+      occurredAt: fallback.toISOString(),
+      malformedProviderTimestamp: raw,
+    };
   }
-  return fallback.toISOString();
+  return { occurredAt: fallback.toISOString() };
 }
 
 function jakartaTimestampToIsoOffset(raw: string): string | null {

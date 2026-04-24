@@ -166,4 +166,26 @@ describe("createMidtransProvider.verifyWebhookSignature occurredAt contract", ()
     expect(event.occurredAt).toBe("2026-04-22T13:30:05.000Z");
     expect(Number.isFinite(Date.parse(event.occurredAt))).toBe(true);
   });
+
+  it("surfaces malformedProviderTimestamp only when transaction_time was present but unparseable", () => {
+    const fixedNow = new Date("2026-04-22T13:30:05.000Z");
+    const provider = createMidtransProvider({
+      serverKey: SERVER_KEY,
+      now: () => fixedNow,
+    });
+
+    const malformed = provider.verifyWebhookSignature(
+      buildPayload({ transaction_time: "nonsense" }),
+      {},
+    );
+    expect(malformed.malformedProviderTimestamp).toBe("nonsense");
+
+    const wellFormed = provider.verifyWebhookSignature(buildPayload(), {});
+    expect(wellFormed.malformedProviderTimestamp).toBeUndefined();
+
+    const withoutTime: Record<string, string> = { ...buildPayload() };
+    delete withoutTime.transaction_time;
+    const missing = provider.verifyWebhookSignature(withoutTime, {});
+    expect(missing.malformedProviderTimestamp).toBeUndefined();
+  });
 });

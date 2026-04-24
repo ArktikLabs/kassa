@@ -262,6 +262,71 @@ describe("POST /v1/payments/webhooks/midtrans", () => {
       "invalid_signature",
     );
   });
+
+  it("warns with a breadcrumb when transaction_time is malformed and occurredAt falls back to the server clock", async () => {
+    // Use a dedicated app instance so we can capture pino log output via a
+    // custom stream without interfering with the other tests' shared app.
+    const logLines: string[] = [];
+    const captureApp = await buildApp({
+      midtransProvider: createMidtransProvider({
+        serverKey: SERVER_KEY,
+        environment: "sandbox",
+        now: () => new Date("2026-04-22T13:30:05.000Z"),
+      }),
+      logger: {
+        level: "warn",
+        stream: {
+          write: (line: string) => {
+            logLines.push(line);
+          },
+        },
+      },
+    });
+    await captureApp.ready();
+
+    try {
+      const payload = signed({
+        order_id: "ORDER-MALFORMED-TT-1",
+        status_code: "200",
+        gross_amount: "12500.00",
+        transaction_status: "settlement",
+        fraud_status: "accept",
+        transaction_time: "not-a-timestamp",
+        payment_type: "qris",
+      });
+
+      const res = await captureApp.inject({
+        method: "POST",
+        url: "/v1/payments/webhooks/midtrans",
+        payload,
+        headers: { "Content-Type": "application/json" },
+      });
+
+      expect(res.statusCode).toBe(200);
+
+      const warnRecord = logLines
+        .map((line) => JSON.parse(line) as Record<string, unknown>)
+        .find(
+          (rec) =>
+            rec["msg"] ===
+            "midtrans webhook transaction_time unparseable; fell back to server clock",
+        );
+      expect(warnRecord).toBeDefined();
+      expect(warnRecord).toMatchObject({
+        level: 40, // pino: warn
+        provider: "midtrans",
+        providerOrderId: "ORDER-MALFORMED-TT-1",
+        rawTransactionTime: "not-a-timestamp",
+        occurredAt: "2026-04-22T13:30:05.000Z",
+      });
+      // Guard against a regression where we accidentally spread the raw
+      // webhook payload into the log record — it carries signature_key.
+      expect(warnRecord && warnRecord["signature_key"]).toBeUndefined();
+      expect(warnRecord && warnRecord["rawPayload"]).toBeUndefined();
+    } finally {
+      await captureApp.close();
+    }
+  });
 });
 
 describe("POST /v1/payments/webhooks/midtrans without a configured provider", () => {
