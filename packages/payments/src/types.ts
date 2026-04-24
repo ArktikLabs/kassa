@@ -43,13 +43,6 @@ export interface NormalizedWebhookEvent {
    * - `YYYY-MM-DDTHH:mm:ss±HH:MM` (explicit offset, e.g. `2026-04-22T20:30:00+07:00`)
    */
   occurredAt: string;
-  /**
-   * Set only when the provider received a provider-native timestamp (e.g. Midtrans
-   * `transaction_time`) that did not match the expected shape and `occurredAt`
-   * therefore holds a clock fallback instead of the provider's value. Routes can
-   * surface this as an operational warning without re-parsing the raw payload.
-   */
-  malformedProviderTimestamp?: string;
 }
 
 export type WebhookHeaders = Record<string, string | string[] | undefined>;
