@@ -200,6 +200,8 @@ The workflow is inert until these three steps complete. This is intentional: it 
 
 From that point forward, every green CI run on `main` triggers a production Pages deploy for the two static surfaces and a Fly.io deploy for `kassa-api-staging`.
 
+> **Status (2026-04-24):** all four enablement steps are complete. This commit is the no-op main push that exercises the CD pipeline end-to-end for [KASA-107](/KASA/issues/KASA-107) AC 6 (dry-run → `/health = 200`).
+
 ### 3.5 Rollback procedure
 
 A deploy is considered bad when any of these signal (within ~10 min of the deploy landing):
