@@ -75,7 +75,7 @@ describe("api scaffold", () => {
       { method: "GET", url: "/v1/stock/snapshot" },
       { method: "POST", url: "/v1/sales" },
       { method: "POST", url: "/v1/sales/sync" },
-      { method: "POST", url: "/v1/payments/qris" },
+      // /v1/payments/qris and /v1/payments/qris/:orderId/status are now live; see payments-qris.test.ts.
       { method: "POST", url: "/v1/eod/close" },
       { method: "GET", url: "/v1/eod/report" },
     ];

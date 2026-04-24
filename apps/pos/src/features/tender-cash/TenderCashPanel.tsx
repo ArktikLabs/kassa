@@ -188,6 +188,16 @@ export function TenderCashPanel() {
               ? intl.formatMessage({ id: "tender.cash.submit.done" })
               : intl.formatMessage({ id: "tender.cash.submit.insufficient" })}
         </button>
+        <button
+          type="button"
+          onClick={() => {
+            void navigate({ to: "/tender/qris" });
+          }}
+          data-testid="tender-cash-switch-qris"
+          className="w-full h-12 rounded-md border border-neutral-300 text-base font-semibold text-neutral-800 active:bg-neutral-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-600 focus-visible:ring-offset-2 focus-visible:ring-offset-white"
+        >
+          {intl.formatMessage({ id: "tender.cash.switch.qris" })}
+        </button>
       </div>
     </section>
   );

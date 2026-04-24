@@ -6,7 +6,7 @@ import { createRepos, type Repos } from "../../data/db/index.ts";
 import { type KassaDexie, openKassaDb } from "../../data/db/schema.ts";
 import { totals } from "../cart/reducer.ts";
 import type { CartState } from "../cart/reducer.ts";
-import { finalizeCashSale, SaleFinalizeError } from "./finalize.ts";
+import { finalizeCashSale, finalizeQrisSale, SaleFinalizeError } from "./finalize.ts";
 
 let counter = 0;
 function nextDbName(): string {
@@ -191,5 +191,68 @@ describe("finalizeCashSale", () => {
     expect(result.localSaleId).toMatch(
       /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
     );
+  });
+});
+
+describe("finalizeQrisSale", () => {
+  let fx: Fixture;
+  const LOCAL_SALE_ID = "01929b2d-1e03-7f00-80aa-000000000003";
+
+  beforeEach(async () => {
+    fx = await setup();
+  });
+
+  afterEach(async () => {
+    await teardown(fx);
+  });
+
+  it("persists a queued QRIS sale with the Midtrans order id as tender.reference", async () => {
+    const cart = cartWithKopi(2);
+    const result = await finalizeQrisSale(
+      {
+        lines: cart.lines,
+        totals: totals(cart),
+        localSaleId: LOCAL_SALE_ID,
+        qrisOrderId: LOCAL_SALE_ID,
+      },
+      {
+        database: { db: fx.db, repos: fx.repos, close: () => {} },
+        now: () => new Date("2026-04-23T15:30:00+07:00"),
+      },
+    );
+
+    expect(result.localSaleId).toBe(LOCAL_SALE_ID);
+    expect(result.changeDueIdr).toBe(0);
+    expect(result.sale.tenders[0]).toEqual({
+      method: "qris",
+      amountIdr: 50_000,
+      reference: LOCAL_SALE_ID,
+    });
+
+    const stored = await fx.repos.pendingSales.getById(result.localSaleId);
+    expect(stored?.status).toBe("queued");
+    expect(stored?.tenders?.[0]?.method).toBe("qris");
+    expect(stored?.tenders?.[0]?.reference).toBe(LOCAL_SALE_ID);
+    expect(stored?.totalIdr).toBe(50_000);
+
+    const stock = await fx.repos.stockSnapshot.forOutletItem(
+      "22222222-2222-7222-8222-222222222222",
+      "44444444-4444-7444-8444-444444444444",
+    );
+    expect(stock?.onHand).toBe(8);
+  });
+
+  it("refuses an empty cart", async () => {
+    await expect(
+      finalizeQrisSale(
+        {
+          lines: [],
+          totals: { subtotalIdr: toRupiah(0), discountIdr: toRupiah(0), totalIdr: toRupiah(0) },
+          localSaleId: LOCAL_SALE_ID,
+          qrisOrderId: LOCAL_SALE_ID,
+        },
+        { database: { db: fx.db, repos: fx.repos, close: () => {} } },
+      ),
+    ).rejects.toBeInstanceOf(SaleFinalizeError);
   });
 });
