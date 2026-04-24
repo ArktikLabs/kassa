@@ -1,11 +1,6 @@
 import type { Database } from "../db/index.ts";
 import { pullAll, type PullAllResult } from "./pull.ts";
-import {
-  SyncHttpError,
-  SyncNetworkError,
-  SyncOfflineError,
-  SyncParseError,
-} from "./errors.ts";
+import { SyncHttpError, SyncNetworkError, SyncOfflineError, SyncParseError } from "./errors.ts";
 import type { SyncStatusStore } from "./status.ts";
 
 export const DEFAULT_SYNC_INTERVAL_MS = 60_000;
@@ -16,8 +11,7 @@ export interface OnlineSource {
 }
 
 export function browserOnlineSource(): OnlineSource {
-  const isOnline = () =>
-    typeof navigator === "undefined" ? true : navigator.onLine !== false;
+  const isOnline = () => (typeof navigator === "undefined" ? true : navigator.onLine !== false);
   const subscribe = (listener: (online: boolean) => void) => {
     if (typeof window === "undefined") return () => {};
     const onOnline = () => listener(true);

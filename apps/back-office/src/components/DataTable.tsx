@@ -92,10 +92,7 @@ export function DataTable<Row>({
           <tbody>
             {visible.length === 0 ? (
               <tr>
-                <td
-                  colSpan={columns.length}
-                  className="px-4 py-16 text-center text-neutral-500"
-                >
+                <td colSpan={columns.length} className="px-4 py-16 text-center text-neutral-500">
                   {emptyState ?? <FormattedMessage id="table.empty" />}
                 </td>
               </tr>
@@ -125,9 +122,7 @@ export function DataTable<Row>({
                         className={[
                           "border-b border-neutral-200 px-4 py-3 align-middle",
                           col.numeric ? "text-right tabular-nums" : "",
-                          col.align === "right" && !col.numeric
-                            ? "text-right"
-                            : "",
+                          col.align === "right" && !col.numeric ? "text-right" : "",
                           col.align === "center" ? "text-center" : "",
                         ]
                           .filter(Boolean)
@@ -145,10 +140,7 @@ export function DataTable<Row>({
       </div>
       <div className="flex items-center justify-between border-t border-neutral-200 bg-neutral-50 px-4 py-2 text-xs text-neutral-600">
         <span data-testid="data-table-range">
-          <FormattedMessage
-            id="table.pagination.range"
-            values={{ from, to, total }}
-          />
+          <FormattedMessage id="table.pagination.range" values={{ from, to, total }} />
         </span>
         <div className="flex items-center gap-2">
           <button

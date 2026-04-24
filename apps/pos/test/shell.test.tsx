@@ -47,21 +47,15 @@ function renderShellAt(path: string) {
 describe("POS shell", () => {
   it("renders the id-ID enrol screen with brand chrome and connection pill", async () => {
     renderShellAt("/enrol");
-    expect(
-      await screen.findByRole("heading", { name: "Enrol perangkat" }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: "Hubungkan perangkat" }),
-    ).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Enrol perangkat" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Hubungkan perangkat" })).toBeInTheDocument();
     expect(screen.getByRole("status")).toHaveTextContent("Online");
     expect(screen.getByRole("link", { name: /katalog/i })).toBeInTheDocument();
   });
 
   it("renders the catalog screen when routed to /catalog", async () => {
     renderShellAt("/catalog");
-    expect(
-      await screen.findByRole("heading", { name: "Katalog" }),
-    ).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Katalog" })).toBeInTheDocument();
   });
 
   it("scrubs PII (phone, email, address, long digit runs) before sending to Sentry", () => {

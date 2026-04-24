@@ -1,6 +1,18 @@
 import { useIntl } from "react-intl";
 
-export type KeypadKey = "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" | "00" | "backspace";
+export type KeypadKey =
+  | "0"
+  | "1"
+  | "2"
+  | "3"
+  | "4"
+  | "5"
+  | "6"
+  | "7"
+  | "8"
+  | "9"
+  | "00"
+  | "backspace";
 
 /*
  * Appends the next digit(s) to a number, or deletes the last digit on backspace.
@@ -36,11 +48,7 @@ const KEYS: readonly KeypadKey[] = [
   "backspace",
 ];
 
-export function NumericKeypad({
-  onKey,
-  disabled,
-  "aria-label": ariaLabel,
-}: NumericKeypadProps) {
+export function NumericKeypad({ onKey, disabled, "aria-label": ariaLabel }: NumericKeypadProps) {
   const intl = useIntl();
   const label = ariaLabel ?? intl.formatMessage({ id: "keypad.aria" });
   return (
@@ -57,11 +65,7 @@ export function NumericKeypad({
           disabled={disabled}
           onClick={() => onKey(key)}
           data-testid={`keypad-${key}`}
-          aria-label={
-            key === "backspace"
-              ? intl.formatMessage({ id: "keypad.backspace" })
-              : key
-          }
+          aria-label={key === "backspace" ? intl.formatMessage({ id: "keypad.backspace" }) : key}
           className={[
             "h-16 rounded-md border border-neutral-200 bg-white text-2xl font-bold tabular-nums text-neutral-800",
             "active:bg-neutral-100 active:scale-[0.97] transition-transform duration-[var(--animate-duration-instant)]",

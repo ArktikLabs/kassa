@@ -26,10 +26,7 @@ export function BomsScreen() {
   const boms = useBoms();
   const items = useCatalogItems();
   const intl = useIntl();
-  const itemsById = useMemo(
-    () => new Map(items.map((it) => [it.id, it])),
-    [items],
-  );
+  const itemsById = useMemo(() => new Map(items.map((it) => [it.id, it])), [items]);
 
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Bom | null>(null);
@@ -40,9 +37,7 @@ export function BomsScreen() {
     setDraft({
       ...EMPTY_DRAFT,
       parentItemId: items[0]?.id ?? "",
-      components: items[1]
-        ? [{ componentItemId: items[1].id, qty: 1, uom: items[1].uom }]
-        : [],
+      components: items[1] ? [{ componentItemId: items[1].id, qty: 1, uom: items[1].uom }] : [],
     });
     setOpen(true);
   };
@@ -67,9 +62,7 @@ export function BomsScreen() {
   const updateComponent = (index: number, patch: Partial<BomComponent>) => {
     setDraft((d) => ({
       ...d,
-      components: d.components.map((c, i) =>
-        i === index ? { ...c, ...patch } : c,
-      ),
+      components: d.components.map((c, i) => (i === index ? { ...c, ...patch } : c)),
     }));
   };
 
@@ -108,9 +101,7 @@ export function BomsScreen() {
           {r.components.map((c) => (
             <li key={c.componentItemId} className="text-xs text-neutral-600">
               {itemsById.get(c.componentItemId)?.name ?? c.componentItemId} ·{" "}
-              <span className="tabular-nums">{c.qty}</span>
-              {" "}
-              {c.uom}
+              <span className="tabular-nums">{c.qty}</span> {c.uom}
             </li>
           ))}
         </ul>
@@ -120,9 +111,7 @@ export function BomsScreen() {
       key: "effective",
       header: <FormattedMessage id="boms.col.effective" />,
       render: (r) =>
-        r.effectiveTo
-          ? `${r.effectiveFrom} → ${r.effectiveTo}`
-          : `${r.effectiveFrom} →`,
+        r.effectiveTo ? `${r.effectiveFrom} → ${r.effectiveTo}` : `${r.effectiveFrom} →`,
     },
     {
       key: "actions",
@@ -157,13 +146,7 @@ export function BomsScreen() {
       <Modal
         open={open}
         onClose={() => setOpen(false)}
-        title={
-          editing ? (
-            <FormattedMessage id="boms.edit" />
-          ) : (
-            <FormattedMessage id="boms.new" />
-          )
-        }
+        title={editing ? <FormattedMessage id="boms.edit" /> : <FormattedMessage id="boms.new" />}
         footer={
           <>
             <Button variant="ghost" onClick={() => setOpen(false)}>
@@ -176,16 +159,11 @@ export function BomsScreen() {
         }
       >
         <div className="space-y-4">
-          <Field
-            label={<FormattedMessage id="boms.form.parent" />}
-            htmlFor="bom-parent"
-          >
+          <Field label={<FormattedMessage id="boms.form.parent" />} htmlFor="bom-parent">
             <SelectInput
               id="bom-parent"
               value={draft.parentItemId}
-              onChange={(e) =>
-                setDraft({ ...draft, parentItemId: e.target.value })
-              }
+              onChange={(e) => setDraft({ ...draft, parentItemId: e.target.value })}
             >
               {items.map((it) => (
                 <option key={it.id} value={it.id}>
@@ -195,23 +173,15 @@ export function BomsScreen() {
             </SelectInput>
           </Field>
           <div className="grid grid-cols-2 gap-4">
-            <Field
-              label={<FormattedMessage id="boms.form.from" />}
-              htmlFor="bom-from"
-            >
+            <Field label={<FormattedMessage id="boms.form.from" />} htmlFor="bom-from">
               <TextInput
                 id="bom-from"
                 type="date"
                 value={draft.effectiveFrom}
-                onChange={(e) =>
-                  setDraft({ ...draft, effectiveFrom: e.target.value })
-                }
+                onChange={(e) => setDraft({ ...draft, effectiveFrom: e.target.value })}
               />
             </Field>
-            <Field
-              label={<FormattedMessage id="boms.form.to" />}
-              htmlFor="bom-to"
-            >
+            <Field label={<FormattedMessage id="boms.form.to" />} htmlFor="bom-to">
               <TextInput
                 id="bom-to"
                 type="date"
@@ -219,8 +189,7 @@ export function BomsScreen() {
                 onChange={(e) =>
                   setDraft({
                     ...draft,
-                    effectiveTo:
-                      e.target.value.trim() === "" ? null : e.target.value,
+                    effectiveTo: e.target.value.trim() === "" ? null : e.target.value,
                   })
                 }
               />
@@ -238,18 +207,14 @@ export function BomsScreen() {
             </div>
             <div className="space-y-2">
               {draft.components.map((comp, idx) => (
-                <div
-                  key={idx}
-                  className="grid grid-cols-[1fr_96px_96px_auto] items-end gap-2"
-                >
+                // biome-ignore lint/suspicious/noArrayIndexKey: draft components have no stable id before save; index is acceptable for an editable in-memory list.
+                <div key={idx} className="grid grid-cols-[1fr_96px_96px_auto] items-end gap-2">
                   <SelectInput
                     aria-label={intl.formatMessage({
                       id: "boms.form.component",
                     })}
                     value={comp.componentItemId}
-                    onChange={(e) =>
-                      updateComponent(idx, { componentItemId: e.target.value })
-                    }
+                    onChange={(e) => updateComponent(idx, { componentItemId: e.target.value })}
                   >
                     {items.map((it) => (
                       <option key={it.id} value={it.id}>
@@ -284,11 +249,7 @@ export function BomsScreen() {
                       </option>
                     ))}
                   </SelectInput>
-                  <Button
-                    variant="ghost"
-                    onClick={() => removeComponent(idx)}
-                    aria-label="remove"
-                  >
+                  <Button variant="ghost" onClick={() => removeComponent(idx)} aria-label="remove">
                     ✕
                   </Button>
                 </div>

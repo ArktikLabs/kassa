@@ -1,9 +1,6 @@
 import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
-import {
-  computeMidtransSignature,
-  createMidtransProvider,
-} from "../src/providers/midtrans.js";
+import { computeMidtransSignature, createMidtransProvider } from "../src/providers/midtrans.js";
 import { WebhookSignatureError } from "../src/types.js";
 
 const SERVER_KEY = "SB-Mid-server-test-signature-1234567890";
@@ -55,33 +52,25 @@ describe("createMidtransProvider.verifyWebhookSignature", () => {
   it("rejects a payload with a tampered signature", () => {
     const payload = buildPayload();
     const tampered = { ...payload, signature_key: "0".repeat(128) };
-    expect(() => provider.verifyWebhookSignature(tampered, {})).toThrow(
-      WebhookSignatureError,
-    );
+    expect(() => provider.verifyWebhookSignature(tampered, {})).toThrow(WebhookSignatureError);
   });
 
   it("rejects a payload with a mutated gross_amount (recomputes mismatch)", () => {
     const payload = buildPayload();
     const mutated = { ...payload, gross_amount: "1.00" };
-    expect(() => provider.verifyWebhookSignature(mutated, {})).toThrow(
-      WebhookSignatureError,
-    );
+    expect(() => provider.verifyWebhookSignature(mutated, {})).toThrow(WebhookSignatureError);
   });
 
   it("rejects non-object payloads", () => {
     expect(() => provider.verifyWebhookSignature("not an object", {})).toThrow(
       WebhookSignatureError,
     );
-    expect(() => provider.verifyWebhookSignature(null, {})).toThrow(
-      WebhookSignatureError,
-    );
+    expect(() => provider.verifyWebhookSignature(null, {})).toThrow(WebhookSignatureError);
   });
 
   it("rejects payloads missing required fields", () => {
     const incomplete = { order_id: "A", status_code: "200" };
-    expect(() => provider.verifyWebhookSignature(incomplete, {})).toThrow(
-      WebhookSignatureError,
-    );
+    expect(() => provider.verifyWebhookSignature(incomplete, {})).toThrow(WebhookSignatureError);
   });
 
   it("maps transaction_status=pending to status pending", () => {
@@ -130,9 +119,7 @@ describe("createMidtransProvider.verifyWebhookSignature occurredAt contract", ()
     expect(event.occurredAt).toBe("2026-04-22T20:30:00+07:00");
     const parsed = Date.parse(event.occurredAt);
     expect(Number.isFinite(parsed)).toBe(true);
-    expect(
-      Math.abs(parsed - Date.UTC(2026, 3, 22, 13, 30, 0)),
-    ).toBeLessThanOrEqual(1000);
+    expect(Math.abs(parsed - Date.UTC(2026, 3, 22, 13, 30, 0))).toBeLessThanOrEqual(1000);
   });
 
   it("falls back to now().toISOString() (UTC, Z suffix) when transaction_time is absent", () => {

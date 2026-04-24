@@ -22,5 +22,5 @@ export function parseRupiahInput(input: string): number {
 }
 
 export function shortId(id: string, length = 8): string {
-  return id.length <= length ? id : id.slice(0, length) + "…";
+  return id.length <= length ? id : `${id.slice(0, length)}…`;
 }

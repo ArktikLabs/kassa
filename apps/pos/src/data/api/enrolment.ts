@@ -61,10 +61,7 @@ export async function enrolDevice(
     if (signal) init.signal = signal;
     response = await doFetch(`${apiBaseUrl()}/v1/auth/enroll`, init);
   } catch (err) {
-    throw new EnrolApiError(
-      "network_error",
-      err instanceof Error ? err.message : "network error",
-    );
+    throw new EnrolApiError("network_error", err instanceof Error ? err.message : "network error");
   }
 
   if (response.status === 201) {

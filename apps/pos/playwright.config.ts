@@ -12,9 +12,9 @@ export default defineConfig({
   timeout: 30_000,
   expect: { timeout: 5_000 },
   fullyParallel: true,
-  forbidOnly: !!process.env["CI"],
-  retries: process.env["CI"] ? 2 : 0,
-  reporter: process.env["CI"] ? "github" : "list",
+  forbidOnly: !!process.env.CI,
+  retries: process.env.CI ? 2 : 0,
+  reporter: process.env.CI ? "github" : "list",
   use: {
     baseURL: "http://127.0.0.1:4173",
     trace: "retain-on-failure",
@@ -22,7 +22,7 @@ export default defineConfig({
   webServer: {
     command: "pnpm build && pnpm preview --port 4173 --strictPort --host 127.0.0.1",
     url: "http://127.0.0.1:4173",
-    reuseExistingServer: !process.env["CI"],
+    reuseExistingServer: !process.env.CI,
     timeout: 180_000,
     stdout: "pipe",
     stderr: "pipe",

@@ -16,7 +16,7 @@ import {
   type SyncStatus,
   type SyncStatusStore,
 } from "../data/sync/index.ts";
-import { SyncParseError } from "../data/sync/errors.ts";
+import type { SyncParseError } from "../data/sync/errors.ts";
 import { Sentry } from "./sentry.ts";
 
 interface SyncContextValue {

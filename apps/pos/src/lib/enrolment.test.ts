@@ -1,10 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import Dexie from "dexie";
-import {
-  _resetDatabaseSingletonForTest,
-  DB_NAME,
-  getDatabase,
-} from "../data/db/index";
+import { _resetDatabaseSingletonForTest, DB_NAME, getDatabase } from "../data/db/index";
 import {
   _resetForTest,
   enrolDevice,
@@ -31,10 +27,10 @@ function mockFetchOk(): Response {
 }
 
 function mockFetchError(status: number, code: string, message = "nope"): Response {
-  return new Response(
-    JSON.stringify({ error: { code, message } }),
-    { status, headers: { "content-type": "application/json" } },
-  );
+  return new Response(JSON.stringify({ error: { code, message } }), {
+    status,
+    headers: { "content-type": "application/json" },
+  });
 }
 
 describe("enrolment lib", () => {
@@ -57,7 +53,10 @@ describe("enrolment lib", () => {
 
   it("enrolDevice persists the secret to Dexie and publishes an enrolled snapshot", async () => {
     await hydrateEnrolment();
-    vi.stubGlobal("fetch", vi.fn(async () => mockFetchOk()));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => mockFetchOk()),
+    );
 
     const device = await enrolDevice(VALID_CODE);
 
@@ -76,7 +75,10 @@ describe("enrolment lib", () => {
 
   it("never writes the device secret to localStorage", async () => {
     await hydrateEnrolment();
-    vi.stubGlobal("fetch", vi.fn(async () => mockFetchOk()));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => mockFetchOk()),
+    );
     await enrolDevice(VALID_CODE);
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i);
@@ -89,7 +91,10 @@ describe("enrolment lib", () => {
 
   it("maps 410 code_expired to EnrolApiError with code_expired", async () => {
     await hydrateEnrolment();
-    vi.stubGlobal("fetch", vi.fn(async () => mockFetchError(410, "code_expired", "expired")));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => mockFetchError(410, "code_expired", "expired")),
+    );
 
     await expect(enrolDevice(VALID_CODE)).rejects.toMatchObject({
       name: "EnrolApiError",
@@ -100,13 +105,19 @@ describe("enrolment lib", () => {
 
   it("maps 410 code_already_used to EnrolApiError", async () => {
     await hydrateEnrolment();
-    vi.stubGlobal("fetch", vi.fn(async () => mockFetchError(410, "code_already_used", "used")));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => mockFetchError(410, "code_already_used", "used")),
+    );
     await expect(enrolDevice(VALID_CODE)).rejects.toBeInstanceOf(EnrolApiError);
   });
 
   it("maps 404 code_not_found to EnrolApiError", async () => {
     await hydrateEnrolment();
-    vi.stubGlobal("fetch", vi.fn(async () => mockFetchError(404, "code_not_found", "missing")));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => mockFetchError(404, "code_not_found", "missing")),
+    );
     const err = await enrolDevice(VALID_CODE).catch((e) => e);
     expect(err).toBeInstanceOf(EnrolApiError);
     expect((err as EnrolApiError).code).toBe("code_not_found");
@@ -127,7 +138,10 @@ describe("enrolment lib", () => {
 
   it("resetDevice clears the stored secret and emits unenrolled", async () => {
     await hydrateEnrolment();
-    vi.stubGlobal("fetch", vi.fn(async () => mockFetchOk()));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => mockFetchOk()),
+    );
     await enrolDevice(VALID_CODE);
     expect(isEnrolled()).toBe(true);
 

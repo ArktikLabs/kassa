@@ -19,10 +19,7 @@ export function CartPanel() {
   const [editing, setEditing] = useState<CartLine | null>(null);
 
   return (
-    <section
-      aria-label={intl.formatMessage({ id: "cart.aria" })}
-      className="flex h-full flex-col"
-    >
+    <section aria-label={intl.formatMessage({ id: "cart.aria" })} className="flex h-full flex-col">
       <header className="border-b border-neutral-200 px-4 py-3">
         <h1 className="text-lg font-bold text-neutral-900">
           {intl.formatMessage({ id: "cart.heading" })}

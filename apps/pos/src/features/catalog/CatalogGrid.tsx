@@ -4,11 +4,7 @@ import { CatalogTile } from "./CatalogTile.tsx";
 import { useCartStore } from "../cart/index.ts";
 import type { Item } from "../../data/db/types.ts";
 
-export function CatalogGrid({
-  onLongPress,
-}: {
-  onLongPress?: (item: Item) => void;
-}) {
+export function CatalogGrid({ onLongPress }: { onLongPress?: (item: Item) => void }) {
   const { tiles, ready } = useCatalog();
   const intl = useIntl();
   const addLine = useCartStore((s) => s.addLine);

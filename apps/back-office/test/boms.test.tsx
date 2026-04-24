@@ -7,9 +7,7 @@ import { getSnapshot } from "../src/data/store";
 
 describe("BOM CRUD", () => {
   it("shows the seeded recipe and creates a new one via the modal", async () => {
-    renderAt("/catalog/boms", [
-      { path: "/catalog/boms", component: BomsScreen },
-    ]);
+    renderAt("/catalog/boms", [{ path: "/catalog/boms", component: BomsScreen }]);
     const user = userEvent.setup();
 
     expect(
@@ -22,13 +20,9 @@ describe("BOM CRUD", () => {
 
     // The form pre-fills parent + one component from the seed.
     const dialog = screen.getByRole("dialog");
-    expect(
-      within(dialog).getByLabelText("Produk jadi"),
-    ).toBeInTheDocument();
+    expect(within(dialog).getByLabelText("Produk jadi")).toBeInTheDocument();
 
-    await user.click(
-      within(dialog).getByRole("button", { name: "Simpan resep" }),
-    );
+    await user.click(within(dialog).getByRole("button", { name: "Simpan resep" }));
 
     expect(getSnapshot().boms.length).toBe(2);
   });

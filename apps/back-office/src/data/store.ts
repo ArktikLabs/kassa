@@ -271,9 +271,7 @@ export function createEnrolmentCode(outletId: string): EnrolmentCode {
 export function revokeDevice(id: string): void {
   state = {
     ...state,
-    devices: state.devices.map((d) =>
-      d.id === id ? { ...d, status: "revoked" } : d,
-    ),
+    devices: state.devices.map((d) => (d.id === id ? { ...d, status: "revoked" } : d)),
   };
   emit();
 }

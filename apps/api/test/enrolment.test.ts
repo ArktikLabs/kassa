@@ -138,7 +138,9 @@ describe("POST /v1/auth/enroll", () => {
       outlet: { id: string; name: string };
       merchant: { id: string; name: string };
     };
-    expect(body.deviceId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+    expect(body.deviceId).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+    );
     expect(body.apiKey.startsWith("kk_dev_")).toBe(true);
     expect(body.apiSecret.startsWith("kk_sec_")).toBe(true);
     expect(body.outlet).toEqual({ id: OUTLET_ID, name: "Warung Bu Tini — Cikini" });

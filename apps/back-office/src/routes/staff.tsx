@@ -2,12 +2,7 @@ import { useState } from "react";
 import { FormattedMessage, useIntl } from "react-intl";
 import { Button } from "../components/Button";
 import { DataTable, type DataTableColumn } from "../components/DataTable";
-import {
-  Checkbox,
-  Field,
-  SelectInput,
-  TextInput,
-} from "../components/Field";
+import { Checkbox, Field, SelectInput, TextInput } from "../components/Field";
 import { Modal } from "../components/Modal";
 import { createStaff, resetStaffPin, updateStaff } from "../data/store";
 import { useStaff } from "../data/useStore";
@@ -58,11 +53,7 @@ export function StaffScreen() {
   const resetPin = (row: Staff) => {
     const next = (Math.floor(Math.random() * 9000) + 1000).toString();
     resetStaffPin(row.id, next);
-    alert(
-      intl.formatMessage(
-        { id: "staff.form.reset_pin" },
-      ) + `: ${next}`,
-    );
+    alert(`${intl.formatMessage({ id: "staff.form.reset_pin" })}: ${next}`);
   };
 
   const columns: DataTableColumn<Staff>[] = [
@@ -125,13 +116,7 @@ export function StaffScreen() {
       <Modal
         open={open}
         onClose={() => setOpen(false)}
-        title={
-          editing ? (
-            <FormattedMessage id="staff.edit" />
-          ) : (
-            <FormattedMessage id="staff.new" />
-          )
-        }
+        title={editing ? <FormattedMessage id="staff.edit" /> : <FormattedMessage id="staff.new" />}
         footer={
           <>
             <Button variant="ghost" onClick={() => setOpen(false)}>
@@ -144,22 +129,14 @@ export function StaffScreen() {
         }
       >
         <div className="space-y-4">
-          <Field
-            label={<FormattedMessage id="staff.form.name" />}
-            htmlFor="staff-name"
-          >
+          <Field label={<FormattedMessage id="staff.form.name" />} htmlFor="staff-name">
             <TextInput
               id="staff-name"
               value={draft.displayName}
-              onChange={(e) =>
-                setDraft({ ...draft, displayName: e.target.value })
-              }
+              onChange={(e) => setDraft({ ...draft, displayName: e.target.value })}
             />
           </Field>
-          <Field
-            label={<FormattedMessage id="staff.form.email" />}
-            htmlFor="staff-email"
-          >
+          <Field label={<FormattedMessage id="staff.form.email" />} htmlFor="staff-email">
             <TextInput
               id="staff-email"
               type="email"
@@ -168,16 +145,11 @@ export function StaffScreen() {
             />
           </Field>
           <div className="grid grid-cols-2 gap-4">
-            <Field
-              label={<FormattedMessage id="staff.form.role" />}
-              htmlFor="staff-role"
-            >
+            <Field label={<FormattedMessage id="staff.form.role" />} htmlFor="staff-role">
               <SelectInput
                 id="staff-role"
                 value={draft.role}
-                onChange={(e) =>
-                  setDraft({ ...draft, role: e.target.value as StaffRole })
-                }
+                onChange={(e) => setDraft({ ...draft, role: e.target.value as StaffRole })}
               >
                 {STAFF_ROLES.map((r) => (
                   <option key={r} value={r}>
@@ -186,10 +158,7 @@ export function StaffScreen() {
                 ))}
               </SelectInput>
             </Field>
-            <Field
-              label={<FormattedMessage id="staff.form.pin" />}
-              htmlFor="staff-pin"
-            >
+            <Field label={<FormattedMessage id="staff.form.pin" />} htmlFor="staff-pin">
               <TextInput
                 id="staff-pin"
                 inputMode="numeric"

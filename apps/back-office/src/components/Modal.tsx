@@ -20,14 +20,7 @@ export type ModalProps = {
   labelledById?: string;
 };
 
-export function Modal({
-  open,
-  title,
-  onClose,
-  children,
-  footer,
-  labelledById,
-}: ModalProps) {
+export function Modal({ open, title, onClose, children, footer, labelledById }: ModalProps) {
   const dialogRef = useRef<HTMLDivElement>(null);
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
@@ -74,15 +67,8 @@ export function Modal({
   if (!open) return null;
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center px-4"
-      aria-hidden={false}
-    >
-      <div
-        className="absolute inset-0 bg-neutral-900/50"
-        aria-hidden
-        onClick={onClose}
-      />
+    <div className="fixed inset-0 z-50 flex items-center justify-center px-4" aria-hidden={false}>
+      <div className="absolute inset-0 bg-neutral-900/50" aria-hidden onClick={onClose} />
       <div
         ref={dialogRef}
         role="dialog"
@@ -92,10 +78,7 @@ export function Modal({
         className="relative z-10 w-full max-w-[560px] rounded-lg bg-white shadow-lg focus:outline-none"
       >
         <header className="flex items-center justify-between border-b border-neutral-200 px-6 py-4">
-          <h2
-            id={titleId}
-            className="text-lg font-semibold text-neutral-900"
-          >
+          <h2 id={titleId} className="text-lg font-semibold text-neutral-900">
             {title}
           </h2>
           <button

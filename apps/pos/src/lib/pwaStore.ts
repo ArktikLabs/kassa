@@ -23,19 +23,14 @@ function emit() {
 }
 
 function setState(next: PwaState) {
-  if (
-    next.updateAvailable === state.updateAvailable &&
-    next.offlineReady === state.offlineReady
-  ) {
+  if (next.updateAvailable === state.updateAvailable && next.offlineReady === state.offlineReady) {
     return;
   }
   state = next;
   emit();
 }
 
-export function markUpdateAvailable(
-  accept: () => Promise<void> | void,
-): void {
+export function markUpdateAvailable(accept: () => Promise<void> | void): void {
   acceptHandler = accept;
   setState({ ...state, updateAvailable: true });
 }

@@ -2,10 +2,7 @@ import { FormattedMessage } from "react-intl";
 
 export type ConnectionState = "online" | "syncing" | "offline" | "error";
 
-const STYLES: Record<
-  ConnectionState,
-  { wrap: string; dot: string }
-> = {
+const STYLES: Record<ConnectionState, { wrap: string; dot: string }> = {
   online: {
     wrap: "bg-success-surface text-success-fg",
     dot: "bg-conn-online",
@@ -57,26 +54,14 @@ export function ConnectionPill({
   );
 }
 
-function PillLabel({
-  state,
-  pendingCount,
-}: {
-  state: ConnectionState;
-  pendingCount: number;
-}) {
+function PillLabel({ state, pendingCount }: { state: ConnectionState; pendingCount: number }) {
   switch (state) {
     case "syncing":
-      return (
-        <FormattedMessage
-          id="conn.syncing"
-          values={{ count: pendingCount }}
-        />
-      );
+      return <FormattedMessage id="conn.syncing" values={{ count: pendingCount }} />;
     case "offline":
       return <FormattedMessage id="conn.offline" />;
     case "error":
       return <FormattedMessage id="conn.error" />;
-    case "online":
     default:
       return <FormattedMessage id="conn.online" />;
   }

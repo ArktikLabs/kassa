@@ -17,22 +17,14 @@ function renderButton(ui: React.ReactElement) {
 describe("<ChargeButton />", () => {
   it("shows the empty-state label and is disabled when cart is empty", () => {
     const onClick = vi.fn();
-    renderButton(
-      <ChargeButton totalIdr={zeroRupiah} disabled onClick={onClick} />,
-    );
+    renderButton(<ChargeButton totalIdr={zeroRupiah} disabled onClick={onClick} />);
     const button = screen.getByRole("button", { name: /tambah barang dulu/i });
     expect(button).toBeDisabled();
   });
 
   it("shows `Bayar Rp <total>` and calls onClick when cart has items", async () => {
     const onClick = vi.fn();
-    renderButton(
-      <ChargeButton
-        totalIdr={toRupiah(47500)}
-        disabled={false}
-        onClick={onClick}
-      />,
-    );
+    renderButton(<ChargeButton totalIdr={toRupiah(47500)} disabled={false} onClick={onClick} />);
     const button = screen.getByRole("button");
     expect(button.textContent).toMatch(/Bayar/);
     expect(button.textContent).toMatch(/47\.500/);

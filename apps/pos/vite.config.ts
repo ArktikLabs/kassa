@@ -27,8 +27,7 @@ export default defineConfig({
         id: "/",
         name: "Kassa POS",
         short_name: "Kassa",
-        description:
-          "Kasir offline-first untuk warung dan toko kecil di Indonesia.",
+        description: "Kasir offline-first untuk warung dan toko kecil di Indonesia.",
         lang: "id-ID",
         dir: "ltr",
         start_url: "/",

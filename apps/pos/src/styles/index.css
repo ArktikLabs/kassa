@@ -21,7 +21,9 @@ body {
    or numeric column — DESIGN-SYSTEM §3.2. */
 .tabular-nums,
 [data-tabular="true"] {
-  font-feature-settings: "tnum" 1, "lnum" 1;
+  font-feature-settings:
+    "tnum" 1,
+    "lnum" 1;
   font-variant-numeric: tabular-nums lining-nums;
 }
 

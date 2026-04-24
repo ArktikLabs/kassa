@@ -1,9 +1,4 @@
-export type QrisOrderStatus =
-  | "pending"
-  | "paid"
-  | "expired"
-  | "cancelled"
-  | "failed";
+export type QrisOrderStatus = "pending" | "paid" | "expired" | "cancelled" | "failed";
 
 export interface QrisOrderRequest {
   orderId: string;

@@ -32,11 +32,7 @@ export function IntlProvider({
   const [locale] = useState<Locale>(() => forcedLocale ?? negotiateLocale());
   const messages = useMemo(() => messagesFor(locale), [locale]);
   return (
-    <ReactIntlProvider
-      locale={locale}
-      defaultLocale={FALLBACK_LOCALE}
-      messages={messages}
-    >
+    <ReactIntlProvider locale={locale} defaultLocale={FALLBACK_LOCALE} messages={messages}>
       {children}
     </ReactIntlProvider>
   );

@@ -9,14 +9,8 @@ import type { PaymentProvider } from "@kassa/payments";
 import { healthRoutes } from "./routes/health.js";
 import { registerV1Routes, type V1RouteDeps } from "./routes/index.js";
 import { sendError } from "./lib/errors.js";
-import {
-  createDomainEventBus,
-  type DomainEventBus,
-} from "./lib/events.js";
-import {
-  createInMemoryDedupeStore,
-  type WebhookDedupeStore,
-} from "./lib/webhook-dedupe.js";
+import { createDomainEventBus, type DomainEventBus } from "./lib/events.js";
+import { createInMemoryDedupeStore, type WebhookDedupeStore } from "./lib/webhook-dedupe.js";
 import { EnrolmentService, InMemoryEnrolmentRepository } from "./services/enrolment/index.js";
 
 export interface BuildAppOptions {
@@ -47,10 +41,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   });
 
   app.decorate("events", options.events ?? createDomainEventBus());
-  app.decorate(
-    "webhookDedupe",
-    options.webhookDedupe ?? createInMemoryDedupeStore(),
-  );
+  app.decorate("webhookDedupe", options.webhookDedupe ?? createInMemoryDedupeStore());
   app.decorate("midtransProvider", options.midtransProvider ?? null);
 
   app.setNotFoundHandler((req, reply) => {

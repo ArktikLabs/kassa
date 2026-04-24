@@ -1,10 +1,7 @@
 import { useEffect, useState } from "react";
 import { useIntl } from "react-intl";
 import { BottomSheet } from "../../../shared/components/BottomSheet.tsx";
-import {
-  NumericKeypad,
-  applyKeypadKey,
-} from "../../../shared/components/NumericKeypad.tsx";
+import { NumericKeypad, applyKeypadKey } from "../../../shared/components/NumericKeypad.tsx";
 import { formatIdr, multiplyRupiah } from "../../../shared/money/index.ts";
 import type { CartLine } from "../types.ts";
 
@@ -17,18 +14,13 @@ interface CartEditSheetProps {
   onRemove(): void;
 }
 
-export function CartEditSheet({
-  line,
-  onClose,
-  onApply,
-  onRemove,
-}: CartEditSheetProps) {
+export function CartEditSheet({ line, onClose, onApply, onRemove }: CartEditSheetProps) {
   const intl = useIntl();
   const [draft, setDraft] = useState(0);
 
   useEffect(() => {
     setDraft(line?.quantity ?? 0);
-  }, [line?.itemId, line?.quantity]);
+  }, [line?.quantity]);
 
   if (!line) return null;
 
@@ -57,14 +49,9 @@ export function CartEditSheet({
           <p className="text-xs uppercase tracking-wide text-neutral-500">
             {intl.formatMessage({ id: "cart.edit.quantity" })}
           </p>
-          <p className="text-3xl font-bold text-neutral-900 tabular-nums">
-            {draft}
-          </p>
+          <p className="text-3xl font-bold text-neutral-900 tabular-nums">{draft}</p>
           <p className="text-sm text-neutral-600 tabular-nums">
-            {intl.formatMessage(
-              { id: "cart.edit.preview" },
-              { total: formatIdr(draftTotal) },
-            )}
+            {intl.formatMessage({ id: "cart.edit.preview" }, { total: formatIdr(draftTotal) })}
           </p>
         </div>
         <NumericKeypad

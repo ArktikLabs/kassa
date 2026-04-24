@@ -11,24 +11,17 @@ import type { ButtonHTMLAttributes } from "react";
 type Variant = "primary" | "ghost" | "destructive";
 
 const VARIANTS: Record<Variant, string> = {
-  primary:
-    "bg-primary-600 text-white hover:bg-primary-700 focus-visible:ring-primary-500",
+  primary: "bg-primary-600 text-white hover:bg-primary-700 focus-visible:ring-primary-500",
   ghost:
     "bg-white text-neutral-800 border border-neutral-300 hover:bg-neutral-100 focus-visible:ring-neutral-400",
-  destructive:
-    "bg-danger-solid text-white hover:bg-danger-fg focus-visible:ring-danger-solid",
+  destructive: "bg-danger-solid text-white hover:bg-danger-fg focus-visible:ring-danger-solid",
 };
 
 export type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
   variant?: Variant;
 };
 
-export function Button({
-  variant = "primary",
-  className,
-  type = "button",
-  ...rest
-}: ButtonProps) {
+export function Button({ variant = "primary", className, type = "button", ...rest }: ButtonProps) {
   return (
     <button
       type={type}

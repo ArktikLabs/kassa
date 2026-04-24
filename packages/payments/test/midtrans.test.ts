@@ -20,9 +20,7 @@ function stubFetch(
 
 describe("createMidtransProvider config", () => {
   it("throws if serverKey is empty", () => {
-    expect(() => createMidtransProvider({ serverKey: "" })).toThrow(
-      PaymentProviderError,
-    );
+    expect(() => createMidtransProvider({ serverKey: "" })).toThrow(PaymentProviderError);
   });
 
   it("defaults to sandbox base URL", async () => {
@@ -59,10 +57,10 @@ describe("createMidtransProvider config", () => {
       environment: "production",
       fetchImpl: stubFetch((url) => {
         capturedUrl = url;
-        return new Response(
-          JSON.stringify({ order_id: "O2", qr_string: "qris:mock" }),
-          { status: 200, headers: { "Content-Type": "application/json" } },
-        );
+        return new Response(JSON.stringify({ order_id: "O2", qr_string: "qris:mock" }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
       }),
     });
 
@@ -85,7 +83,7 @@ describe("createQris", () => {
     const provider = createMidtransProvider({
       serverKey: SERVER_KEY,
       fetchImpl: stubFetch((_url, init) => {
-        receivedAuth = (init?.headers as Record<string, string> | undefined)?.["Authorization"];
+        receivedAuth = (init?.headers as Record<string, string> | undefined)?.Authorization;
         receivedBody = JSON.parse(init?.body as string);
         return new Response(
           JSON.stringify({
@@ -93,9 +91,7 @@ describe("createQris", () => {
             order_id: "ORDER-1",
             qr_string: "00020101021126...",
             expiry_time: "2026-04-22 21:00:00",
-            actions: [
-              { name: "generate-qr-code", url: "https://mock-midtrans/qr/ORDER-1" },
-            ],
+            actions: [{ name: "generate-qr-code", url: "https://mock-midtrans/qr/ORDER-1" }],
           }),
           { status: 201, headers: { "Content-Type": "application/json" } },
         );
@@ -150,32 +146,34 @@ describe("createQris", () => {
   it("rejects a malformed gross_amount from getQrisStatus with invalid_gross_amount", async () => {
     const provider = createMidtransProvider({
       serverKey: SERVER_KEY,
-      fetchImpl: stubFetch(() =>
-        new Response(
-          JSON.stringify({
-            order_id: "ORDER-BAD-AMOUNT",
-            transaction_status: "settlement",
-            fraud_status: "accept",
-            gross_amount: "not-a-number",
-          }),
-          { status: 200, headers: { "Content-Type": "application/json" } },
-        ),
+      fetchImpl: stubFetch(
+        () =>
+          new Response(
+            JSON.stringify({
+              order_id: "ORDER-BAD-AMOUNT",
+              transaction_status: "settlement",
+              fraud_status: "accept",
+              gross_amount: "not-a-number",
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          ),
       ),
     });
 
-    await expect(
-      provider.getQrisStatus("ORDER-BAD-AMOUNT"),
-    ).rejects.toMatchObject({ code: "invalid_gross_amount" });
+    await expect(provider.getQrisStatus("ORDER-BAD-AMOUNT")).rejects.toMatchObject({
+      code: "invalid_gross_amount",
+    });
   });
 
   it("throws PaymentProviderError on non-2xx response", async () => {
     const provider = createMidtransProvider({
       serverKey: SERVER_KEY,
-      fetchImpl: stubFetch(() =>
-        new Response(
-          JSON.stringify({ status_message: "invalid server key" }),
-          { status: 401, headers: { "Content-Type": "application/json" } },
-        ),
+      fetchImpl: stubFetch(
+        () =>
+          new Response(JSON.stringify({ status_message: "invalid server key" }), {
+            status: 401,
+            headers: { "Content-Type": "application/json" },
+          }),
       ),
     });
 
@@ -195,10 +193,10 @@ describe("createQris", () => {
   it("maps expiryMinutes to custom_expiry in Asia/Jakarta; omits when absent; rejects invalid", async () => {
     let capturedBody: Record<string, unknown> = {};
     const okResponse = () =>
-      new Response(
-        JSON.stringify({ order_id: "O", qr_string: "qris:mock" }),
-        { status: 200, headers: { "Content-Type": "application/json" } },
-      );
+      new Response(JSON.stringify({ order_id: "O", qr_string: "qris:mock" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
 
     // Present: 15:30:00 UTC on 2026-04-22 → 22:30:00 +0700.
     const withExpiry = createMidtransProvider({
@@ -216,7 +214,7 @@ describe("createQris", () => {
       outletId: "outlet-a",
       expiryMinutes: 7,
     });
-    expect(capturedBody["custom_expiry"]).toEqual({
+    expect(capturedBody.custom_expiry).toEqual({
       order_time: "2026-04-22 22:30:00 +0700",
       expiry_duration: 7,
       unit: "minute",
@@ -262,11 +260,12 @@ describe("createQris", () => {
   it("throws when response lacks a QR string", async () => {
     const provider = createMidtransProvider({
       serverKey: SERVER_KEY,
-      fetchImpl: stubFetch(() =>
-        new Response(JSON.stringify({ order_id: "X" }), {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        }),
+      fetchImpl: stubFetch(
+        () =>
+          new Response(JSON.stringify({ order_id: "X" }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          }),
       ),
     });
 
@@ -285,17 +284,18 @@ describe("getQrisStatus", () => {
   it("maps settlement to paid and returns paidAt", async () => {
     const provider = createMidtransProvider({
       serverKey: SERVER_KEY,
-      fetchImpl: stubFetch(() =>
-        new Response(
-          JSON.stringify({
-            order_id: "ORDER-1",
-            transaction_status: "settlement",
-            fraud_status: "accept",
-            gross_amount: "25000.00",
-            settlement_time: "2026-04-22 20:35:01",
-          }),
-          { status: 200, headers: { "Content-Type": "application/json" } },
-        ),
+      fetchImpl: stubFetch(
+        () =>
+          new Response(
+            JSON.stringify({
+              order_id: "ORDER-1",
+              transaction_status: "settlement",
+              fraud_status: "accept",
+              gross_amount: "25000.00",
+              settlement_time: "2026-04-22 20:35:01",
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          ),
       ),
     });
 
@@ -309,15 +309,16 @@ describe("getQrisStatus", () => {
   it("maps expire to expired and omits paidAt", async () => {
     const provider = createMidtransProvider({
       serverKey: SERVER_KEY,
-      fetchImpl: stubFetch(() =>
-        new Response(
-          JSON.stringify({
-            order_id: "ORDER-2",
-            transaction_status: "expire",
-            gross_amount: "25000.00",
-          }),
-          { status: 200, headers: { "Content-Type": "application/json" } },
-        ),
+      fetchImpl: stubFetch(
+        () =>
+          new Response(
+            JSON.stringify({
+              order_id: "ORDER-2",
+              transaction_status: "expire",
+              gross_amount: "25000.00",
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          ),
       ),
     });
 

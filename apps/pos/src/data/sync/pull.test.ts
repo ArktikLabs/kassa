@@ -2,14 +2,10 @@ import "fake-indexeddb/auto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import Dexie from "dexie";
 import { createRepos, DB_NAME } from "../db/index.ts";
-import { KassaDexie, openKassaDb } from "../db/schema.ts";
+import { type KassaDexie, openKassaDb } from "../db/schema.ts";
 import { createSyncStatusStore } from "./status.ts";
 import { pullAll, PULL_ORDER } from "./pull.ts";
-import {
-  SyncHttpError,
-  SyncOfflineError,
-  SyncParseError,
-} from "./errors.ts";
+import { SyncHttpError, SyncOfflineError, SyncParseError } from "./errors.ts";
 
 const OUTLET_ID = "018f9c1a-4b2e-7c00-b000-000000000001";
 const UOM_ID = "018f9c1a-4b2e-7c00-b000-000000000100";
@@ -63,9 +59,7 @@ function bomBody() {
       {
         id: BOM_ID,
         itemId: ITEM_ID,
-        components: [
-          { componentItemId: COMPONENT_ID, quantity: 2, uomId: UOM_ID },
-        ],
+        components: [{ componentItemId: COMPONENT_ID, quantity: 2, uomId: UOM_ID }],
         updatedAt: "2026-04-24T01:00:00Z",
       },
     ],
@@ -167,9 +161,7 @@ describe("pullAll", () => {
     for (const url of calls) {
       expect(new URL(url).searchParams.has("updated_after")).toBe(false);
     }
-    expect(
-      new URL(calls[4] as string).searchParams.get("outlet"),
-    ).toBe(OUTLET_ID);
+    expect(new URL(calls[4] as string).searchParams.get("outlet")).toBe(OUTLET_ID);
 
     const outlets = await database.repos.outlets.all();
     expect(outlets).toHaveLength(1);
@@ -201,9 +193,7 @@ describe("pullAll", () => {
       isOnline: () => true,
     });
 
-    const itemsCall = capturedUrls.find((u) =>
-      u.includes("/v1/catalog/items"),
-    );
+    const itemsCall = capturedUrls.find((u) => u.includes("/v1/catalog/items"));
     expect(itemsCall).toBeDefined();
     expect(new URL(itemsCall as string).searchParams.get("updated_after")).toBe(
       "2026-04-20T00:00:00Z",
@@ -249,11 +239,7 @@ describe("pullAll", () => {
     expect(onSentryError).toHaveBeenCalledOnce();
     const parseErr = onSentryError.mock.calls[0]?.[0] as SyncParseError;
     expect(parseErr.table).toBe("items");
-    expect(parseErr.receivedKeys).toEqual([
-      "nextCursor",
-      "nextPageToken",
-      "records",
-    ]);
+    expect(parseErr.receivedKeys).toEqual(["nextCursor", "nextPageToken", "records"]);
 
     const items = await database.repos.items.listActive();
     expect(items).toHaveLength(0);
@@ -316,7 +302,7 @@ describe("pullAll", () => {
         isOnline: () => false,
       }),
     ).rejects.toBeInstanceOf(SyncOfflineError);
-    expect((fetchImpl as unknown as ReturnType<typeof vi.fn>)).not.toHaveBeenCalled();
+    expect(fetchImpl as unknown as ReturnType<typeof vi.fn>).not.toHaveBeenCalled();
   });
 
   it("emits syncing status with Sinkronisasi · N pending batches", async () => {
@@ -369,9 +355,7 @@ describe("pullAll", () => {
       isOnline: () => true,
     });
 
-    expect(result.tables.find((t) => t.table === "stock_snapshot")?.skipped).toBe(
-      true,
-    );
+    expect(result.tables.find((t) => t.table === "stock_snapshot")?.skipped).toBe(true);
     expect(
       (fetchImpl as unknown as ReturnType<typeof vi.fn>).mock.calls.find((c) =>
         (c[0] as string).includes("/v1/stock/snapshot"),
