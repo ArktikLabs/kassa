@@ -233,7 +233,7 @@ export function createMidtransProvider(config: MidtransConfig): PaymentProvider 
       parsed.transaction_status,
       parsed.fraud_status,
     );
-    const occurredAt = parsed.transaction_time ?? now().toISOString();
+    const occurredAt = resolveOccurredAt(parsed.transaction_time, now());
 
     return {
       providerOrderId: parsed.order_id,
@@ -399,6 +399,32 @@ function formatJakartaTimestamp(date: Date): string {
   const mi = String(shifted.getUTCMinutes()).padStart(2, "0");
   const ss = String(shifted.getUTCSeconds()).padStart(2, "0");
   return `${yyyy}-${mm}-${dd} ${hh}:${mi}:${ss} +0700`;
+}
+
+// Midtrans `transaction_time` arrives as `YYYY-MM-DD HH:mm:ss` in Asia/Jakarta
+// with no timezone suffix. Parsing that shape via `new Date(...)` is
+// implementation-defined (ECMA-262 §21.4.3.2), so we reformat to an
+// offset-aware ISO-8601 string and fall back to the caller's UTC clock if
+// Midtrans ever sends something we can't parse. Indonesia observes no DST, so
+// Asia/Jakarta is a fixed +07:00 offset.
+const JAKARTA_TRANSACTION_TIME_RE =
+  /^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2})$/;
+
+function resolveOccurredAt(raw: string | undefined, fallback: Date): string {
+  if (raw !== undefined) {
+    const iso = jakartaTimestampToIsoOffset(raw);
+    if (iso !== null) return iso;
+  }
+  return fallback.toISOString();
+}
+
+function jakartaTimestampToIsoOffset(raw: string): string | null {
+  const m = JAKARTA_TRANSACTION_TIME_RE.exec(raw);
+  if (!m) return null;
+  const [, yyyy, mm, dd, hh, mi, ss] = m;
+  const iso = `${yyyy}-${mm}-${dd}T${hh}:${mi}:${ss}+07:00`;
+  if (!Number.isFinite(Date.parse(iso))) return null;
+  return iso;
 }
 
 function isAbortError(err: unknown): boolean {

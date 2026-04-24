@@ -103,7 +103,7 @@ describe("POST /v1/payments/webhooks/midtrans", () => {
       provider: "midtrans",
       providerOrderId: "ORDER-OK-1",
       grossAmount: 25000,
-      paidAt: "2026-04-22 20:30:00",
+      paidAt: "2026-04-22T20:30:00+07:00",
     });
 
     const changed = received.find(
