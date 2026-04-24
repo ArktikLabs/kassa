@@ -206,6 +206,7 @@ describe("POST /v1/auth/enroll", () => {
     const phantomService = new EnrolmentService({ repository: phantomRepo });
     await phantomRepo.createEnrolmentCode({
       code: "ZZZZZZZZ",
+      merchantId: MERCHANT_ID,
       outletId: phantomOutletId,
       createdByUserId: STAFF_USER_ID,
       expiresAt: new Date(Date.now() + 60_000),

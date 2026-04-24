@@ -27,6 +27,7 @@ export class InMemoryEnrolmentRepository implements EnrolmentRepository {
     }
     const row: EnrolmentCode = {
       code: input.code,
+      merchantId: input.merchantId,
       outletId: input.outletId,
       createdByUserId: input.createdByUserId,
       expiresAt: input.expiresAt,
@@ -55,8 +56,10 @@ export class InMemoryEnrolmentRepository implements EnrolmentRepository {
     const now = new Date();
     const row: Device = {
       id: input.id,
+      merchantId: input.merchantId,
       outletId: input.outletId,
       apiKeyHash: input.apiKeyHash,
+      fingerprint: input.fingerprint,
       status: input.status,
       createdAt: now,
       lastSeenAt: null,
