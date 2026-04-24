@@ -29,7 +29,7 @@ Tokens and fonts come from the same source as `apps/pos` so the two apps stay vi
 
 | Path                         | Audience             | Purpose                                             |
 | ---------------------------- | -------------------- | --------------------------------------------------- |
-| `/login`                     | All staff            | Email + password sign-in (TECH-STACK §7.1 contract) |
+| `/login`                     | All staff            | Email + password sign-in (ARCHITECTURE §4.1 contract) |
 | `/outlets`                   | Owner / manager      | Outlet CRUD, receipt header & tax profile, enrolment code issuance |
 | `/catalog`                   | All authenticated    | Catalog CRUD with price, UoM, stock flag, activation |
 | `/catalog/boms`              | All authenticated    | BOM CRUD (parent item + components + effective range) |

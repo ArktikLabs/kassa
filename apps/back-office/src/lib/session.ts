@@ -2,11 +2,11 @@
  * Session stub for the back-office shell.
  *
  * v0 back-office is scaffolded against the auth contract in
- * ARCHITECTURE.md §3.4 and TECH-STACK §7.1 (email + password → staff
- * session cookie; PIN unlock after inactivity). The real session lives
- * server-side and lands in a follow-up ticket. Until then we persist a
- * role + display name locally so the shell can demo role-gated routes
- * and the "Logout" affordance.
+ * ARCHITECTURE.md §4.1 (email + password → staff session cookie; PIN
+ * unlock after inactivity). The real session lives server-side and
+ * lands in a follow-up ticket. Until then we persist a role + display
+ * name locally so the shell can demo role-gated routes and the
+ * "Logout" affordance.
  */
 
 export const STAFF_ROLES = ["owner", "manager", "cashier", "read_only"] as const;
