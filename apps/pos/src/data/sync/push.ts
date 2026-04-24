@@ -309,6 +309,11 @@ export async function pushOutbox(database: Database, opts: PushOptions): Promise
   const finishedAt = clock().toISOString();
   await database.repos.syncState.setLastPushed("pending_sales", finishedAt);
 
+  opts.status?.update((s) => ({
+    ...s,
+    phase: { kind: "idle", lastSuccessAt: finishedAt, lastError: null },
+  }));
+
   return {
     attempted: total,
     synced,

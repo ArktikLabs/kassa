@@ -318,6 +318,30 @@ describe("pushOutbox", () => {
     expect(observed.at(-1)).toBe(0);
   });
 
+  it("transitions the phase back to idle after a non-empty drain completes", async () => {
+    const status = createSyncStatusStore();
+    await database.repos.pendingSales.enqueue(
+      makeSale({ localSaleId: "01940000-0000-7000-8000-000000000009" }),
+    );
+    const fetchImpl = vi.fn(async () =>
+      jsonResponse({ name: "SALE-IDLE" }, 201),
+    ) as unknown as typeof fetch;
+    const finishedAt = "2026-04-24T09:05:00.000Z";
+
+    await pushOutbox(database, {
+      baseUrl: "https://api.kassa.test",
+      fetchImpl,
+      status,
+      clock: () => new Date(finishedAt),
+    });
+
+    expect(status.get().phase).toEqual({
+      kind: "idle",
+      lastSuccessAt: finishedAt,
+      lastError: null,
+    });
+  });
+
   it("empty outbox — returns completed without calling fetch", async () => {
     const fetchImpl = vi.fn() as unknown as typeof fetch;
     const result = await pushOutbox(database, {
