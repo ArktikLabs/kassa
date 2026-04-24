@@ -42,9 +42,9 @@ export function useCatalog(): {
     };
   }, []);
 
-  const result = useLiveQuery<CatalogQueryResult, CatalogQueryResult>(
-    async (): Promise<CatalogQueryResult> => {
-      if (!db) return EMPTY_RESULT;
+  const result = useLiveQuery<CatalogQueryResult | undefined>(
+    async (): Promise<CatalogQueryResult | undefined> => {
+      if (!db) return undefined;
       const items = await db.repos.items.listActive(200);
       const outletId = (await db.repos.deviceSecret.get())?.outletId;
       const stockRows = outletId
@@ -60,11 +60,10 @@ export function useCatalog(): {
       return { tiles, items, stockByItem };
     },
     [db],
-    EMPTY_RESULT,
   );
 
   return {
-    tiles: result.tiles,
-    ready: db !== null,
+    tiles: result?.tiles ?? EMPTY_RESULT.tiles,
+    ready: db !== null && result !== undefined,
   };
 }

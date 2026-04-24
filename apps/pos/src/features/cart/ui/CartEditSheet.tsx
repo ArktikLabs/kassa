@@ -5,7 +5,7 @@ import {
   NumericKeypad,
   applyKeypadKey,
 } from "../../../shared/components/NumericKeypad.tsx";
-import { formatIdr } from "../../../shared/money/index.ts";
+import { formatIdr, multiplyRupiah } from "../../../shared/money/index.ts";
 import type { CartLine } from "../types.ts";
 
 const MAX_QUANTITY = 9999;
@@ -39,7 +39,7 @@ export function CartEditSheet({
     });
   }
 
-  const draftTotal = draft * Number(line.unitPriceIdr);
+  const draftTotal = multiplyRupiah(line.unitPriceIdr, draft);
 
   return (
     <BottomSheet
@@ -63,7 +63,7 @@ export function CartEditSheet({
           <p className="text-sm text-neutral-600 tabular-nums">
             {intl.formatMessage(
               { id: "cart.edit.preview" },
-              { total: formatIdr(draftTotal as never) },
+              { total: formatIdr(draftTotal) },
             )}
           </p>
         </div>
