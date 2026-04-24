@@ -1,0 +1,35 @@
+{
+  "name": "@kassa/payments",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "Vendor-agnostic payment provider abstraction for Kassa. v0 ships a Midtrans QRIS implementation.",
+  "license": "AGPL-3.0-or-later",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./providers/midtrans": {
+      "types": "./dist/providers/midtrans.d.ts",
+      "default": "./dist/providers/midtrans.js"
+    }
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^22.9.0",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.4"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  }
+}

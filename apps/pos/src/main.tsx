@@ -4,9 +4,11 @@ import { RouterProvider } from "@tanstack/react-router";
 import { router } from "./router";
 import { IntlProvider } from "./i18n/IntlProvider";
 import { initSentry } from "./lib/sentry";
+import { registerPwa } from "./lib/pwa";
 import "./styles/index.css";
 
 initSentry();
+registerPwa();
 
 const rootEl = document.getElementById("root");
 if (!rootEl) throw new Error("Root element #root not found.");

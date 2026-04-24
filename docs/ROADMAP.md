@@ -148,7 +148,7 @@ Some work does not fit a single milestone and runs alongside the main pipeline.
 
 ## Risk register (roadmap-level)
 
-Stack-level risks live in [TECH-STACK.md](./TECH-STACK.md) §14. Roadmap-level risks are scope+time bets:
+Stack-level risks are captured per slot as `Revisit when` triggers throughout [TECH-STACK.md](./TECH-STACK.md). Roadmap-level risks are scope+time bets:
 
 1. **M1 scope creep into M2.** The API surface already has 14 open issues. If any slip past Day 14, M2 must cut scope, not extend the window.
 2. **Web Bluetooth printer support.** If fewer than 3 printer models survive M2 smoke testing, M4 acceptance must include a PDF-receipt-only fallback path.
