@@ -13,7 +13,12 @@
     "resolveJsonModule": true,
     "skipLibCheck": true,
     "outDir": "dist",
-    "types": ["node"]
+    "types": ["node"],
+    "baseUrl": ".",
+    "paths": {
+      "@kassa/schemas": ["../../packages/schemas/src/index.ts"],
+      "@kassa/schemas/auth": ["../../packages/schemas/src/auth.ts"]
+    }
   },
   "include": ["src", "test"]
 }

@@ -1,0 +1,38 @@
+@import "tailwindcss";
+@import "./fonts.css";
+@import "./tokens.css";
+
+:root {
+  color-scheme: light;
+  font-family: var(--font-sans);
+  -webkit-text-size-adjust: 100%;
+  font-feature-settings: "cv02", "cv03";
+}
+
+body {
+  margin: 0;
+  background: var(--color-neutral-50);
+  color: var(--color-neutral-800);
+  font-size: 16px;
+  line-height: 1.5;
+}
+
+/* Tabular numerals for any element containing a rupiah amount, SKU,
+   or numeric column — DESIGN-SYSTEM §3.2. */
+.tabular-nums,
+[data-tabular="true"] {
+  font-feature-settings: "tnum" 1, "lnum" 1;
+  font-variant-numeric: tabular-nums lining-nums;
+}
+
+/* Honor prefers-reduced-motion — DESIGN-SYSTEM §7. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

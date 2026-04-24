@@ -266,7 +266,8 @@ The route map is authoritatively documented in [apps/api/README.md](../apps/api/
 | Endpoint | Method | Purpose | Flow |
 |----------|--------|---------|------|
 | `/health` | GET | Liveness probe. Unauthenticated, **unversioned** (mounted at root) so external uptime monitors never have to track API versions. | — |
-| `/v1/auth/enroll` | POST | One-time: exchange an enrolment code (scanned from back office) for device credentials. | Bootstrap |
+| `/v1/auth/enrolment-codes` | POST | Staff-only: issue a single-use 8-character enrolment code bound to one outlet, 10-minute TTL. | Bootstrap |
+| `/v1/auth/enroll` | POST | One-time: exchange an enrolment code (scanned from back office) for device credentials. Argon2id-hashed `api_key_hash` is stored; `api_secret` is returned exactly once. Rate-limited per IP. | Bootstrap |
 | `/v1/auth/heartbeat` | POST | Cheap liveness + server-time sync; used by the connection indicator. | — |
 | `/v1/auth/session/login` | POST | Staff email + password → session cookie. | Bootstrap |
 | `/v1/auth/session/logout` | POST | Revoke session. | — |

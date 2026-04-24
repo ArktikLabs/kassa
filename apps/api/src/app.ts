@@ -7,7 +7,7 @@ import Fastify, {
 } from "fastify";
 import type { PaymentProvider } from "@kassa/payments";
 import { healthRoutes } from "./routes/health.js";
-import { registerV1Routes } from "./routes/index.js";
+import { registerV1Routes, type V1RouteDeps } from "./routes/index.js";
 import { sendError } from "./lib/errors.js";
 import {
   createDomainEventBus,
@@ -17,12 +17,18 @@ import {
   createInMemoryDedupeStore,
   type WebhookDedupeStore,
 } from "./lib/webhook-dedupe.js";
+import { EnrolmentService, InMemoryEnrolmentRepository } from "./services/enrolment/index.js";
 
 export interface BuildAppOptions {
   logger?: FastifyServerOptions["logger"];
   midtransProvider?: PaymentProvider | undefined;
   events?: DomainEventBus;
   webhookDedupe?: WebhookDedupeStore;
+  enrolment?: {
+    service: EnrolmentService;
+    staffBootstrapToken?: string;
+    enrollRateLimitPerMinute?: number;
+  };
 }
 
 declare module "fastify" {
@@ -59,8 +65,24 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     sendError(reply, status, code, message);
   });
 
+  const enrolment = options.enrolment ?? {
+    service: new EnrolmentService({ repository: new InMemoryEnrolmentRepository() }),
+  };
+
+  const v1Deps: V1RouteDeps = {
+    auth: {
+      enrolment: enrolment.service,
+      ...(enrolment.staffBootstrapToken !== undefined
+        ? { staffBootstrapToken: enrolment.staffBootstrapToken }
+        : {}),
+      ...(enrolment.enrollRateLimitPerMinute !== undefined
+        ? { enrollRateLimitPerMinute: enrolment.enrollRateLimitPerMinute }
+        : {}),
+    },
+  };
+
   await app.register(healthRoutes);
-  await app.register(registerV1Routes, { prefix: "/v1" });
+  await app.register(async (instance) => registerV1Routes(instance, v1Deps), { prefix: "/v1" });
 
   return app;
 }

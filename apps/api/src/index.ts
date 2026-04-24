@@ -1,9 +1,19 @@
 import { createMidtransProvider, type PaymentProvider } from "@kassa/payments";
 import { buildApp } from "./app.js";
 import { loadEnv } from "./config.js";
+import { EnrolmentService, InMemoryEnrolmentRepository } from "./services/enrolment/index.js";
 
 async function main(): Promise<void> {
   const env = loadEnv();
+
+  // Repository binding lands in KASA-21 (Postgres + Drizzle migrations); until
+  // then dev/staging boot with an in-memory store. Outlets must be seeded by
+  // calling code (or via a future admin endpoint) before enrolment will work.
+  const repository = new InMemoryEnrolmentRepository();
+  const enrolmentService = new EnrolmentService({
+    repository,
+    codeTtlMs: env.ENROLMENT_CODE_TTL_MS,
+  });
 
   let midtransProvider: PaymentProvider | undefined;
   if (env.MIDTRANS_SERVER_KEY) {
@@ -20,14 +30,28 @@ async function main(): Promise<void> {
         ? { transport: { target: "pino-pretty", options: { colorize: true } } }
         : {}),
     },
-    midtransProvider,
+    enrolment: {
+      service: enrolmentService,
+      ...(env.STAFF_BOOTSTRAP_TOKEN !== undefined
+        ? { staffBootstrapToken: env.STAFF_BOOTSTRAP_TOKEN }
+        : {}),
+    },
+    ...(midtransProvider !== undefined ? { midtransProvider } : {}),
   });
 
-  if (!midtransProvider) {
+  if (env.STAFF_BOOTSTRAP_TOKEN === undefined) {
     app.log.warn(
-      "MIDTRANS_SERVER_KEY not set; /v1/payments/* will respond 503 until configured",
+      "STAFF_BOOTSTRAP_TOKEN is not set; POST /v1/auth/enrolment-codes will reject all requests with 503.",
     );
   }
+  if (!midtransProvider) {
+    app.log.warn(
+      "MIDTRANS_SERVER_KEY not set; /v1/payments/webhooks/midtrans will respond 503 until configured",
+    );
+  }
+  app.log.warn(
+    "Enrolment store is in-memory; persistent Postgres binding lands in KASA-21.",
+  );
 
   try {
     await app.listen({ host: env.HOST, port: env.PORT });

@@ -4,14 +4,16 @@ Kassa back-office API. Fastify 5 + TypeScript, per [docs/TECH-STACK.md](../../do
 
 ## Status
 
-Scaffold only ([KASA-22](/KASA/issues/KASA-22)). Every business endpoint is a placeholder that returns HTTP 501 with `{ error: { code: "not_implemented", ... } }`. `GET /health` is the only live endpoint and is intentionally **unversioned** so external uptime monitors ([docs/TECH-STACK.md](../../docs/TECH-STACK.md) §12, line "Synthetic checks on POS shell and API `/health`") never need to track API versions.
+Scaffold ([KASA-22](/KASA/issues/KASA-22)) plus the device-enrolment pair of endpoints from [KASA-53](/KASA/issues/KASA-53). Every other business endpoint is still a placeholder that returns HTTP 501 with `{ error: { code: "not_implemented", ... } }`. `GET /health` is the only live read endpoint and is intentionally **unversioned** so external uptime monitors ([docs/TECH-STACK.md](../../docs/TECH-STACK.md) §12, line "Synthetic checks on POS shell and API `/health`") never need to track API versions.
+
+The device enrolment endpoints currently use an in-memory `EnrolmentRepository`; the Postgres-backed implementation lands in [KASA-21](/KASA/issues/KASA-21). Drizzle table definitions for `devices` and `enrolment_codes` already live in `src/db/schema/` so KASA-21 only adds the migration runner and connection wiring.
 
 Subsequent issues wire real behaviour in:
 
-- [KASA-21](/KASA/issues/KASA-21) — Drizzle schema + migrations.
+- [KASA-21](/KASA/issues/KASA-21) — Drizzle migrations + Postgres connection.
 - [KASA-23](/KASA/issues/KASA-23) — CRUD endpoints using shared Zod schemas.
 - [KASA-24](/KASA/issues/KASA-24) — Validation preHandler wiring.
-- [KASA-25](/KASA/issues/KASA-25), [KASA-26](/KASA/issues/KASA-26) — Auth + RBAC.
+- [KASA-25](/KASA/issues/KASA-25), [KASA-26](/KASA/issues/KASA-26) — Staff session + RBAC (replaces the `STAFF_BOOTSTRAP_TOKEN` shim).
 - [KASA-27](/KASA/issues/KASA-27) — OpenAPI-from-Zod.
 
 ## Local development
@@ -44,6 +46,8 @@ All configuration is via environment variables, validated by Zod on boot. Missin
 | `HOST` | `0.0.0.0` | Bind host. |
 | `PORT` | `3000` | Bind port. |
 | `LOG_LEVEL` | `info` | Pino log level. |
+| `STAFF_BOOTSTRAP_TOKEN` | _unset_ | Min 16 chars. Bearer token that gates `POST /v1/auth/enrolment-codes` until [KASA-25](/KASA/issues/KASA-25) staff sessions ship. When unset, the endpoint returns 503. |
+| `ENROLMENT_CODE_TTL_MS` | `600000` | TTL for enrolment codes, in ms. |
 | `MIDTRANS_SERVER_KEY` | _unset_ | Midtrans Core API server key. Blank/absent → `POST /v1/payments/webhooks/midtrans` answers 503 `payments_unavailable` instead of crashing boot. **Never** commit. Local sandbox key lives in `.env`; production key comes from Fly secrets (see rotation below). |
 | `MIDTRANS_ENVIRONMENT` | `sandbox` | `sandbox` \| `production`. Switches the Midtrans base URL. Sandbox (`api.sandbox.midtrans.com`) for all non-production boots; production (`api.midtrans.com`) only on the `prd` Fly app. |
 
@@ -52,7 +56,8 @@ All configuration is via environment variables, validated by Zod on boot. Missin
 | Method | Path | Status |
 |--------|------|--------|
 | GET | `/health` | Live (unversioned, for uptime monitors) |
-| POST | `/v1/auth/enroll` | 501 |
+| POST | `/v1/auth/enrolment-codes` | Live — staff-only, issues an 8-char code bound to an outlet (10-min TTL). |
+| POST | `/v1/auth/enroll` | Live — exchanges a code + device fingerprint for `{ deviceId, apiKey, apiSecret, outlet, merchant }`. Rate-limited (10/min/IP, in-memory). |
 | POST | `/v1/auth/heartbeat` | 501 |
 | POST | `/v1/auth/pin/verify` | 501 |
 | POST | `/v1/auth/session/login` | 501 |

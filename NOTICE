@@ -39,6 +39,17 @@ Currently tracked upstream components (non-exhaustive):
 - Midtrans Core API integration — custom in-tree implementation; see
   `packages/payments/src/providers/midtrans.ts`. No upstream SDK is vendored.
 
+Bundled font binaries (apps/pos/public/fonts/):
+
+- Plus Jakarta Sans           — SIL Open Font License 1.1
+  Copyright 2020 The Plus Jakarta Sans Project Authors
+  (https://github.com/tokotype/PlusJakartaSans).
+  Full license text: apps/pos/public/fonts/PLUS-JAKARTA-SANS-OFL.txt
+- JetBrains Mono              — SIL Open Font License 1.1
+  Copyright 2020 The JetBrains Mono Project Authors
+  (https://github.com/JetBrains/JetBrainsMono).
+  Full license text: apps/pos/public/fonts/JETBRAINS-MONO-OFL.txt
+
 A complete, machine-generated attribution list will replace the summary
 above once every package in the monorepo is scaffolded and its dependency
 manifest is available (see KASA architecture docs).

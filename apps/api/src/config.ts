@@ -17,6 +17,8 @@ const envSchema = z.object({
   LOG_LEVEL: z
     .enum(["fatal", "error", "warn", "info", "debug", "trace", "silent"])
     .default("info"),
+  STAFF_BOOTSTRAP_TOKEN: z.string().min(16).optional(),
+  ENROLMENT_CODE_TTL_MS: z.coerce.number().int().positive().default(10 * 60 * 1000),
   MIDTRANS_SERVER_KEY: optionalTrimmedString,
   MIDTRANS_ENVIRONMENT: z.enum(["sandbox", "production"]).default("sandbox"),
 });
