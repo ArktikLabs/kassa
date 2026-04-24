@@ -1,14 +1,9 @@
-import { FormattedMessage } from "react-intl";
+import { CartPanel } from "../features/cart/ui/CartPanel";
 
 export function CartScreen() {
   return (
-    <section className="space-y-4">
-      <h1 className="text-2xl font-bold text-neutral-900">
-        <FormattedMessage id="cart.heading" />
-      </h1>
-      <p className="text-neutral-600">
-        <FormattedMessage id="cart.placeholder" />
-      </p>
-    </section>
+    <div className="flex h-full flex-col rounded-lg border border-neutral-200 bg-white">
+      <CartPanel />
+    </div>
   );
 }
