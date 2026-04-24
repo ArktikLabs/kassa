@@ -5,6 +5,7 @@ import { router } from "./router";
 import { IntlProvider } from "./i18n/IntlProvider";
 import { initSentry } from "./lib/sentry";
 import { registerPwa } from "./lib/pwa";
+import { SyncProvider } from "./lib/sync-provider";
 import "./styles/index.css";
 
 initSentry();
@@ -16,7 +17,9 @@ if (!rootEl) throw new Error("Root element #root not found.");
 createRoot(rootEl).render(
   <StrictMode>
     <IntlProvider>
-      <RouterProvider router={router} />
+      <SyncProvider>
+        <RouterProvider router={router} />
+      </SyncProvider>
     </IntlProvider>
   </StrictMode>,
 );

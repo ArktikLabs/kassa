@@ -50,6 +50,13 @@ const id: MessageMap = {
   "admin.heading": "Admin",
   "admin.placeholder":
     "Pengaturan outlet, kasir, dan perangkat diisi di ticket admin berikutnya.",
+  "admin.sync.heading": "Sinkronisasi data",
+  "admin.sync.phase": "Status",
+  "admin.sync.table": "Tabel aktif",
+  "admin.sync.lastSuccess": "Terakhir sukses",
+  "admin.sync.error": "Error terakhir",
+  "admin.sync.refresh": "Segarkan data",
+  "admin.sync.refreshing": "Menyegarkan…",
 };
 
 const en: MessageMap = {
@@ -86,6 +93,13 @@ const en: MessageMap = {
   "admin.heading": "Admin",
   "admin.placeholder":
     "Outlet, cashier and device settings arrive in the admin ticket.",
+  "admin.sync.heading": "Data sync",
+  "admin.sync.phase": "Status",
+  "admin.sync.table": "Active table",
+  "admin.sync.lastSuccess": "Last success",
+  "admin.sync.error": "Last error",
+  "admin.sync.refresh": "Refresh data",
+  "admin.sync.refreshing": "Refreshing…",
 };
 
 const CATALOGUES: Record<Locale, MessageMap> = {
