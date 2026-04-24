@@ -38,6 +38,29 @@ describe("api scaffold", () => {
       const body = res.json() as { error: { code: string } };
       expect(body.error.code).toBe("not_found");
     });
+
+    it("surfaces KASSA_API_VERSION when set (deploy-time commit SHA)", async () => {
+      const prev = process.env.KASSA_API_VERSION;
+      process.env.KASSA_API_VERSION = "staging-0123456789ab";
+      try {
+        const scoped = await buildApp();
+        await scoped.ready();
+        try {
+          const res = await scoped.inject({ method: "GET", url: "/health" });
+          expect(res.statusCode).toBe(200);
+          const body = res.json() as { version: string };
+          expect(body.version).toBe("staging-0123456789ab");
+        } finally {
+          await scoped.close();
+        }
+      } finally {
+        if (prev === undefined) {
+          delete process.env.KASSA_API_VERSION;
+        } else {
+          process.env.KASSA_API_VERSION = prev;
+        }
+      }
+    });
   });
 
   describe("placeholder endpoints return 501", () => {

@@ -1,6 +1,6 @@
 # Kassa CI/CD Pipeline
 
-Status: v0 (CI + CD — POS / Back Office in Cloudflare Pages production, API in Fly.io staging; preview-per-PR deferred). Owner: DevOps. Source issues: [KASA-12](/KASA/issues/KASA-12) (pipeline), [KASA-17](/KASA/issues/KASA-17) (deployable build artifacts), [KASA-18](/KASA/issues/KASA-18) (production CD — static surfaces), [KASA-107](/KASA/issues/KASA-107) (staging CD — API).
+Status: v0 (CI + CD — POS / Back Office in Cloudflare Pages production, API in Fly.io staging; preview-per-PR deferred). Owner: DevOps. Source issues: [KASA-12](/KASA/issues/KASA-12) (pipeline), [KASA-17](/KASA/issues/KASA-17) (deployable build artifacts), [KASA-18](/KASA/issues/KASA-18) (production CD — static surfaces), [KASA-107](/KASA/issues/KASA-107) (staging CD — API), [KASA-19](/KASA/issues/KASA-19) (post-deploy smoke tests).
 Companion docs: [TECH-STACK.md](./TECH-STACK.md), [ARCHITECTURE.md](./ARCHITECTURE.md), [ROADMAP.md](./ROADMAP.md).
 
 This is the authoritative description of how Kassa code moves from a contributor's branch into `main` and — in later milestones — into production. v0 covers **CI** (lint/typecheck/test/build on every PR and every push to `main`, with compiled outputs preserved as workflow artifacts) and **CD** for three surfaces: the POS PWA and Back Office SPA deploy to Cloudflare Pages, and the API deploys to a Fly.io staging app, on every successful CI run against `main`. Preview-per-PR environments and the production promotion gate for the API remain in follow-up tickets under M0.
@@ -167,9 +167,10 @@ The workflow file is [`cd.yml`](../.github/workflows/cd.yml).
 1. **`preflight`** — checks the `DEPLOY_ENABLED` repository variable and resolves the source CI run id / commit SHA. If `DEPLOY_ENABLED != true`, emits a notice and sets `ready=false`; downstream deploy jobs are skipped. This keeps main green during the pre-provisioning window and while secrets are rotated.
 2. **`deploy-pos`** — `needs: preflight`, `if: ready`. Downloads `pos-dist` via `actions/download-artifact` with `run-id` pointing at the CI run, then runs `wrangler pages deploy` for project `kassa-pos`. Environment: `production`, URL `https://kassa-pos.pages.dev`.
 3. **`deploy-back-office`** — same shape, artifact `back-office-dist`, project `kassa-back-office`, URL `https://kassa-back-office.pages.dev`.
-4. **`deploy-api-staging`** — `needs: preflight`, `if: ready`. Downloads `api-dist`, installs `flyctl`, runs `flyctl deploy --local-only` against `kassa-api-staging` using the Dockerfile and fly.toml shipped in the artifact, then runs a `/health` smoke check against `https://kassa-api-staging.fly.dev/health`. Environment: `production`, URL `https://kassa-api-staging.fly.dev`. See §3.7 for the full path.
+4. **`deploy-api-staging`** — `needs: preflight`, `if: ready`. Downloads `api-dist`, installs `flyctl`, runs `flyctl deploy --local-only --env KASSA_API_VERSION=staging-<sha12>` against `kassa-api-staging` using the Dockerfile and fly.toml shipped in the artifact. Environment: `production`, URL `https://kassa-api-staging.fly.dev`. See §3.7 for the full path.
+5. **`smoke-tests`** — `needs: [preflight, deploy-pos, deploy-back-office, deploy-api-staging]`. Runs [`scripts/deploy-smoke.sh`](../scripts/deploy-smoke.sh) to probe the three deployed surfaces and assert the API reports the commit SHA it was deployed with. See §3.9.
 
-All four deploy jobs pass the source commit SHA through to their provider (Cloudflare `--commit-hash`, Fly `--image-label staging-<sha12>`) so every deployment is traceable back to the exact SHA that produced the artifact.
+All four deploy jobs pass the source commit SHA through to their provider (Cloudflare `--commit-hash`, Fly `--image-label staging-<sha12>`) so every deployment is traceable back to the exact SHA that produced the artifact. The API also surfaces that SHA at runtime via `/health.version` (see §3.9) so the smoke tests can prove the new bits are actually serving traffic.
 
 ### 3.4 Enablement (one-time setup by the board / ops)
 
@@ -265,11 +266,11 @@ The `deploy-api-staging` job lives in [`cd.yml`](../.github/workflows/cd.yml) an
 
 1. **Download** the `api-dist` artifact (produced by CI) into `api-image/`. That folder reconstructs the workspace layout pnpm expects: root `package.json`, `pnpm-lock.yaml`, `pnpm-workspace.yaml`, `apps/api/{dist,package.json,Dockerfile,fly.toml}`, and `packages/{payments,schemas}/{dist,package.json}`.
 2. **Install `flyctl`** — pinned `superfly/flyctl-actions/setup-flyctl@<sha>` with an explicit version.
-3. **Build + deploy** — `flyctl deploy --local-only --app kassa-api-staging --config apps/api/fly.toml --dockerfile apps/api/Dockerfile --image-label staging-<sha12> --strategy rolling --wait-timeout 300`.
+3. **Build + deploy** — `flyctl deploy --local-only --app kassa-api-staging --config apps/api/fly.toml --dockerfile apps/api/Dockerfile --image-label staging-<sha12> --env KASSA_API_VERSION=staging-<sha12> --strategy rolling --wait-timeout 300`.
    - `--local-only` keeps the Docker build on the GitHub runner (no Fly remote builder charge, faster feedback when secrets aren't yet wired for the remote builder).
    - `--image-label staging-<sha12>` tags the image with the first 12 chars of the source commit so rollbacks can target a known-good image by SHA — see below.
+   - `--env KASSA_API_VERSION=staging-<sha12>` sets a deploy-time env var that `apps/api/src/routes/health.ts` reads and surfaces at `/health.version`. The smoke-tests job (§3.9) matches this against the commit SHA; a mismatch means the deploy did not roll over. This replaces the inline `/health` curl that used to live in this job (KASA-19).
    - `--strategy rolling` replaces machines one at a time; `--wait-timeout 300` blocks the job until Fly reports the new release healthy (or fails it).
-4. **Smoke-check `/health`** — up to 5 attempts with 6 s backoff against `https://kassa-api-staging.fly.dev/health`, pattern-matching `"status":"ok"`. This catches the "machine started but the app crashed on first request" class of failure that Fly's own health check can briefly paper over during a rolling deploy.
 
 **Dockerfile shape** (`apps/api/Dockerfile`): two-stage `deps → runtime` on `node:22-bookworm-slim`. The `deps` stage installs `python3 make g++` and runs `pnpm install --prod --frozen-lockfile` so `argon2` compiles against the runtime's glibc/Node ABI (the CI runner's libc is irrelevant — only the image's matters). The `runtime` stage copies the prepared `/build` tree, drops to a non-root `kassa` user, and exposes port 8080. `CMD` defaults to the web process; fly.toml's `[processes]` block overrides with the worker command.
 
@@ -312,6 +313,54 @@ Same shape as §3.5 Option C. Preferred when the defect is a code defect: open a
 - **Do not deploy a local `flyctl deploy` against `kassa-api-staging` from a developer laptop.** The deployed bytes must be reproducible from a CI artifact (§2.3). Use `workflow_dispatch` with a CI run id instead.
 - **Do not disable the staging app to "take pressure off" a failing release.** Rollback to the prior image; keep the app addressable so dashboards and alerts keep working.
 - **Do not skip the follow-up issue** — rollback without a written root cause is how the same regression ships twice.
+
+### 3.9 Post-deploy smoke tests ([KASA-19](/KASA/issues/KASA-19))
+
+The `smoke-tests` job is the last gate in `cd.yml`. It runs only after all three deploy jobs report success, and it fails the CD run if any deployed surface is unreachable, returning the wrong content, or serving a prior release. The logic lives in [`scripts/deploy-smoke.sh`](../scripts/deploy-smoke.sh) so the exact checks can also be run from an operator laptop against any environment.
+
+**What it asserts**
+
+| Surface             | URL                                           | Check                                                                           |
+|:--------------------|:----------------------------------------------|:--------------------------------------------------------------------------------|
+| API (Fly.io)        | `https://kassa-api-staging.fly.dev/health`    | HTTP 200, body contains `"status":"ok"`, `version == staging-<sha12>` (the deployed SHA). |
+| POS PWA             | `https://kassa-pos.pages.dev/`                | HTTP 200, body contains `<title>Kassa POS</title>`.                             |
+| Back Office SPA     | `https://kassa-back-office.pages.dev/`        | HTTP 200, body contains `<title>Kassa Back Office</title>`.                     |
+
+Each surface is retried up to 5 times with 6 s between attempts (~30 s per surface) so a Cloudflare Pages edge propagation or a Fly machine cold-start does not fail the gate on its own. The API version check is the only one that can catch "deploy succeeded but the old machines are still serving traffic"; the title marker for the two static surfaces catches "deploy succeeded but the project is configured to serve the wrong directory".
+
+**How "alert on failure" works today**
+
+The job exits non-zero on any failed surface and emits `::error::` annotations that surface in the CD run summary and the GitHub Checks UI. GitHub's default notification settings page the DevOps assignee and anyone watching the repo. Provider-side alerting (Better Stack synthetic probes, Sentry) lands in [KASA-71](/KASA/issues/KASA-71) (pilot-week observability); the smoke-tests job is the on-deploy gate and is intentionally in-repo so it ships with the release.
+
+**Running locally**
+
+```sh
+# Against staging, with no version pin (just checks reachability):
+scripts/deploy-smoke.sh \
+  --api-url https://kassa-api-staging.fly.dev \
+  --pos-url https://kassa-pos.pages.dev \
+  --back-office-url https://kassa-back-office.pages.dev
+
+# Pinned to an expected commit (what CD does):
+scripts/deploy-smoke.sh \
+  --api-url https://kassa-api-staging.fly.dev \
+  --pos-url https://kassa-pos.pages.dev \
+  --back-office-url https://kassa-back-office.pages.dev \
+  --expected-version staging-abc123456789
+```
+
+The script exits 0 on success, 1 on any surface/version failure, 2 on bad usage.
+
+**When a smoke-test failure is legitimate**
+
+- **Cloudflare Pages deploy queueing.** Pages occasionally queues a deploy behind a prior build that is still propagating. Re-running just the `smoke-tests` job via the Actions UI usually passes; investigate further only if two sequential reruns fail.
+- **Fly machine cold-start past the 30 s envelope.** Auto-stopped staging machines can take longer than the retry window after a long idle period. If the API check is the only failure and the `/health` body becomes `status=ok` seconds later, bump `--attempts` in the CD job before chasing an app-level cause.
+- **Genuine regression.** API returns an old `version`, POS/Back Office returns the default Pages placeholder, or any surface returns 5xx: treat as a bad release and rollback per §3.5 / §3.8.
+
+**Scope boundaries**
+
+- This job does **not** exercise authenticated paths, mutate data, or run E2E flows — those belong in the Playwright workflow (deferred). It is deliberately a "did the deploy land and is the right code serving" gate, nothing deeper.
+- The script only checks the three surfaces `cd.yml` deploys. When production API (KASA-70) or per-PR preview environments (KASA-108) land, each adds its own invocation of the same script with different URLs rather than forking the checks.
 
 ---
 
