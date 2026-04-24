@@ -1,9 +1,9 @@
 # Kassa CI/CD Pipeline
 
-Status: v0 (CI only). Owner: DevOps. Source issues: [KASA-12](/KASA/issues/KASA-12) (pipeline), [KASA-17](/KASA/issues/KASA-17) (deployable build artifacts).
+Status: v0 (CI + partial CD — static surfaces live; API/preview deferred). Owner: DevOps. Source issues: [KASA-12](/KASA/issues/KASA-12) (pipeline), [KASA-17](/KASA/issues/KASA-17) (deployable build artifacts), [KASA-18](/KASA/issues/KASA-18) (production CD — static surfaces).
 Companion docs: [TECH-STACK.md](./TECH-STACK.md), [ARCHITECTURE.md](./ARCHITECTURE.md), [ROADMAP.md](./ROADMAP.md).
 
-This is the authoritative description of how Kassa code moves from a contributor's branch into `main` and — in later milestones — into production. v0 scope covers **CI only** (lint/typecheck/test/build on every PR and every push to `main`, with compiled outputs preserved as workflow artifacts). Continuous **deployment** (Cloudflare Pages for the POS PWA, Fly.io for the API) lands in follow-up tickets under the M0 milestone.
+This is the authoritative description of how Kassa code moves from a contributor's branch into `main` and — in later milestones — into production. v0 covers **CI** (lint/typecheck/test/build on every PR and every push to `main`, with compiled outputs preserved as workflow artifacts) and **partial CD**: the POS PWA and Back Office SPA deploy to Cloudflare Pages on every successful CI run against `main`. The API → Fly.io deploy, preview-per-PR environments, and the production promotion gate remain in follow-up tickets under M0.
 
 ---
 
@@ -22,7 +22,9 @@ This is the authoritative description of how Kassa code moves from a contributor
 | Build             | `tsc -p tsconfig.build.json` (packages) + Vite (apps) (`pnpm -r build`) |
 | Build artifacts   | `actions/upload-artifact` — one per deployable, 7-day retention (see §2.3) |
 | E2E (deferred)    | Playwright — separate workflow in a later ticket |
-| CD (deferred)     | Cloudflare Pages (PWA) + Fly.io (API)   |
+| CD orchestrator   | GitHub Actions (see [`cd.yml`](../.github/workflows/cd.yml)) |
+| CD targets (live) | Cloudflare Pages — `kassa-pos`, `kassa-back-office`          |
+| CD targets (deferred) | Fly.io (API), per-PR preview environments                |
 
 All workflows live in [`.github/workflows/`](../.github/workflows). The CI workflow is [`ci.yml`](../.github/workflows/ci.yml).
 
@@ -138,34 +140,104 @@ Biome is the single lint + format tool for the whole tree, per [TECH-STACK.md §
 
 ---
 
-## 3. CD workflow (deferred to follow-up tickets)
+## 3. CD workflow (`cd.yml`)
 
-v0 CD is **not yet live**. The target shape, per [TECH-STACK.md](./TECH-STACK.md) and [ROADMAP.md](./ROADMAP.md) M0 exit criteria, is:
+v0 CD is **partially live**: the POS PWA and Back Office SPA ship to Cloudflare Pages on every successful CI run against `main`. The API, preview-per-PR environments, and a separate production promotion gate are tracked as follow-ups (see §6).
 
-| Environment | Target                                    | Trigger                      |
-|:------------|:------------------------------------------|:-----------------------------|
-| Preview     | Cloudflare Pages (PWA), Fly.io staging app (API), Neon branch DB | PR opened/updated            |
-| Staging     | Same as preview, pinned to `main`         | Merge to `main`              |
-| Production  | Cloudflare Pages (PWA), Fly.io (`sin` region) + Neon main (Postgres) | Manual promotion from staging |
+The workflow file is [`cd.yml`](../.github/workflows/cd.yml).
 
-Secrets required (to be set in GitHub Secrets at CD time, not committed anywhere):
+### 3.1 Target shape vs. v0 status
 
-| Variable                     | Purpose                                     |
-|:-----------------------------|:--------------------------------------------|
-| `CLOUDFLARE_API_TOKEN`       | Cloudflare Pages deploys (POS PWA)          |
-| `CLOUDFLARE_ACCOUNT_ID`      | Cloudflare Pages project scoping            |
-| `FLY_API_TOKEN`              | Fly.io deploy for `apps/api`                |
-| `NEON_API_KEY`               | Ephemeral Neon branch per PR (preview DBs)  |
-| `SENTRY_AUTH_TOKEN`          | Source map uploads (both PWA and API)       |
+| Environment | Target                                    | Trigger                                  | v0 status |
+|:------------|:------------------------------------------|:-----------------------------------------|:----------|
+| Preview     | Cloudflare Pages (PWA), Fly.io staging app (API), Neon branch DB | PR opened/updated                        | Deferred ([KASA-18](/KASA/issues/KASA-18) child) |
+| Staging     | Same as preview, pinned to `main`         | Merge to `main`                          | Deferred ([KASA-18](/KASA/issues/KASA-18) child) |
+| Production — static | Cloudflare Pages (`kassa-pos`, `kassa-back-office`) | Successful CI run on `main`       | **Live** (this section) |
+| Production — API    | Fly.io (`sin` region) + Neon main (Postgres) | Manual promotion from staging         | Deferred ([KASA-18](/KASA/issues/KASA-18) child) |
 
-See §6 for the child issues that will land each piece.
+### 3.2 Triggers
 
-### Rollback procedure (target state)
+- **`workflow_run`** on `CI` with `branches: [main]` and `types: [completed]`. The job gate requires `conclusion == 'success'` so a red CI run never deploys. The CD run consumes the CI run's uploaded `pos-dist` / `back-office-dist` artifacts directly — **no rebuild on the deploy runner** — so the bytes served in production are the exact bytes CI exercised in the lint → build → typecheck → test chain.
+- **`workflow_dispatch`** with a single `ci_run_id` input. This is the in-repo rollback path: provide the CI run id of a known-good prior main commit and CD re-downloads those artifacts and redeploys. The Cloudflare-dashboard rollback is the UI-driven equivalent; use whichever is more convenient on the day (§3.5).
 
-1. Identify the failing deployment via Sentry alerts or the Fly.io/Cloudflare deploy log.
-2. `fly deploy --image <last-known-good>` for the API, or re-publish the prior Cloudflare Pages deployment from the dashboard (or trigger the CD workflow on the known-good SHA).
-3. Verify via `/health` (API) and the POS PWA load test.
-4. Open a follow-up issue for the root cause; a rollback is not the fix.
+### 3.3 Jobs
+
+1. **`preflight`** — checks the `DEPLOY_ENABLED` repository variable and resolves the source CI run id / commit SHA. If `DEPLOY_ENABLED != true`, emits a notice and sets `ready=false`; downstream deploy jobs are skipped. This keeps main green during the pre-provisioning window and while secrets are rotated.
+2. **`deploy-pos`** — `needs: preflight`, `if: ready`. Downloads `pos-dist` via `actions/download-artifact` with `run-id` pointing at the CI run, then runs `wrangler pages deploy` for project `kassa-pos`. Environment: `production`, URL `https://kassa-pos.pages.dev`.
+3. **`deploy-back-office`** — same shape, artifact `back-office-dist`, project `kassa-back-office`, URL `https://kassa-back-office.pages.dev`.
+
+Both deploy jobs pass `--commit-hash` to Cloudflare so every Pages deployment is traceable back to the exact SHA that produced the artifact.
+
+### 3.4 Enablement (one-time setup by the board / ops)
+
+The workflow is inert until these three steps complete. This is intentional: it lets the workflow YAML land before the Cloudflare account + GitHub secrets are provisioned, and it lets CD be turned off by flipping a single variable if we ever need to.
+
+1. **Create the Cloudflare Pages projects** (in the Cloudflare dashboard, once):
+   - `kassa-pos` — production branch `main`, framework "None" (artifact is pre-built), build command empty, output directory `/` (we upload the artifact contents directly).
+   - `kassa-back-office` — same settings.
+   Projects can be created empty; the first deploy fills them.
+2. **Provision secrets in the GitHub `production` environment** (Settings → Environments → `production`):
+   - `CLOUDFLARE_API_TOKEN` — a token with `Account.Cloudflare Pages: Edit` on the Kassa Cloudflare account (scope narrowly).
+   - `CLOUDFLARE_ACCOUNT_ID` — the account id owning the two Pages projects.
+3. **Flip the enablement variable** (Settings → Variables → Repository):
+   - `DEPLOY_ENABLED=true`.
+
+From that point forward, every green CI run on `main` triggers a production Pages deploy for both surfaces.
+
+### 3.5 Rollback procedure
+
+A deploy is considered bad when any of these signal (within ~10 min of the deploy landing):
+
+- Sentry error-rate spike on the tenant(s) using the deployed surface.
+- The Better Stack synthetic check against the POS shell URL fails two checks in a row.
+- A reproducible functional regression is observed by the on-call merchant or the team.
+
+The rollback goal is **restore service first, root-cause after**. Do not wait for the fix PR.
+
+#### Option A — Cloudflare dashboard (preferred, fastest)
+
+Cloudflare Pages retains every deployment indefinitely. Rolling back does not require a new artifact build.
+
+1. Open the Cloudflare dashboard → Pages → `kassa-pos` (or `kassa-back-office`) → Deployments.
+2. Find the last known-good production deployment (timestamp / commit hash columns).
+3. Click the `…` menu → **Rollback to this deployment**. Cloudflare promotes the older deployment atomically; the `kassa-pos.pages.dev` alias flips within seconds.
+4. Verify:
+   - Hard-refresh the POS shell URL; confirm the asset hashes and app shell match the prior build.
+   - Sentry error rate subsides within a minute.
+   - Better Stack check flips green on the next cycle.
+5. Open a follow-up issue citing the failing commit SHA; block further merges to `main` until the fix lands.
+
+#### Option B — GitHub `workflow_dispatch` (auditable, when the dashboard is unavailable)
+
+Useful when the dashboard is rate-limited, when you want the rollback recorded in GitHub's Actions history, or when you need to rollback both surfaces in lock-step from one operator action.
+
+1. In GitHub: Actions → `CI` → find the run id of the known-good main commit (column: "Run number" is not the id; copy the numeric id from the URL `/actions/runs/<id>`).
+2. Actions → `CD` → Run workflow → paste the CI run id into `ci_run_id` → Run.
+3. `workflow_dispatch` re-resolves the commit SHA for that CI run, downloads the same artifacts CI produced, and redeploys to both Pages projects.
+4. Verify as in Option A step 4.
+
+#### Option C — revert-and-deploy-forward (when the bad build was pushed minutes ago)
+
+If the failing deploy is the most recent merge and the fix is trivially "undo the merge", open a revert PR. On merge, CI runs, CD fires, and production flips back. This is slower than A/B because it waits for CI (~2 min), but it records the rollback in git history — preferred when the defect is a code defect rather than a build/infra defect.
+
+#### What never to do
+
+- **Do not manually edit the Pages deployment via the Cloudflare API** without a corresponding workflow run — the deployed bytes would not be reproducible from a CI artifact, defeating the provenance guarantee in §2.3.
+- **Do not disable CD by deleting the workflow file.** Flip `DEPLOY_ENABLED=false` instead; that leaves the YAML reviewable and re-enables with one variable flip.
+- **Do not skip the follow-up issue.** A rollback without a written root cause is how the same regression ships twice.
+
+### 3.6 Secrets and variables (reference)
+
+| Key                          | Scope                      | Purpose                                         | Status |
+|:-----------------------------|:---------------------------|:------------------------------------------------|:-------|
+| `CLOUDFLARE_API_TOKEN`       | Env: `production` (secret) | `wrangler pages deploy` auth                    | Required for current CD |
+| `CLOUDFLARE_ACCOUNT_ID`      | Env: `production` (secret) | Cloudflare account scoping                      | Required for current CD |
+| `DEPLOY_ENABLED`             | Repo (variable)            | Master switch — `true` turns on deploy jobs     | Required for current CD |
+| `FLY_API_TOKEN`              | Env: `production` (secret) | Fly.io deploy for `apps/api`                    | Deferred (follow-up) |
+| `NEON_API_KEY`               | Env: `preview` (secret)    | Ephemeral Neon branch per PR                    | Deferred (follow-up) |
+| `SENTRY_AUTH_TOKEN`          | Env: `production` (secret) | Source map uploads (both PWA and API)           | Deferred (follow-up) |
+
+Secrets never live in workflow YAML; the workflow references them via `${{ secrets.NAME }}` and GitHub injects them at runtime.
 
 ---
 
@@ -200,15 +272,17 @@ These are non-negotiable:
 
 ## 6. Follow-ups tracked against this doc
 
-These are out of scope for the initial CI setup but are **prerequisites to finishing M0**. Each gets its own child issue under [KASA-12](/KASA/issues/KASA-12):
+These are out of scope for the initial CI + static-surface CD setup but are **prerequisites to finishing M0**. Each gets its own child issue under [KASA-12](/KASA/issues/KASA-12) or [KASA-18](/KASA/issues/KASA-18):
 
-1. **Preview deploys for the POS PWA** — Cloudflare Pages project + preview-per-PR workflow.
-2. **Preview + staging deploys for the API** — Fly.io app (`kassa-api-staging`, region `sin`), Neon branch per PR.
-3. **Playwright E2E workflow** — nightly + on-merge run, not on PR.
-4. **Production promotion** — workflow-dispatch `cd-prod.yml` with environment protection rules.
-5. **Turborepo remote cache** — named in [TECH-STACK.md §10.3](./TECH-STACK.md); wire it once CI is live and we have a signal on cold vs warm install time.
-
-Done: **Lint lane (Biome)** landed in [KASA-13](/KASA/issues/KASA-13) (PR #18) with root-scan wiring documented in §2.4, and [KASA-101](/KASA/issues/KASA-101) closed out this doc update.
+1. ~~**Lint lane (Biome)**~~ — landed via [KASA-13](/KASA/issues/KASA-13) (PR #18) with root-scan wiring documented in §2.4; doc reconciliation closed out by [KASA-101](/KASA/issues/KASA-101).
+2. ~~**Build artifacts**~~ — landed via [KASA-17](/KASA/issues/KASA-17).
+3. ~~**Production CD for static surfaces**~~ — landed via [KASA-18](/KASA/issues/KASA-18) (this section).
+4. **API → Fly.io staging deploy** — tracked in [KASA-107](/KASA/issues/KASA-107) (M0). Dockerfile, `fly.toml` with the two-process (web + worker) model from [TECH-STACK.md §5.2](./TECH-STACK.md), Fly app `kassa-api-staging` in `sin`, `FLY_API_TOKEN` secret, `deploy-api-staging` job in `cd.yml` consuming the `api-dist` artifact.
+5. **API → Fly.io production deploy** — tracked in [KASA-70](/KASA/issues/KASA-70) (M4). Production Fly app, Neon production branch, Midtrans prod keys, Sentry release tagging, manual promotion gate.
+6. **Preview-per-PR environments** — tracked in [KASA-108](/KASA/issues/KASA-108) (M0, depends on KASA-107). Cloudflare Pages preview deploys for both static surfaces, Fly.io staging redeploy for the API, Neon branch DB per PR, teardown on PR close.
+7. **Production promotion gate** — `cd-prod.yml` with `workflow_dispatch` and environment protection rules (required reviewers) for the API cutover once staging/preview are live.
+8. **Playwright E2E workflow** — nightly + on-merge run, not on PR.
+9. **Turborepo remote cache** — named in [TECH-STACK.md §10.3](./TECH-STACK.md); wire it once CI is live and we have a signal on cold vs warm install time.
 
 ---
 
