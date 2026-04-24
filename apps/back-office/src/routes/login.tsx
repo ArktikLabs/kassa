@@ -7,7 +7,7 @@ import { getSnapshot } from "../data/store";
 import { saveSession } from "../lib/session";
 
 /*
- * Login route (TECH-STACK §7.1 / ARCHITECTURE §3.4).
+ * Login route (ARCHITECTURE §4.1 auth contract).
  *
  * In the scaffold we match the email + password against the seeded
  * staff row and issue a local session. Wiring to `POST /v1/auth/
