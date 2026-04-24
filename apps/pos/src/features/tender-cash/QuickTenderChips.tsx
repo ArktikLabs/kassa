@@ -24,11 +24,7 @@ interface QuickTenderChipsProps {
   disabled?: boolean;
 }
 
-export function QuickTenderChips({
-  totalIdr,
-  onPick,
-  disabled,
-}: QuickTenderChipsProps) {
+export function QuickTenderChips({ totalIdr, onPick, disabled }: QuickTenderChipsProps) {
   const intl = useIntl();
   return (
     <div

@@ -17,7 +17,10 @@ import { kassaSale, type KassaSale } from "./schema.ts";
  */
 
 export class SaleFinalizeError extends Error {
-  constructor(message: string, public override readonly cause?: unknown) {
+  constructor(
+    message: string,
+    public override readonly cause?: unknown,
+  ) {
     super(message);
     this.name = "SaleFinalizeError";
   }

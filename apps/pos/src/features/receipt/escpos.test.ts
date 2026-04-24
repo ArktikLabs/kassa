@@ -1,10 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  EscPosBuilder,
-  centerLineForWidth,
-  encodeReceipt,
-  padBetweenForWidth,
-} from "./escpos.ts";
+import { EscPosBuilder, centerLineForWidth, encodeReceipt, padBetweenForWidth } from "./escpos.ts";
 
 describe("EscPosBuilder", () => {
   it("emits ESC @ at the start when init() is called", () => {
@@ -25,17 +20,11 @@ describe("EscPosBuilder", () => {
 
 describe("padBetweenForWidth", () => {
   it("right-aligns the amount inside the given column width", () => {
-    expect(padBetweenForWidth("Total", "Rp 50.000", 32)).toBe(
-      "Total                  Rp 50.000",
-    );
+    expect(padBetweenForWidth("Total", "Rp 50.000", 32)).toBe("Total                  Rp 50.000");
   });
 
   it("elides the left side with an ellipsis when it would overflow", () => {
-    const result = padBetweenForWidth(
-      "An extremely long product name here",
-      "Rp 1",
-      32,
-    );
+    const result = padBetweenForWidth("An extremely long product name here", "Rp 1", 32);
     expect(result.endsWith("Rp 1")).toBe(true);
     expect(result).toHaveLength(32);
     expect(result).toContain("…");
@@ -44,9 +33,7 @@ describe("padBetweenForWidth", () => {
 
 describe("centerLineForWidth", () => {
   it("centers short text within the paper width", () => {
-    expect(centerLineForWidth("Kassa", 32)).toBe(
-      "             Kassa",
-    );
+    expect(centerLineForWidth("Kassa", 32)).toBe("             Kassa");
   });
 });
 

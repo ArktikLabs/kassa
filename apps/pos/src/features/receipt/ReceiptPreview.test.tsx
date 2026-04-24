@@ -53,15 +53,11 @@ const outlet: Outlet = {
 
 describe("ReceiptPreview", () => {
   it("renders the outlet name, totals, and computed change for the 58mm layout", () => {
-    renderWithIntl(
-      <ReceiptPreview sale={sale} outlet={outlet} paperWidth="58mm" />,
-    );
+    renderWithIntl(<ReceiptPreview sale={sale} outlet={outlet} paperWidth="58mm" />);
     const preview = screen.getByTestId("receipt-preview");
     expect(preview).toHaveAttribute("data-paper-width", "58mm");
     expect(preview).toHaveStyle({ width: "280px" });
-    expect(screen.getByTestId("receipt-outlet-name")).toHaveTextContent(
-      "Warung Maju",
-    );
+    expect(screen.getByTestId("receipt-outlet-name")).toHaveTextContent("Warung Maju");
     expect(preview.textContent).toMatch(/Total/);
     expect(preview.textContent).toMatch(/50\.000/);
     expect(preview.textContent).toMatch(/Kembalian/);
@@ -69,9 +65,7 @@ describe("ReceiptPreview", () => {
   });
 
   it("switches to the 380px width for 80mm paper", () => {
-    renderWithIntl(
-      <ReceiptPreview sale={sale} outlet={outlet} paperWidth="80mm" />,
-    );
+    renderWithIntl(<ReceiptPreview sale={sale} outlet={outlet} paperWidth="80mm" />);
     const preview = screen.getByTestId("receipt-preview");
     expect(preview).toHaveAttribute("data-paper-width", "80mm");
     expect(preview).toHaveStyle({ width: "380px" });
