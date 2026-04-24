@@ -130,3 +130,23 @@ Every error response uses the shared shape:
 ```
 
 See `src/lib/errors.ts`. Client is expected to treat 5xx and network errors as retriable; 4xx as terminal (except 409 on idempotency keys once implemented).
+
+## Deployment
+
+Staging (`kassa-api-staging` on Fly.io, region `sin`) deploys automatically on every successful CI run against `main` via [`cd.yml` → `deploy-api-staging`](../../.github/workflows/cd.yml). The Dockerfile and fly.toml travel with the `api-dist` CI artifact so rollback replays the exact infra config each release shipped with — see [docs/CI-CD.md §3.7 and §3.8](../../docs/CI-CD.md) for the full deploy path and rollback runbook.
+
+Local `flyctl deploy` (rare; prefer `workflow_dispatch`) runs from the **repo root** so the Docker build context has the full workspace:
+
+```bash
+# from repo root, with the workspace built (so dist/ is present)
+pnpm -r build
+flyctl deploy . \
+  --app kassa-api-staging \
+  --config apps/api/fly.toml \
+  --dockerfile apps/api/Dockerfile \
+  --local-only
+```
+
+Running `flyctl deploy` from `apps/api/` will fail — the Dockerfile needs `pnpm-lock.yaml` and the `packages/` tree, which only exist at the repo root.
+
+Production (`kassa-api`) lands under [KASA-70](/KASA/issues/KASA-70) in M4 with a manual promotion gate.
