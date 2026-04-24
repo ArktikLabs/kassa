@@ -18,9 +18,10 @@ export function CartEditSheet({ line, onClose, onApply, onRemove }: CartEditShee
   const intl = useIntl();
   const [draft, setDraft] = useState(0);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: itemId intentionally in deps to resync draft when the edited line's identity changes, not just its quantity
   useEffect(() => {
     setDraft(line?.quantity ?? 0);
-  }, [line?.quantity]);
+  }, [line?.itemId, line?.quantity]);
 
   if (!line) return null;
 
