@@ -38,6 +38,21 @@ async function midtransWebhookHandler(
     throw err;
   }
 
+  // Surface the silent clock swap so ops can correlate a suspicious occurredAt
+  // with a real Midtrans payload. Deliberately omit the raw payload: it can
+  // carry signature_key and other PII-adjacent fields.
+  if (event.malformedProviderTimestamp !== undefined) {
+    req.log.warn(
+      {
+        provider: provider.name,
+        providerOrderId: event.providerOrderId,
+        rawTransactionTime: event.malformedProviderTimestamp,
+        occurredAt: event.occurredAt,
+      },
+      "midtrans webhook transaction_time unparseable; fell back to server clock",
+    );
+  }
+
   // Dedupe on the normalized status so Midtrans's capture + settlement
   // (both of which collapse to "paid") don't double-emit tender.paid.
   if (app.webhookDedupe.check(event.providerOrderId, event.status)) {
