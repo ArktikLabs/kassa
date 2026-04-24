@@ -60,7 +60,7 @@ There is **no separate "API gateway" service**, **no general-purpose message bro
 
 ## 2. Component Structure
 
-Source lives in a single TypeScript monorepo (pnpm workspaces; Turborepo added in a later ticket). Packages are scaffolded incrementally as tickets land; only `apps/api` exists today.
+Source lives in a single TypeScript monorepo (pnpm workspaces; Turborepo added in a later ticket). Packages are scaffolded incrementally as tickets land. Present workspaces: `apps/api` (KASA-22) and `packages/payments` (KASA-54, vendor-agnostic payment provider abstraction + Midtrans QRIS implementation).
 
 ### 2.1 POS PWA (client) — `apps/pos`
 

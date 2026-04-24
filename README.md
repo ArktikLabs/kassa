@@ -44,13 +44,15 @@ See [docs/TECH-STACK.md](./docs/TECH-STACK.md) for decisive rationale on every s
 
 TypeScript monorepo driven by pnpm workspaces (Turborepo integration lands in a later ticket). Subsystems are scaffolded incrementally.
 
-```
+```text
 .
 ├── apps/
-│   └── api/           # Fastify back-office API (scaffolded in KASA-22)
-├── docs/              # Tech stack, architecture, design system, workflows
-├── legal/             # CLAs and legal notices
-├── package.json       # Workspace root
+│   └── api/                   # Fastify back-office API (scaffolded in KASA-22)
+├── packages/
+│   └── payments/              # Vendor-agnostic payment provider abstraction + Midtrans QRIS (KASA-54)
+├── docs/                      # Tech stack, architecture, design system, workflows
+├── legal/                     # CLAs and legal notices
+├── package.json               # Workspace root
 ├── pnpm-workspace.yaml
 └── README.md
 ```

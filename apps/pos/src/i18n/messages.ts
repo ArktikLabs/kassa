@@ -26,6 +26,9 @@ const id: MessageMap = {
   "conn.syncing": "Sinkronisasi · {count}",
   "conn.offline": "Offline — tersimpan lokal",
   "conn.error": "Sync gagal — ketuk untuk coba lagi",
+  "pwa.updateAvailable": "Update tersedia — muat ulang",
+  "pwa.updateAccept": "Muat ulang",
+  "pwa.offlineReady": "Siap untuk dipakai offline",
   "enrol.heading": "Enrol perangkat",
   "enrol.intro":
     "Masukkan kode 8 karakter dari Back Office, atau pindai QR-nya, untuk menautkan tablet ini ke outlet Anda.",
@@ -89,6 +92,13 @@ const id: MessageMap = {
   "admin.reset.cancel": "Batal",
   "admin.reset.confirming": "Mereset…",
   "admin.reset.toast": "Perangkat di-reset. Masukkan kode enrolment baru untuk melanjutkan.",
+  "admin.sync.heading": "Sinkronisasi data",
+  "admin.sync.phase": "Status",
+  "admin.sync.table": "Tabel aktif",
+  "admin.sync.lastSuccess": "Terakhir sukses",
+  "admin.sync.error": "Error terakhir",
+  "admin.sync.refresh": "Segarkan data",
+  "admin.sync.refreshing": "Menyegarkan…",
 };
 
 const en: MessageMap = {
@@ -101,6 +111,9 @@ const en: MessageMap = {
   "conn.syncing": "Syncing · {count}",
   "conn.offline": "Offline — saved locally",
   "conn.error": "Sync failed — tap to retry",
+  "pwa.updateAvailable": "Update available — reload to apply",
+  "pwa.updateAccept": "Reload",
+  "pwa.offlineReady": "Ready to use offline",
   "enrol.heading": "Enrol device",
   "enrol.intro":
     "Enter the 8-character code from the Back Office, or scan its QR, to link this tablet to your outlet.",
@@ -165,6 +178,13 @@ const en: MessageMap = {
   "admin.reset.cancel": "Cancel",
   "admin.reset.confirming": "Resetting…",
   "admin.reset.toast": "Device reset. Enter a new enrolment code to continue.",
+  "admin.sync.heading": "Data sync",
+  "admin.sync.phase": "Status",
+  "admin.sync.table": "Active table",
+  "admin.sync.lastSuccess": "Last success",
+  "admin.sync.error": "Last error",
+  "admin.sync.refresh": "Refresh data",
+  "admin.sync.refreshing": "Refreshing…",
 };
 
 const CATALOGUES: Record<Locale, MessageMap> = {

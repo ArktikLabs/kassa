@@ -1,43 +1,82 @@
-/*
- * Dexie schema for the POS PWA. IndexedDB is the offline source of truth —
- * `device_secret` is stored here instead of localStorage because localStorage
- * is synchronous (blocks tender rendering) and ~5 MB (ARCHITECTURE.md §3).
- *
- * The M2 schema covers only the tables device enrolment needs. Catalog,
- * stock, and pending-sale tables land under KASA-57 and add `version(2)`.
- * Version bumps must be additive — never mutate a shipped version() call.
- */
+import {
+  DB_NAME,
+  DB_VERSION,
+  DbOpenError,
+  KassaDexie,
+  openKassaDb,
+  resetKassaDb,
+  type OpenOptions,
+} from "./schema.ts";
+import { bomsRepo, type BomsRepo } from "./boms.ts";
+import { deviceMetaRepo, type DeviceMetaRepo } from "./device-meta.ts";
+import { deviceSecretRepo, type DeviceSecretRepo } from "./device-secret.ts";
+import { itemsRepo, type ItemsRepo } from "./items.ts";
+import { outletsRepo, type OutletsRepo } from "./outlets.ts";
+import { pendingSalesRepo, type PendingSalesRepo } from "./pending-sales.ts";
+import { stockSnapshotRepo, type StockSnapshotRepo } from "./stock-snapshot.ts";
+import { syncStateRepo, type SyncStateRepo } from "./sync-state.ts";
+import { uomsRepo, type UomsRepo } from "./uoms.ts";
 
-import Dexie, { type Table } from "dexie";
-
-export interface DeviceSecretRow {
-  id: "singleton";
-  deviceId: string;
-  apiKey: string;
-  apiSecret: string;
-  outletId: string;
-  outletName: string;
-  merchantId: string;
-  merchantName: string;
-  enrolledAt: string;
+export interface Repos {
+  items: ItemsRepo;
+  boms: BomsRepo;
+  uoms: UomsRepo;
+  outlets: OutletsRepo;
+  stockSnapshot: StockSnapshotRepo;
+  pendingSales: PendingSalesRepo;
+  syncState: SyncStateRepo;
+  deviceSecret: DeviceSecretRepo;
+  deviceMeta: DeviceMetaRepo;
 }
 
-export interface DeviceMetaRow {
-  id: "singleton";
-  fingerprint: string;
+export function createRepos(db: KassaDexie): Repos {
+  return {
+    items: itemsRepo(db),
+    boms: bomsRepo(db),
+    uoms: uomsRepo(db),
+    outlets: outletsRepo(db),
+    stockSnapshot: stockSnapshotRepo(db),
+    pendingSales: pendingSalesRepo(db),
+    syncState: syncStateRepo(db),
+    deviceSecret: deviceSecretRepo(db),
+    deviceMeta: deviceMetaRepo(db),
+  };
 }
 
-export class KassaDatabase extends Dexie {
-  deviceSecret!: Table<DeviceSecretRow, "singleton">;
-  deviceMeta!: Table<DeviceMetaRow, "singleton">;
-
-  constructor(name = "kassa-pos") {
-    super(name);
-    this.version(1).stores({
-      deviceSecret: "id",
-      deviceMeta: "id",
-    });
-  }
+export interface Database {
+  db: KassaDexie;
+  repos: Repos;
+  close(): void;
 }
 
-export const db = new KassaDatabase();
+let singleton: Database | null = null;
+
+export async function getDatabase(options?: OpenOptions): Promise<Database> {
+  if (singleton) return singleton;
+  const db = await openKassaDb(DB_NAME, options);
+  singleton = {
+    db,
+    repos: createRepos(db),
+    close: () => {
+      db.close();
+      singleton = null;
+    },
+  };
+  return singleton;
+}
+
+export function _resetDatabaseSingletonForTest(): void {
+  singleton?.close();
+  singleton = null;
+}
+
+export {
+  DB_NAME,
+  DB_VERSION,
+  DbOpenError,
+  KassaDexie,
+  openKassaDb,
+  resetKassaDb,
+};
+export type { OpenOptions };
+export * from "./types.ts";

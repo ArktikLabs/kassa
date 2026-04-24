@@ -1,5 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { db } from "../data/db/index";
+import Dexie from "dexie";
+import {
+  _resetDatabaseSingletonForTest,
+  DB_NAME,
+  getDatabase,
+} from "../data/db/index";
 import {
   _resetForTest,
   enrolDevice,
@@ -35,8 +40,8 @@ function mockFetchError(status: number, code: string, message = "nope"): Respons
 describe("enrolment lib", () => {
   beforeEach(async () => {
     _resetForTest();
-    await db.deviceSecret.clear();
-    await db.deviceMeta.clear();
+    _resetDatabaseSingletonForTest();
+    await Dexie.delete(DB_NAME);
   });
 
   afterEach(() => {
@@ -57,14 +62,15 @@ describe("enrolment lib", () => {
     const device = await enrolDevice(VALID_CODE);
 
     expect(device.outlet.name).toBe("Warung Maju");
-    const row = await db.deviceSecret.get("singleton");
+    const { repos } = await getDatabase();
+    const row = await repos.deviceSecret.get();
     expect(row?.apiKey).toBe("pk_live_test");
     expect(row?.apiSecret).toBe("sk_live_test");
     expect(row?.outletName).toBe("Warung Maju");
     expect(isEnrolled()).toBe(true);
 
     // Fingerprint is persisted so retries reuse the same value.
-    const meta = await db.deviceMeta.get("singleton");
+    const meta = await repos.deviceMeta.get();
     expect(meta?.fingerprint).toMatch(/^[0-9a-f-]{36}$/i);
   });
 
@@ -128,10 +134,11 @@ describe("enrolment lib", () => {
     await resetDevice();
 
     expect(isEnrolled()).toBe(false);
-    expect(await db.deviceSecret.get("singleton")).toBeUndefined();
+    const { repos } = await getDatabase();
+    expect(await repos.deviceSecret.get()).toBeUndefined();
     // Fingerprint persists across reset so the re-enrolment can still
     // correlate to the tablet's prior audit log.
-    const meta = await db.deviceMeta.get("singleton");
+    const meta = await repos.deviceMeta.get();
     expect(meta).toBeDefined();
   });
 

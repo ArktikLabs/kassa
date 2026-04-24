@@ -12,13 +12,8 @@
  * subscribers whenever the secret changes.
  */
 
-import {
-  ensureFingerprint,
-  readDeviceSecret,
-  resetDeviceCaches,
-  writeDeviceSecret,
-} from "../data/db/device-repo";
-import type { DeviceSecretRow } from "../data/db/index";
+import { getDatabase } from "../data/db/index";
+import type { DeviceSecret } from "../data/db/index";
 import {
   EnrolApiError,
   enrolDevice as enrolDeviceApi,
@@ -36,7 +31,7 @@ let snapshot: EnrolmentSnapshot = { state: "loading" };
 const listeners = new Set<Listener>();
 let hydration: Promise<EnrolmentSnapshot> | null = null;
 
-function toEnrolled(row: DeviceSecretRow): EnrolledDevice {
+function toEnrolled(row: DeviceSecret): EnrolledDevice {
   return {
     deviceId: row.deviceId,
     apiKey: row.apiKey,
@@ -61,7 +56,8 @@ export function hydrateEnrolment(): Promise<EnrolmentSnapshot> {
   if (hydration) return hydration;
   hydration = (async () => {
     try {
-      const row = await readDeviceSecret();
+      const { repos } = await getDatabase();
+      const row = await repos.deviceSecret.get();
       const next: EnrolmentSnapshot = row
         ? { state: "enrolled", device: toEnrolled(row) }
         : { state: "unenrolled" };
@@ -99,9 +95,10 @@ export function subscribe(listener: Listener): () => void {
  * `EnrolledDevice` for toast copy; errors are re-thrown as `EnrolApiError`.
  */
 export async function enrolDevice(code: string): Promise<EnrolledDevice> {
-  const deviceFingerprint = await ensureFingerprint();
+  const { repos } = await getDatabase();
+  const deviceFingerprint = await repos.deviceMeta.ensureFingerprint();
   const device = await enrolDeviceApi({ code: code.trim().toUpperCase(), deviceFingerprint });
-  await writeDeviceSecret({
+  await repos.deviceSecret.set({
     deviceId: device.deviceId,
     apiKey: device.apiKey,
     apiSecret: device.apiSecret,
@@ -115,8 +112,13 @@ export async function enrolDevice(code: string): Promise<EnrolledDevice> {
   return device;
 }
 
+/**
+ * Clear the stored device secret but keep the fingerprint so a re-enrolment
+ * on the same tablet remains correlatable to its prior audit log entry.
+ */
 export async function resetDevice(): Promise<void> {
-  await resetDeviceCaches();
+  const { repos } = await getDatabase();
+  await repos.deviceSecret.clear();
   publish({ state: "unenrolled" });
 }
 

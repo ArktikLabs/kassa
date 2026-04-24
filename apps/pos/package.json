@@ -10,17 +10,21 @@
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "typecheck": "tsc -b --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:e2e": "playwright test"
   },
   "dependencies": {
+    "@kassa/schemas": "workspace:*",
     "@sentry/react": "^8.50.0",
     "@tanstack/react-router": "^1.87.0",
     "dexie": "^4.0.10",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "react-intl": "^7.1.0"
+    "react-intl": "^7.1.0",
+    "zod": "^3.23.8"
   },
   "devDependencies": {
+    "@playwright/test": "^1.49.0",
     "@tailwindcss/vite": "^4.0.0",
     "@testing-library/dom": "^10.4.0",
     "@testing-library/jest-dom": "^6.6.0",
@@ -38,7 +42,10 @@
     "vite-plugin-pwa": "^0.21.1",
     "vitest": "^2.1.4",
     "workbox-core": "^7.3.0",
+    "workbox-expiration": "^7.3.0",
     "workbox-precaching": "^7.3.0",
+    "workbox-routing": "^7.3.0",
+    "workbox-strategies": "^7.3.0",
     "workbox-window": "^7.3.0"
   },
   "engines": {
