@@ -66,6 +66,23 @@ export interface PendingSaleItem {
   lineTotalIdr: Rupiah;
 }
 
+/**
+ * Outbox lifecycle:
+ *  - `queued` — ready to push on the next drain cycle.
+ *  - `sending` — a drain picked the row up and is awaiting the response.
+ *    On app boot any stuck `sending` rows are reset to `queued` because
+ *    the tab may have died mid-flight.
+ *  - `error` — the last POST returned a retriable failure (network, 5xx,
+ *    408, 429). The drain will re-enter these rows next cycle and the SW
+ *    `BackgroundSyncPlugin` replays in-flight requests across activations.
+ *  - `needs_attention` — the server returned a terminal validation
+ *    failure (4xx other than 408/409/429). Surfaced in the admin
+ *    "Perlu perhatian" list; clerk requeues with "Coba kirim ulang".
+ *  - `synced` — the server has canonical knowledge of the sale (200 on
+ *    first attempt or 409 on a duplicate). Kept for receipt reprints;
+ *    `serverSaleName` is the server's canonical identifier used for
+ *    back-office links.
+ */
 export interface PendingSale {
   localSaleId: string;
   outletId: string;
@@ -77,10 +94,16 @@ export interface PendingSale {
   totalIdr: Rupiah;
   items: readonly PendingSaleItem[];
   tenders: readonly PendingSaleTender[];
-  status: "queued" | "sending" | "error";
+  status: "queued" | "sending" | "error" | "needs_attention" | "synced";
   attempts: number;
   lastError: string | null;
   lastAttemptAt: string | null;
+  /**
+   * Server's canonical sale identifier, populated by the first 2xx or by
+   * the 409 reconciliation fetch. `null` until the sale is durably on the
+   * server; the receipt reprint screen can still render from the local row.
+   */
+  serverSaleName: string | null;
 }
 
 export interface SyncState {

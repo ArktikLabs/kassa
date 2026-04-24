@@ -16,6 +16,13 @@ export type SyncPhase =
 
 export interface SyncStatus {
   phase: SyncPhase;
+  /**
+   * Count of pending_sales rows parked in `needs_attention` (4xx validation
+   * failures). The connection pill surfaces this as "Sync gagal" so the
+   * clerk sees there is work for /admin even while the drain is otherwise
+   * idle.
+   */
+  needsAttentionCount: number;
 }
 
 export type SyncStatusListener = (status: SyncStatus) => void;
@@ -32,6 +39,7 @@ export function createSyncStatusStore(initial?: SyncStatus): SyncStatusStore {
     initial ??
     ({
       phase: { kind: "idle", lastSuccessAt: null, lastError: null },
+      needsAttentionCount: 0,
     } satisfies SyncStatus);
   const listeners = new Set<SyncStatusListener>();
   return {

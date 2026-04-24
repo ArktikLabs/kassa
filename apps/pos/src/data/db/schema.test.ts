@@ -54,8 +54,8 @@ describe("KassaDexie schema", () => {
     await teardownFixture(fixture);
   });
 
-  it("migrates from an empty database to schema version 1", async () => {
-    expect(fixture.db.verno).toBe(1);
+  it("migrates from an empty database to the current schema version", async () => {
+    expect(fixture.db.verno).toBe(2);
     const tableNames = fixture.db.tables.map((t) => t.name).sort();
     expect(tableNames).toEqual(
       [
@@ -119,7 +119,7 @@ describe("KassaDexie schema", () => {
     });
 
     expect(attempts).toBe(2);
-    expect(recovered.verno).toBe(1);
+    expect(recovered.verno).toBe(2);
     await expect(recovered.items.count()).resolves.toBe(0);
     recovered.close();
     await Dexie.delete(name);

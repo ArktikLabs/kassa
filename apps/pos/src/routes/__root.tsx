@@ -7,14 +7,23 @@ import { UpdatePrompt } from "../components/UpdatePrompt";
 import { useSyncActions, useSyncStatus } from "../lib/sync-provider";
 import type { SyncPhase } from "../data/sync/index.ts";
 
-function mapPhase(phase: SyncPhase): { state: ConnectionState; pendingCount: number } {
+function mapPhase(
+  phase: SyncPhase,
+  needsAttentionCount: number,
+): { state: ConnectionState; pendingCount: number } {
+  // A non-empty `needs_attention` backlog means the clerk has work to do
+  // in /admin. Surface that over "online" so the chip is actionable even
+  // when the drain is otherwise idle. (DESIGN-SYSTEM §6.9.)
+  if (needsAttentionCount > 0 && phase.kind !== "syncing" && phase.kind !== "offline") {
+    return { state: "error", pendingCount: needsAttentionCount };
+  }
   switch (phase.kind) {
     case "syncing":
       return { state: "syncing", pendingCount: phase.pending };
     case "offline":
       return { state: "offline", pendingCount: 0 };
     case "error":
-      return { state: "error", pendingCount: 0 };
+      return { state: "error", pendingCount: needsAttentionCount };
     default:
       return { state: "online", pendingCount: 0 };
   }
@@ -23,7 +32,7 @@ function mapPhase(phase: SyncPhase): { state: ConnectionState; pendingCount: num
 export function RootLayout({ children }: { children: ReactNode }) {
   const status = useSyncStatus();
   const { triggerRefresh } = useSyncActions();
-  const { state, pendingCount } = mapPhase(status.phase);
+  const { state, pendingCount } = mapPhase(status.phase, status.needsAttentionCount);
   return (
     <div className="min-h-dvh flex flex-col bg-neutral-50 text-neutral-800">
       <header className="flex items-center justify-between border-b border-neutral-200 bg-white px-4 py-3 shadow-sm">

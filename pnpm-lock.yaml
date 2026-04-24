@@ -206,6 +206,9 @@ importers:
       vitest:
         specifier: ^2.1.4
         version: 2.1.9(@types/node@22.19.17)(jsdom@25.0.1)(lightningcss@1.32.0)(terser@5.46.1)
+      workbox-background-sync:
+        specifier: ^7.3.0
+        version: 7.4.0
       workbox-core:
         specifier: ^7.3.0
         version: 7.4.0

@@ -156,6 +156,16 @@ const id: MessageMap = {
   "admin.receipt.paperWidth.description":
     "Pilih lebar kertas struk sesuai printer yang Anda gunakan.",
   "admin.receipt.paperWidth.aria": "Lebar kertas struk",
+  "admin.attention.heading": "Perlu perhatian",
+  "admin.attention.description": "Transaksi berikut ditolak server dan perlu Anda kirim ulang.",
+  "admin.attention.empty": "Semua transaksi sudah terkirim.",
+  "admin.attention.retry": "Coba kirim ulang",
+  "admin.attention.retrying": "Mengirim ulang…",
+  "admin.attention.aria":
+    "Transaksi {localSaleId}, total {total}, dibuat {createdAt}. Error: {error}.",
+  "admin.attention.total": "Total",
+  "admin.attention.created": "Dibuat",
+  "admin.attention.error": "Error",
 };
 
 const en: MessageMap = {
@@ -296,6 +306,16 @@ const en: MessageMap = {
   "admin.receipt.paperWidth.description":
     "Choose the paper width that matches the printer you use.",
   "admin.receipt.paperWidth.aria": "Receipt paper width",
+  "admin.attention.heading": "Needs attention",
+  "admin.attention.description":
+    "These sales were rejected by the server and need to be resubmitted.",
+  "admin.attention.empty": "Every sale has been pushed to the server.",
+  "admin.attention.retry": "Retry",
+  "admin.attention.retrying": "Retrying…",
+  "admin.attention.aria": "Sale {localSaleId}, total {total}, created {createdAt}. Error: {error}.",
+  "admin.attention.total": "Total",
+  "admin.attention.created": "Created",
+  "admin.attention.error": "Error",
 };
 
 const CATALOGUES: Record<Locale, MessageMap> = {
