@@ -1,0 +1,72 @@
+# Fly.io deployment spec for the Kassa API — STAGING tier (KASA-107).
+#
+# Production deployment lives under KASA-70 (M4) and will use a separate app
+# (`kassa-api`) with stricter machine sizing and min_machines_running for HA.
+#
+# Enablement / provisioning checklist (one-time, by ops):
+#   1. `fly apps create kassa-api-staging --org kassa`
+#   2. `fly secrets set --app kassa-api-staging LOG_LEVEL=info STAFF_BOOTSTRAP_TOKEN=... \
+#         MIDTRANS_SERVER_KEY=... MIDTRANS_ENVIRONMENT=sandbox`
+#   3. Add `FLY_API_TOKEN` to the GitHub `production` environment
+#      (Settings → Environments → production → Add secret).
+#   4. With DEPLOY_ENABLED=true, the next green CI on `main` will trigger
+#      `.github/workflows/cd.yml` → `deploy-api-staging`.
+#
+# See docs/CI-CD.md §3.8 for the rollback runbook (§3.7 for the deploy path).
+
+app = "kassa-api-staging"
+primary_region = "sin"
+
+# The build stanza is intentionally omitted. Both local and CI deploys pass
+# `--dockerfile apps/api/Dockerfile` explicitly with the repo root as the build
+# context (see README below and .github/workflows/cd.yml). Hard-coding a
+# dockerfile path here would break because `apps/api/Dockerfile` is relative to
+# the build context, not to fly.toml's directory.
+
+# Two entrypoints from the same image. Fly runs each as its own machine group.
+[processes]
+  web = "node apps/api/dist/index.js"
+  worker = "node apps/api/dist/workers/index.js"
+
+[env]
+  NODE_ENV = "production"
+  HOST = "0.0.0.0"
+  PORT = "8080"
+  LOG_LEVEL = "info"
+
+# HTTP fronting only the web process. Worker is background and has no HTTP.
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = "stop"       # cost control on staging
+  auto_start_machines = true
+  min_machines_running = 0          # staging; HA on production (KASA-70)
+  processes = ["web"]
+
+  [http_service.concurrency]
+    type = "requests"
+    soft_limit = 200
+    hard_limit = 250
+
+  # Unversioned health probe — see apps/api/src/routes/health.ts.
+  [[http_service.checks]]
+    grace_period = "15s"
+    interval = "30s"
+    timeout = "5s"
+    method = "GET"
+    path = "/health"
+
+# Machine sizing. Staging uses the smallest tier; production lives in KASA-70.
+[[vm]]
+  processes = ["web"]
+  size = "shared-cpu-1x"
+  memory = "512mb"
+  cpu_kind = "shared"
+  cpus = 1
+
+[[vm]]
+  processes = ["worker"]
+  size = "shared-cpu-1x"
+  memory = "256mb"
+  cpu_kind = "shared"
+  cpus = 1

@@ -76,10 +76,13 @@ jobs:
           path: |
             apps/api/dist
             apps/api/package.json
+            apps/api/Dockerfile
+            apps/api/fly.toml
             packages/payments/dist
             packages/payments/package.json
             packages/schemas/dist
             packages/schemas/package.json
+            package.json
             pnpm-lock.yaml
             pnpm-workspace.yaml
           if-no-files-found: error
