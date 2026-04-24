@@ -10,6 +10,10 @@ import {
 } from "../lib/enrolment";
 import { showToast } from "../components/Toast";
 import { useSyncActions, useSyncStatus } from "../lib/sync-provider";
+import {
+  usePaperWidthStore,
+  type PaperWidth,
+} from "../features/receipt/paperWidth";
 
 const BOOT_STATE: EnrolmentSnapshot = { state: "loading" };
 
@@ -23,6 +27,9 @@ export function AdminScreen() {
   const status = useSyncStatus();
   const { triggerRefresh } = useSyncActions();
   const [refreshing, setRefreshing] = useState(false);
+
+  const paperWidth = usePaperWidthStore((s) => s.width);
+  const setPaperWidth = usePaperWidthStore((s) => s.setWidth);
 
   useEffect(() => {
     void hydrateEnrolment();
@@ -145,6 +152,45 @@ export function AdminScreen() {
           />
         </button>
       </div>
+
+      <section className="space-y-3 rounded-md border border-neutral-200 bg-white p-4">
+        <h2 className="text-lg font-semibold text-neutral-900">
+          <FormattedMessage id="admin.receipt.heading" />
+        </h2>
+        <p className="text-sm text-neutral-600">
+          <FormattedMessage id="admin.receipt.paperWidth.description" />
+        </p>
+        <div
+          role="radiogroup"
+          aria-label={intl.formatMessage({ id: "admin.receipt.paperWidth.aria" })}
+          data-testid="admin-paper-width"
+          className="flex gap-2"
+        >
+          {(["58mm", "80mm"] as const satisfies readonly PaperWidth[]).map(
+            (value) => {
+              const active = value === paperWidth;
+              return (
+                <button
+                  key={value}
+                  type="button"
+                  role="radio"
+                  aria-checked={active}
+                  onClick={() => setPaperWidth(value)}
+                  data-testid={`admin-paper-width-${value}`}
+                  className={[
+                    "h-11 flex-1 rounded-md border text-sm font-semibold transition-colors",
+                    active
+                      ? "border-primary-600 bg-primary-50 text-primary-700"
+                      : "border-neutral-300 bg-white text-neutral-700 hover:bg-neutral-100",
+                  ].join(" ")}
+                >
+                  {value}
+                </button>
+              );
+            },
+          )}
+        </div>
+      </section>
 
       {snapshot.state === "enrolled" ? (
         <section className="space-y-3 rounded-md border border-red-200 bg-red-50 p-4">
