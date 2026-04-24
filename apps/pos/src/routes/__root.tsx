@@ -1,19 +1,42 @@
 import type { ReactNode } from "react";
 import { Link } from "@tanstack/react-router";
 import { FormattedMessage } from "react-intl";
-import { ConnectionPill } from "../components/ConnectionPill";
+import { ConnectionPill, type ConnectionState } from "../components/ConnectionPill";
 import { UpdatePrompt } from "../components/UpdatePrompt";
-import { useConnectionState } from "../lib/connection";
+import { useSyncActions, useSyncStatus } from "../lib/sync-provider";
+import type { SyncPhase } from "../data/sync/index.ts";
+
+function mapPhase(phase: SyncPhase): { state: ConnectionState; pendingCount: number } {
+  switch (phase.kind) {
+    case "syncing":
+      return { state: "syncing", pendingCount: phase.pending };
+    case "offline":
+      return { state: "offline", pendingCount: 0 };
+    case "error":
+      return { state: "error", pendingCount: 0 };
+    case "idle":
+    default:
+      return { state: "online", pendingCount: 0 };
+  }
+}
 
 export function RootLayout({ children }: { children: ReactNode }) {
-  const connectionState = useConnectionState();
+  const status = useSyncStatus();
+  const { triggerRefresh } = useSyncActions();
+  const { state, pendingCount } = mapPhase(status.phase);
   return (
     <div className="min-h-dvh flex flex-col bg-neutral-50 text-neutral-800">
       <header className="flex items-center justify-between border-b border-neutral-200 bg-white px-4 py-3 shadow-sm">
         <Link to="/catalog" className="text-lg font-bold text-primary-700">
           <FormattedMessage id="app.name" />
         </Link>
-        <ConnectionPill state={connectionState} />
+        <ConnectionPill
+          state={state}
+          pendingCount={pendingCount}
+          onTap={() => {
+            void triggerRefresh();
+          }}
+        />
       </header>
       <main className="flex-1 px-4 py-6">{children}</main>
       <UpdatePrompt />
