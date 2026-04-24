@@ -60,6 +60,7 @@ describe("KassaDexie schema", () => {
     expect(tableNames).toEqual(
       [
         "boms",
+        "device_meta",
         "device_secret",
         "items",
         "outlets",
@@ -275,21 +276,33 @@ describe("Repos — upsert idempotency and query surface", () => {
     await fixture.repos.deviceSecret.set({
       deviceId: "device-1",
       outletId: "outlet-1",
+      outletName: "Warung Maju",
       merchantId: "merchant-1",
-      apiKeyHash: "hash",
+      merchantName: "Toko Maju",
+      apiKey: "pk_live_1",
       apiSecret: "secret",
-      rotatedAt: "2026-04-23T00:00:00.000Z",
+      enrolledAt: "2026-04-23T00:00:00.000Z",
     });
     await fixture.repos.deviceSecret.set({
       deviceId: "device-1",
       outletId: "outlet-1",
+      outletName: "Warung Maju",
       merchantId: "merchant-1",
-      apiKeyHash: "hash-2",
+      merchantName: "Toko Maju",
+      apiKey: "pk_live_2",
       apiSecret: "secret-2",
-      rotatedAt: "2026-04-23T01:00:00.000Z",
+      enrolledAt: "2026-04-23T01:00:00.000Z",
     });
     const secret = await fixture.repos.deviceSecret.get();
     expect(secret?.apiSecret).toBe("secret-2");
     await expect(fixture.db.device_secret.count()).resolves.toBe(1);
+  });
+
+  it("device_meta.ensureFingerprint generates once and reuses the stored value", async () => {
+    const first = await fixture.repos.deviceMeta.ensureFingerprint();
+    const second = await fixture.repos.deviceMeta.ensureFingerprint();
+    expect(first).toBe(second);
+    expect(first).toMatch(/^[0-9a-f-]{36}$/i);
+    await expect(fixture.db.device_meta.count()).resolves.toBe(1);
   });
 });

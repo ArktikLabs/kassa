@@ -1,6 +1,7 @@
 import Dexie, { type Table } from "dexie";
 import type {
   Bom,
+  DeviceMeta,
   DeviceSecret,
   Item,
   Outlet,
@@ -22,6 +23,7 @@ export class KassaDexie extends Dexie {
   pending_sales!: Table<PendingSale, string>;
   sync_state!: Table<SyncState, string>;
   device_secret!: Table<DeviceSecret, string>;
+  device_meta!: Table<DeviceMeta, string>;
 
   constructor(name: string = DB_NAME) {
     super(name);
@@ -35,6 +37,7 @@ export class KassaDexie extends Dexie {
         pending_sales: "localSaleId, status, outletId, createdAt",
         sync_state: "table",
         device_secret: "id",
+        device_meta: "id",
       })
       .upgrade(async () => {
         // v1 is the initial schema — nothing to migrate from.

@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { Link } from "@tanstack/react-router";
 import { FormattedMessage } from "react-intl";
 import { ConnectionPill, type ConnectionState } from "../components/ConnectionPill";
+import { ToastViewport } from "../components/Toast";
 import { UpdatePrompt } from "../components/UpdatePrompt";
 import { useSyncActions, useSyncStatus } from "../lib/sync-provider";
 import type { SyncPhase } from "../data/sync/index.ts";
@@ -40,13 +41,19 @@ export function RootLayout({ children }: { children: ReactNode }) {
       </header>
       <main className="flex-1 px-4 py-6">{children}</main>
       <UpdatePrompt />
-      <nav className="grid grid-cols-5 border-t border-neutral-200 bg-white text-[12px] font-semibold text-neutral-600">
+      {/*
+       * `/enrol` is intentionally not surfaced in the nav: once the device is
+       * enrolled the route redirects to `/catalog`, and the reset flow routes
+       * the clerk back via `/admin`. Keeping four tabs also matches the
+       * acceptance criteria for KASA-58.
+       */}
+      <nav className="grid grid-cols-4 border-t border-neutral-200 bg-white text-[12px] font-semibold text-neutral-600">
         <NavItem to="/catalog" labelId="nav.catalog" />
         <NavItem to="/cart" labelId="nav.cart" />
         <NavItem to="/tender/cash" labelId="nav.tender.cash" />
-        <NavItem to="/enrol" labelId="nav.enrol" />
         <NavItem to="/admin" labelId="nav.admin" />
       </nav>
+      <ToastViewport />
     </div>
   );
 }

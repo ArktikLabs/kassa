@@ -8,6 +8,7 @@ import {
   type OpenOptions,
 } from "./schema.ts";
 import { bomsRepo, type BomsRepo } from "./boms.ts";
+import { deviceMetaRepo, type DeviceMetaRepo } from "./device-meta.ts";
 import { deviceSecretRepo, type DeviceSecretRepo } from "./device-secret.ts";
 import { itemsRepo, type ItemsRepo } from "./items.ts";
 import { outletsRepo, type OutletsRepo } from "./outlets.ts";
@@ -25,6 +26,7 @@ export interface Repos {
   pendingSales: PendingSalesRepo;
   syncState: SyncStateRepo;
   deviceSecret: DeviceSecretRepo;
+  deviceMeta: DeviceMetaRepo;
 }
 
 export function createRepos(db: KassaDexie): Repos {
@@ -37,6 +39,7 @@ export function createRepos(db: KassaDexie): Repos {
     pendingSales: pendingSalesRepo(db),
     syncState: syncStateRepo(db),
     deviceSecret: deviceSecretRepo(db),
+    deviceMeta: deviceMetaRepo(db),
   };
 }
 

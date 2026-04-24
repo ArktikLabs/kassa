@@ -51,7 +51,7 @@ describe("POS shell", () => {
       await screen.findByRole("heading", { name: "Enrol perangkat" }),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: "Enrol perangkat" }),
+      screen.getByRole("button", { name: "Hubungkan perangkat" }),
     ).toBeInTheDocument();
     expect(screen.getByRole("status")).toHaveTextContent("Online");
     expect(screen.getByRole("link", { name: /katalog/i })).toBeInTheDocument();
