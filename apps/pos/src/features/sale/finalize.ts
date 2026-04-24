@@ -172,6 +172,7 @@ export async function finalizeCashSale(
         attempts: 0,
         lastError: null,
         lastAttemptAt: null,
+        serverSaleName: null,
       };
       await database.db.pending_sales.put(row);
 

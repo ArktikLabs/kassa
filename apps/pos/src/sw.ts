@@ -21,7 +21,9 @@ import { clientsClaim } from "workbox-core";
 import { registerRoute } from "workbox-routing";
 import { CacheFirst, NetworkOnly } from "workbox-strategies";
 import { ExpirationPlugin } from "workbox-expiration";
+import { BackgroundSyncPlugin } from "workbox-background-sync";
 import { isSkipWaitingMessage } from "./lib/sw-helpers";
+import { SALES_QUEUE_NAME, SALES_SUBMIT_PATH } from "./data/sync/push";
 
 declare const self: ServiceWorkerGlobalScope;
 
@@ -54,5 +56,31 @@ registerRoute(
 );
 
 const NETWORK_ONLY = new NetworkOnly();
-registerRoute(({ url }) => url.pathname.startsWith("/v1/sales/"), NETWORK_ONLY);
 registerRoute(({ url }) => url.pathname.startsWith("/v1/sync/"), NETWORK_ONLY);
+
+/*
+ * Sale pushes are NetworkOnly + `kassa-sales` BackgroundSync queue.
+ *
+ * The window's push.ts drains the Dexie outbox and drives these POSTs.
+ * When the request round-trips normally, Workbox is a no-op and our
+ * semantic layer (200/409/5xx/4xx → Dexie status) runs as expected.
+ * When the tab is closed mid-flight or the network drops, Workbox
+ * clones the request into its own IndexedDB queue and replays it on the
+ * next `sync` event (SW activation / connection restore). The server's
+ * idempotency on `local_sale_id` makes that replay safe: the next
+ * window-side drain reconciles via 409 → `synced`.
+ *
+ * `maxRetentionTime` is 24h so an overnight outage still recovers.
+ */
+const salesQueuePlugin = new BackgroundSyncPlugin(SALES_QUEUE_NAME, {
+  maxRetentionTime: 24 * 60,
+}) as never;
+registerRoute(
+  ({ url, request }) => request.method === "POST" && url.pathname === SALES_SUBMIT_PATH,
+  new NetworkOnly({ plugins: [salesQueuePlugin] }),
+  "POST",
+);
+// Other sales endpoints (GET /v1/sales/:id, POST /v1/sales/:id/void, …)
+// are still NetworkOnly but without the retry queue — the outbox owns
+// the write-ahead path; reads can safely fail open.
+registerRoute(({ url }) => url.pathname.startsWith("/v1/sales/"), NETWORK_ONLY);

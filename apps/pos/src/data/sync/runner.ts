@@ -1,5 +1,6 @@
 import type { Database } from "../db/index.ts";
 import { pullAll, type PullAllResult } from "./pull.ts";
+import { pushOutbox, type PushOptions, type PushResult } from "./push.ts";
 import { SyncHttpError, SyncNetworkError, SyncOfflineError, SyncParseError } from "./errors.ts";
 import type { SyncStatusStore } from "./status.ts";
 
@@ -26,6 +27,11 @@ export function browserOnlineSource(): OnlineSource {
   return { isOnline, subscribe };
 }
 
+export interface RunnerCycleResult {
+  pull: PullAllResult | null;
+  push: PushResult | null;
+}
+
 export interface RunnerOptions {
   database: Database;
   baseUrl: string;
@@ -37,40 +43,84 @@ export interface RunnerOptions {
   clock?: () => Date;
   auth?: () => Promise<{ apiKey: string; apiSecret: string } | null>;
   outletId?: () => Promise<string | null>;
+  /** Injected so tests can assert what the runner drives push.ts with. */
+  pushImpl?: (database: Database, opts: PushOptions) => Promise<PushResult>;
 }
 
 export interface SyncRunner {
   start: () => void;
   stop: () => void;
-  trigger: () => Promise<PullAllResult | null>;
+  trigger: () => Promise<RunnerCycleResult | null>;
+  /** Drain the outbox only — no pull. Used by the /admin requeue action. */
+  triggerPush: () => Promise<PushResult | null>;
   isRunning: () => boolean;
 }
 
 export function createSyncRunner(opts: RunnerOptions): SyncRunner {
   const interval = opts.intervalMs ?? DEFAULT_SYNC_INTERVAL_MS;
   const onlineSource = opts.onlineSource ?? browserOnlineSource();
+  const pushImpl = opts.pushImpl ?? pushOutbox;
   let timer: ReturnType<typeof setInterval> | null = null;
   let unsubOnline: (() => void) | null = null;
   let running = false;
-  let inFlight: Promise<PullAllResult | null> | null = null;
+  let inFlight: Promise<RunnerCycleResult | null> | null = null;
 
-  const setOfflinePhase = () => {
+  const setOffline = () => {
+    opts.status.update((s) => ({ ...s, phase: { kind: "offline" } }));
+  };
+
+  const refreshNeedsAttention = async (): Promise<number> => {
+    const rows = await opts.database.repos.pendingSales.listNeedsAttention();
+    opts.status.update((s) => ({ ...s, needsAttentionCount: rows.length }));
+    return rows.length;
+  };
+
+  const buildPushOptions = async (): Promise<PushOptions> => {
+    const auth = opts.auth ? await opts.auth() : null;
+    const pushOpts: PushOptions = {
+      baseUrl: opts.baseUrl,
+      status: opts.status,
+      isOnline: onlineSource.isOnline,
+      auth,
+    };
+    if (opts.fetchImpl) pushOpts.fetchImpl = opts.fetchImpl;
+    if (opts.clock) pushOpts.clock = opts.clock;
+    return pushOpts;
+  };
+
+  const runPush = async (): Promise<PushResult | null> => {
     if (!onlineSource.isOnline()) {
-      opts.status.set({ phase: { kind: "offline" } });
+      setOffline();
+      return null;
+    }
+    try {
+      const result = await pushImpl(opts.database, await buildPushOptions());
+      await refreshNeedsAttention();
+      return result;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      opts.status.update((s) => ({
+        ...s,
+        phase: { kind: "error", message, table: "pending_sales" },
+      }));
+      await refreshNeedsAttention();
+      throw err;
     }
   };
 
-  const runOnce = (): Promise<PullAllResult | null> => {
+  const runOnce = (): Promise<RunnerCycleResult | null> => {
     if (inFlight) return inFlight;
     if (!onlineSource.isOnline()) {
-      setOfflinePhase();
+      setOffline();
       return Promise.resolve(null);
     }
     const promise = (async () => {
+      let pullResult: PullAllResult | null = null;
+      let pushResult: PushResult | null = null;
       try {
         const auth = opts.auth ? await opts.auth() : null;
         const outletId = opts.outletId ? await opts.outletId() : null;
-        return await pullAll(opts.database, {
+        pullResult = await pullAll(opts.database, {
           baseUrl: opts.baseUrl,
           outletId,
           ...(opts.fetchImpl ? { fetchImpl: opts.fetchImpl } : {}),
@@ -80,16 +130,19 @@ export function createSyncRunner(opts: RunnerOptions): SyncRunner {
           auth,
           ...(opts.onSentryError ? { onSentryError: opts.onSentryError } : {}),
         });
+        pushResult = await runPush();
+        return { pull: pullResult, push: pushResult };
       } catch (err) {
         if (err instanceof SyncOfflineError) {
-          opts.status.set({ phase: { kind: "offline" } });
-          return null;
+          setOffline();
+          return { pull: pullResult, push: pushResult };
         }
         const message = errorMessage(err);
         const table = errorTable(err);
-        opts.status.set({
+        opts.status.update((s) => ({
+          ...s,
           phase: { kind: "error", message, table },
-        });
+        }));
         throw err;
       } finally {
         inFlight = null;
@@ -107,7 +160,7 @@ export function createSyncRunner(opts: RunnerOptions): SyncRunner {
         if (online) {
           void runner.trigger().catch(() => {});
         } else {
-          opts.status.set({ phase: { kind: "offline" } });
+          setOffline();
         }
       });
       timer = setInterval(() => {
@@ -127,6 +180,9 @@ export function createSyncRunner(opts: RunnerOptions): SyncRunner {
       }
     },
     trigger: runOnce,
+    async triggerPush() {
+      return runPush();
+    },
     isRunning: () => running,
   };
 

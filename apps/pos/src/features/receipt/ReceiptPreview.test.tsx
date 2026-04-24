@@ -41,6 +41,7 @@ const sale: PendingSale = {
   attempts: 0,
   lastError: null,
   lastAttemptAt: null,
+  serverSaleName: null,
 };
 
 const outlet: Outlet = {

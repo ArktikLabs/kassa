@@ -358,8 +358,9 @@ export async function pullAll(database: Database, opts: PullOptions): Promise<Pu
   }
 
   const finishedAt = clock().toISOString();
-  opts.status?.set({
+  opts.status?.update((s) => ({
+    ...s,
     phase: { kind: "idle", lastSuccessAt: finishedAt, lastError: null },
-  });
+  }));
   return { tables: results, startedAt, finishedAt };
 }
