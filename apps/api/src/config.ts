@@ -1,5 +1,13 @@
 import { z } from "zod";
 
+// A trimmed empty string for an optional env var is "unset", not "invalid".
+// `.env.example` tells devs to leave `MIDTRANS_SERVER_KEY=` blank locally,
+// so preserve that ergonomics instead of crashing boot with a Zod error.
+const optionalTrimmedString = z.preprocess((v) => {
+  const s = typeof v === "string" ? v.trim() : v;
+  return s === "" ? undefined : s;
+}, z.string().min(1).optional());
+
 const envSchema = z.object({
   NODE_ENV: z
     .enum(["development", "test", "production"])
@@ -9,7 +17,7 @@ const envSchema = z.object({
   LOG_LEVEL: z
     .enum(["fatal", "error", "warn", "info", "debug", "trace", "silent"])
     .default("info"),
-  MIDTRANS_SERVER_KEY: z.string().min(1).optional(),
+  MIDTRANS_SERVER_KEY: optionalTrimmedString,
   MIDTRANS_ENVIRONMENT: z.enum(["sandbox", "production"]).default("sandbox"),
 });
 

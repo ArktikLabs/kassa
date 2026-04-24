@@ -44,6 +44,8 @@ All configuration is via environment variables, validated by Zod on boot. Missin
 | `HOST` | `0.0.0.0` | Bind host. |
 | `PORT` | `3000` | Bind port. |
 | `LOG_LEVEL` | `info` | Pino log level. |
+| `MIDTRANS_SERVER_KEY` | _unset_ | Midtrans Core API server key. Blank/absent → `POST /v1/payments/webhooks/midtrans` answers 503 `payments_unavailable` instead of crashing boot. **Never** commit. Local sandbox key lives in `.env`; production key comes from Fly secrets (see rotation below). |
+| `MIDTRANS_ENVIRONMENT` | `sandbox` | `sandbox` \| `production`. Switches the Midtrans base URL. Sandbox (`api.sandbox.midtrans.com`) for all non-production boots; production (`api.midtrans.com`) only on the `prd` Fly app. |
 
 ## Route map
 
@@ -71,10 +73,48 @@ All configuration is via environment variables, validated by Zod on boot. Missin
 | POST | `/v1/sales/sync` | 501 |
 | POST | `/v1/payments/qris` | 501 |
 | GET | `/v1/payments/qris/:orderId/status` | 501 |
-| POST | `/v1/payments/webhooks/midtrans` | 501 |
+| POST | `/v1/payments/webhooks/midtrans` | Live — HMAC-SHA512 signature-verified; dedupes by `(orderId, normalized status)` so Midtrans's `capture + settlement` collapses to a single `tender.paid`. 503 `payments_unavailable` when `MIDTRANS_SERVER_KEY` is unset. |
 | POST | `/v1/eod/close` | 501 |
 | GET | `/v1/eod/report` | 501 |
 | GET | `/v1/eod/:eodId` | 501 |
+
+## Payments (Midtrans)
+
+QRIS is the v0 payment rail and Midtrans is the v0 provider; the `@kassa/payments` package exposes a vendor-agnostic `PaymentProvider` interface so switching to Xendit or DOKU later is a configuration change (see [ARCHITECTURE.md](../../docs/ARCHITECTURE.md) ADR-008).
+
+### Environment keys
+
+- **Sandbox (local / staging)**: each engineer creates a personal sandbox account at [dashboard.sandbox.midtrans.com](https://dashboard.sandbox.midtrans.com/) → Settings → Access Keys and drops the server key into `.env` as `MIDTRANS_SERVER_KEY=SB-Mid-server-...`. `MIDTRANS_ENVIRONMENT=sandbox` (the default) keeps traffic on `api.sandbox.midtrans.com` — no real money moves.
+- **Production**: the single tenant production server key lives only in Fly secrets on the `prd` app. It is never committed, never in `.env`, and never written to application logs. `MIDTRANS_ENVIRONMENT=production` must be set on the same app.
+
+Set production secrets via:
+
+```bash
+fly secrets set -a kassa-api-prd \
+  MIDTRANS_SERVER_KEY="Mid-server-…" \
+  MIDTRANS_ENVIRONMENT=production
+```
+
+Omit both vars on dev/staging-equivalent instances; the webhook route answers `503 { error: { code: "payments_unavailable" } }` and `/v1/payments/qris` is still 501 until KASA-63.
+
+### Webhook configuration
+
+Point the Midtrans merchant console's "Payment notification URL" at `https://<api-host>/v1/payments/webhooks/midtrans`. The handler:
+
+1. Verifies `signature_key = SHA-512(order_id + status_code + gross_amount + serverKey)` with a timing-safe compare; mismatches respond `401 invalid_signature` and emit nothing.
+2. Normalizes `transaction_status + fraud_status` to one of `pending | paid | failed | expired | cancelled`.
+3. Dedupes by `(order_id, normalized status)`, so Midtrans's `capture → settlement` sequence only emits `tender.paid` once.
+4. Emits `tender.status_changed` (always) and `tender.paid` (when normalized to `paid`) on an in-process event bus.
+
+### Key rotation runbook
+
+1. In the Midtrans merchant console, generate a new server key. Midtrans allows two active keys during the rotation window.
+2. `fly secrets set -a kassa-api-prd MIDTRANS_SERVER_KEY="<new-key>"` — Fly rolls instances with the new secret.
+3. Send a test webhook from the Midtrans dashboard simulator to verify the new key verifies. Watch for `midtrans webhook signature rejected` in the API log; if you see any, the rollout is stuck on an old instance — retry `fly secrets set` or `fly apps restart`.
+4. Once green for ≥5 minutes, retire the old key in the Midtrans console.
+5. Update the Paperclip ops ticket with the rotation date and the key-ID tail.
+
+Never rotate in the reverse order — retiring first produces signed webhooks the API cannot verify.
 
 ## Error contract
 

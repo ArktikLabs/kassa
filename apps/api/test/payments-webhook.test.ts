@@ -169,6 +169,50 @@ describe("POST /v1/payments/webhooks/midtrans", () => {
     expect(app.webhookDedupe.get("ORDER-DUPE-1")?.seenCount).toBe(2);
   });
 
+  it("collapses capture + settlement for the same order into a single tender.paid", async () => {
+    // Midtrans sends `capture` and `settlement` for the same paid outcome;
+    // dedupe must key on the normalized event.status, otherwise tender.paid
+    // fires twice and violates the idempotency AC.
+    const capture = signed({
+      order_id: "ORDER-COLLAPSE-1",
+      status_code: "200",
+      gross_amount: "25000.00",
+      transaction_status: "capture",
+      fraud_status: "accept",
+      transaction_time: "2026-04-22 20:32:00",
+      payment_type: "qris",
+    });
+    const settlement = signed({
+      order_id: "ORDER-COLLAPSE-1",
+      status_code: "200",
+      gross_amount: "25000.00",
+      transaction_status: "settlement",
+      fraud_status: "accept",
+      transaction_time: "2026-04-22 20:32:05",
+      payment_type: "qris",
+    });
+
+    const r1 = await app.inject({
+      method: "POST",
+      url: "/v1/payments/webhooks/midtrans",
+      payload: capture,
+      headers: { "Content-Type": "application/json" },
+    });
+    const r2 = await app.inject({
+      method: "POST",
+      url: "/v1/payments/webhooks/midtrans",
+      payload: settlement,
+      headers: { "Content-Type": "application/json" },
+    });
+
+    expect(r1.json()).toEqual({ ok: true, duplicate: false });
+    expect(r2.json()).toEqual({ ok: true, duplicate: true });
+    expect(received.filter((e) => e.type === "tender.paid")).toHaveLength(1);
+    expect(
+      received.filter((e) => e.type === "tender.status_changed"),
+    ).toHaveLength(1);
+  });
+
   it("treats a new transaction_status for the same order_id as a new event", async () => {
     const pending = signed({
       order_id: "ORDER-FLOW-1",

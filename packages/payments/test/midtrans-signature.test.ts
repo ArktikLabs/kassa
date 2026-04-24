@@ -104,4 +104,13 @@ describe("createMidtransProvider.verifyWebhookSignature", () => {
     const event = provider.verifyWebhookSignature(payload, {});
     expect(event.status).toBe("pending");
   });
+
+  it("treats fraud_status=deny on settlement as failed (not paid)", () => {
+    const payload = buildPayload({
+      transaction_status: "settlement",
+      fraud_status: "deny",
+    });
+    const event = provider.verifyWebhookSignature(payload, {});
+    expect(event.status).toBe("failed");
+  });
 });

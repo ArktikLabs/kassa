@@ -38,19 +38,9 @@ async function midtransWebhookHandler(
     throw err;
   }
 
-  const rawStatus =
-    typeof req.body === "object" && req.body !== null
-      ? ((req.body as Record<string, unknown>)["transaction_status"] as
-          | string
-          | undefined)
-      : undefined;
-  const dedupeKey = rawStatus ?? event.status;
-  const duplicate = app.webhookDedupe.checkAndRecord(
-    event.providerOrderId,
-    dedupeKey,
-  );
-
-  if (duplicate) {
+  // Dedupe on the normalized status so Midtrans's capture + settlement
+  // (both of which collapse to "paid") don't double-emit tender.paid.
+  if (app.webhookDedupe.check(event.providerOrderId, event.status)) {
     req.log.info(
       {
         provider: provider.name,
@@ -62,24 +52,36 @@ async function midtransWebhookHandler(
     return reply.code(200).send({ ok: true, duplicate: true });
   }
 
-  app.events.emit({
-    type: "tender.status_changed",
-    provider: provider.name,
-    providerOrderId: event.providerOrderId,
-    status: event.status,
-    grossAmount: event.grossAmount,
-    occurredAt: event.occurredAt,
-  });
-
-  if (event.status === "paid") {
+  try {
     app.events.emit({
-      type: "tender.paid",
+      type: "tender.status_changed",
       provider: provider.name,
       providerOrderId: event.providerOrderId,
+      status: event.status,
       grossAmount: event.grossAmount,
-      paidAt: event.occurredAt,
+      occurredAt: event.occurredAt,
     });
+
+    if (event.status === "paid") {
+      app.events.emit({
+        type: "tender.paid",
+        provider: provider.name,
+        providerOrderId: event.providerOrderId,
+        grossAmount: event.grossAmount,
+        paidAt: event.occurredAt,
+      });
+    }
+  } catch (err) {
+    // A listener threw — don't mark this delivery as deduped so Midtrans's
+    // retry re-delivers the event instead of it being silently dropped.
+    req.log.error(
+      { err, providerOrderId: event.providerOrderId, status: event.status },
+      "event listener failed; dedupe not recorded so retry can re-emit",
+    );
+    throw err;
   }
+
+  app.webhookDedupe.record(event.providerOrderId, event.status);
 
   return reply.code(200).send({ ok: true, duplicate: false });
 }

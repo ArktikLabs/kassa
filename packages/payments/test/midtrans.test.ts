@@ -116,8 +116,56 @@ describe("createQris", () => {
       custom_field1: "outlet-a",
     });
     expect(result.providerOrderId).toBe("ORDER-1");
-    expect(result.qrString).toBe("https://mock-midtrans/qr/ORDER-1");
+    expect(result.qrString).toBe("00020101021126...");
+    expect(result.qrImageUrl).toBe("https://mock-midtrans/qr/ORDER-1");
     expect(result.expiresAt).toBe("2026-04-22 21:00:00");
+  });
+
+  it("times out a slow Midtrans call with PaymentProviderError(midtrans_timeout)", async () => {
+    const provider = createMidtransProvider({
+      serverKey: SERVER_KEY,
+      requestTimeoutMs: 25,
+      fetchImpl: ((_url: unknown, init?: { signal?: AbortSignal }) =>
+        new Promise<Response>((_resolve, reject) => {
+          // Honour the abort signal like real fetch so callers see a prompt
+          // timeout instead of hanging the worker.
+          init?.signal?.addEventListener("abort", () => {
+            const err = new Error("aborted");
+            err.name = "AbortError";
+            reject(err);
+          });
+        })) as unknown as typeof fetch,
+    });
+
+    await expect(
+      provider.createQris({
+        orderId: "SLOW",
+        grossAmount: 1,
+        currency: "IDR",
+        outletId: "o",
+      }),
+    ).rejects.toMatchObject({ code: "midtrans_timeout" });
+  });
+
+  it("rejects a malformed gross_amount from getQrisStatus with invalid_gross_amount", async () => {
+    const provider = createMidtransProvider({
+      serverKey: SERVER_KEY,
+      fetchImpl: stubFetch(() =>
+        new Response(
+          JSON.stringify({
+            order_id: "ORDER-BAD-AMOUNT",
+            transaction_status: "settlement",
+            fraud_status: "accept",
+            gross_amount: "not-a-number",
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      ),
+    });
+
+    await expect(
+      provider.getQrisStatus("ORDER-BAD-AMOUNT"),
+    ).rejects.toMatchObject({ code: "invalid_gross_amount" });
   });
 
   it("throws PaymentProviderError on non-2xx response", async () => {

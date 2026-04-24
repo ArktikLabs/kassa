@@ -20,6 +20,8 @@ export interface MidtransConfig {
   merchantId?: string;
   fetchImpl?: typeof fetch;
   now?: () => Date;
+  /** Outbound HTTP timeout per call, in ms. Defaults to 10_000. */
+  requestTimeoutMs?: number;
 }
 
 export interface MidtransWebhookPayload {
@@ -37,6 +39,7 @@ export interface MidtransWebhookPayload {
 
 const SANDBOX_BASE_URL = "https://api.sandbox.midtrans.com";
 const PRODUCTION_BASE_URL = "https://api.midtrans.com";
+const DEFAULT_REQUEST_TIMEOUT_MS = 10_000;
 
 export function createMidtransProvider(config: MidtransConfig): PaymentProvider {
   if (!config.serverKey || config.serverKey.trim() === "") {
@@ -52,6 +55,7 @@ export function createMidtransProvider(config: MidtransConfig): PaymentProvider 
     (environment === "production" ? PRODUCTION_BASE_URL : SANDBOX_BASE_URL);
   const fetchImpl = config.fetchImpl ?? globalThis.fetch;
   const now = config.now ?? (() => new Date());
+  const requestTimeoutMs = config.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
 
   if (typeof fetchImpl !== "function") {
     throw new PaymentProviderError(
@@ -61,6 +65,28 @@ export function createMidtransProvider(config: MidtransConfig): PaymentProvider 
   }
 
   const authHeader = `Basic ${Buffer.from(`${config.serverKey}:`).toString("base64")}`;
+
+  async function withTimeout(
+    url: string,
+    init: RequestInit,
+  ): Promise<Response> {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), requestTimeoutMs);
+    try {
+      return await fetchImpl(url, { ...init, signal: controller.signal });
+    } catch (err) {
+      if (isAbortError(err)) {
+        throw new PaymentProviderError(
+          "midtrans_timeout",
+          `Midtrans request exceeded ${requestTimeoutMs}ms.`,
+          504,
+        );
+      }
+      throw err;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
 
   async function chargeQris(order: QrisOrderRequest): Promise<QrisOrderResult> {
     if (order.expiryMinutes !== undefined) {
@@ -95,7 +121,7 @@ export function createMidtransProvider(config: MidtransConfig): PaymentProvider 
       };
     }
 
-    const response = await fetchImpl(`${baseUrl}/v2/charge`, {
+    const response = await withTimeout(`${baseUrl}/v2/charge`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -121,7 +147,7 @@ export function createMidtransProvider(config: MidtransConfig): PaymentProvider 
     if (qrString === null) {
       throw new PaymentProviderError(
         "midtrans_qr_missing",
-        "Midtrans charge response did not include a QR string.",
+        "Midtrans charge response did not include a qr_string.",
       );
     }
 
@@ -144,7 +170,7 @@ export function createMidtransProvider(config: MidtransConfig): PaymentProvider 
   }
 
   async function getStatus(orderId: string): Promise<QrisStatusResult> {
-    const response = await fetchImpl(
+    const response = await withTimeout(
       `${baseUrl}/v2/${encodeURIComponent(orderId)}/status`,
       {
         method: "GET",
@@ -287,7 +313,9 @@ function mapTransactionStatus(
   switch (transactionStatus) {
     case "capture":
     case "settlement":
-      return fraudStatus === "challenge" ? "pending" : "paid";
+      if (fraudStatus === "challenge") return "pending";
+      if (fraudStatus === "deny") return "failed";
+      return "paid";
     case "pending":
       return "pending";
     case "deny":
@@ -306,10 +334,26 @@ function mapTransactionStatus(
   }
 }
 
+// Midtrans `gross_amount` is always a decimal string ("25000" / "25000.00").
+// Silently coercing a malformed value to 0 would let a paid event fire with the
+// wrong total, so we reject non-numeric input and let the caller surface a 4xx.
+const AMOUNT_RE = /^\d+(\.\d+)?$/;
+
 function parseAmount(raw: string | undefined): number {
-  if (raw === undefined) return 0;
+  if (raw === undefined || !AMOUNT_RE.test(raw)) {
+    throw new PaymentProviderError(
+      "invalid_gross_amount",
+      `Expected a decimal string for gross_amount; got ${raw === undefined ? "undefined" : JSON.stringify(raw)}.`,
+    );
+  }
   const n = Number.parseFloat(raw);
-  return Number.isFinite(n) ? n : 0;
+  if (!Number.isFinite(n)) {
+    throw new PaymentProviderError(
+      "invalid_gross_amount",
+      `gross_amount '${raw}' did not parse to a finite number.`,
+    );
+  }
+  return n;
 }
 
 function stringField(json: Record<string, unknown>, key: string): string | undefined {
@@ -317,20 +361,11 @@ function stringField(json: Record<string, unknown>, key: string): string | undef
   return typeof v === "string" ? v : undefined;
 }
 
+// Midtrans returns the EMV-compatible payload in `qr_string` and a rendered
+// PNG endpoint in `actions[name="generate-qr-code"].url`. Consumers that need
+// to render the QR offline require the EMV string; the URL is for clients that
+// want Midtrans to render it.
 function readQrString(json: Record<string, unknown>): string | null {
-  const actions = json["actions"];
-  if (Array.isArray(actions)) {
-    for (const action of actions) {
-      if (
-        action &&
-        typeof action === "object" &&
-        (action as Record<string, unknown>)["name"] === "generate-qr-code" &&
-        typeof (action as Record<string, unknown>)["url"] === "string"
-      ) {
-        return (action as Record<string, unknown>)["url"] as string;
-      }
-    }
-  }
   const direct = json["qr_string"];
   return typeof direct === "string" ? direct : null;
 }
@@ -364,6 +399,12 @@ function formatJakartaTimestamp(date: Date): string {
   const mi = String(shifted.getUTCMinutes()).padStart(2, "0");
   const ss = String(shifted.getUTCSeconds()).padStart(2, "0");
   return `${yyyy}-${mm}-${dd} ${hh}:${mi}:${ss} +0700`;
+}
+
+function isAbortError(err: unknown): boolean {
+  if (!err || typeof err !== "object") return false;
+  const name = (err as { name?: unknown }).name;
+  return name === "AbortError" || name === "TimeoutError";
 }
 
 async function safeJson(response: Response): Promise<unknown> {

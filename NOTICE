@@ -36,7 +36,8 @@ Currently tracked upstream components (non-exhaustive):
 - React Hook Form             — MIT
 - Zod                         — MIT
 - Biome                       — MIT / Apache-2.0
-- Midtrans Core API client    — MIT (per upstream SDK)
+- Midtrans Core API integration — custom in-tree implementation; see
+  `packages/payments/src/providers/midtrans.ts`. No upstream SDK is vendored.
 
 A complete, machine-generated attribution list will replace the summary
 above once every package in the monorepo is scaffolded and its dependency
