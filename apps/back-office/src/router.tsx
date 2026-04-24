@@ -1,9 +1,4 @@
-import {
-  createRootRoute,
-  createRoute,
-  createRouter,
-  redirect,
-} from "@tanstack/react-router";
+import { createRootRoute, createRoute, createRouter, redirect } from "@tanstack/react-router";
 import { RootLayout } from "./routes/__root";
 import { LoginScreen } from "./routes/login";
 import { OutletsScreen } from "./routes/outlets";
@@ -70,9 +65,8 @@ const indexRoute = createRoute({
 const outletsRoute = createRoute({
   getParentRoute: () => appRoute,
   path: "outlets",
-  component: () => (loadSession()?.role && roleCanManage(loadSession()!.role)
-    ? <OutletsScreen />
-    : <Forbidden />),
+  component: () =>
+    loadSession()?.role && roleCanManage(loadSession()!.role) ? <OutletsScreen /> : <Forbidden />,
 });
 
 const catalogRoute = createRoute({
@@ -90,25 +84,26 @@ const bomsRoute = createRoute({
 const staffRoute = createRoute({
   getParentRoute: () => appRoute,
   path: "staff",
-  component: () => (loadSession()?.role && roleCanManage(loadSession()!.role)
-    ? <StaffScreen />
-    : <Forbidden />),
+  component: () =>
+    loadSession()?.role && roleCanManage(loadSession()!.role) ? <StaffScreen /> : <Forbidden />,
 });
 
 const devicesRoute = createRoute({
   getParentRoute: () => appRoute,
   path: "devices",
-  component: () => (loadSession()?.role && roleCanManage(loadSession()!.role)
-    ? <DevicesScreen />
-    : <Forbidden />),
+  component: () =>
+    loadSession()?.role && roleCanManage(loadSession()!.role) ? <DevicesScreen /> : <Forbidden />,
 });
 
 const reconciliationRoute = createRoute({
   getParentRoute: () => appRoute,
   path: "reports/reconciliation",
-  component: () => (loadSession()?.role && roleCanManage(loadSession()!.role)
-    ? <ReconciliationScreen />
-    : <Forbidden />),
+  component: () =>
+    loadSession()?.role && roleCanManage(loadSession()!.role) ? (
+      <ReconciliationScreen />
+    ) : (
+      <Forbidden />
+    ),
 });
 
 const routeTree = rootRoute.addChildren([

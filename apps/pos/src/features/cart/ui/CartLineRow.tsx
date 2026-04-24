@@ -1,8 +1,4 @@
-import {
-  useRef,
-  useState,
-  type PointerEvent as ReactPointerEvent,
-} from "react";
+import { useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { useIntl } from "react-intl";
 import { formatIdr } from "../../../shared/money/index.ts";
 import type { CartLine } from "../types.ts";
@@ -60,10 +56,7 @@ export function CartLineRow({ line, onOpenEdit, onRemove }: CartLineRowProps) {
       <button
         type="button"
         onClick={handleRemove}
-        aria-label={intl.formatMessage(
-          { id: "cart.row.removeAria" },
-          { name: line.name },
-        )}
+        aria-label={intl.formatMessage({ id: "cart.row.removeAria" }, { name: line.name })}
         className="absolute inset-y-0 right-0 flex items-center justify-center bg-danger-solid px-5 text-sm font-semibold text-white"
         style={{ width: `${SWIPE_REVEAL_PX}px` }}
       >
@@ -91,13 +84,8 @@ export function CartLineRow({ line, onOpenEdit, onRemove }: CartLineRowProps) {
           className="flex flex-1 items-center justify-between gap-4 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-600 rounded-md"
         >
           <div className="min-w-0">
-            <p className="truncate text-base font-semibold text-neutral-900">
-              {line.name}
-            </p>
-            <p
-              className="text-xs text-neutral-500 tabular-nums"
-              data-tabular="true"
-            >
+            <p className="truncate text-base font-semibold text-neutral-900">{line.name}</p>
+            <p className="text-xs text-neutral-500 tabular-nums" data-tabular="true">
               {intl.formatMessage(
                 { id: "cart.row.qtyLine" },
                 {
@@ -107,10 +95,7 @@ export function CartLineRow({ line, onOpenEdit, onRemove }: CartLineRowProps) {
               )}
             </p>
           </div>
-          <p
-            className="text-base font-semibold text-neutral-900 tabular-nums"
-            data-tabular="true"
-          >
+          <p className="text-base font-semibold text-neutral-900 tabular-nums" data-tabular="true">
             {formatIdr(line.lineTotalIdr)}
           </p>
         </button>

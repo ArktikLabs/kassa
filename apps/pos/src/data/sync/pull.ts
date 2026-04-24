@@ -1,4 +1,4 @@
-import { z } from "zod";
+import type { z } from "zod";
 import {
   bomPullResponse,
   itemPullResponse,
@@ -15,21 +15,9 @@ import type { Table } from "dexie";
 import type { Database } from "../db/index.ts";
 import type { KassaDexie } from "../db/schema.ts";
 import { toRupiah } from "../../shared/money/index.ts";
-import type {
-  Bom,
-  Item,
-  Outlet,
-  ReferenceTable,
-  StockSnapshot,
-  Uom,
-} from "../db/types.ts";
+import type { Bom, Item, Outlet, ReferenceTable, StockSnapshot, Uom } from "../db/types.ts";
 import { stockSnapshotKey } from "../db/types.ts";
-import {
-  SyncHttpError,
-  SyncNetworkError,
-  SyncOfflineError,
-  SyncParseError,
-} from "./errors.ts";
+import { SyncHttpError, SyncNetworkError, SyncOfflineError, SyncParseError } from "./errors.ts";
 import { computeBackoffMs, sleep, type BackoffOptions } from "./backoff.ts";
 import type { SyncStatusStore } from "./status.ts";
 
@@ -182,9 +170,7 @@ function buildTableSpecs(): SpecMap {
     stock_snapshot: {
       table: "stock_snapshot",
       path: "/v1/stock/snapshot",
-      schema: stockPullResponse as unknown as z.ZodType<
-        PullEnvelope<StockSnapshotRecord>
-      >,
+      schema: stockPullResponse as unknown as z.ZodType<PullEnvelope<StockSnapshotRecord>>,
       requiresOutlet: true,
       toRows: (records) =>
         records.map((r) => ({
@@ -306,13 +292,7 @@ async function pullOneTable(
     });
     let page: PullEnvelope<unknown>;
     try {
-      page = await fetchPage(
-        spec as TableSpec<unknown, unknown>,
-        url,
-        fetchImpl,
-        signal,
-        auth,
-      );
+      page = await fetchPage(spec as TableSpec<unknown, unknown>, url, fetchImpl, signal, auth);
       attempt = 0;
     } catch (err) {
       if (err instanceof SyncParseError) {
@@ -320,8 +300,7 @@ async function pullOneTable(
         throw err;
       }
       const retryable =
-        err instanceof SyncNetworkError ||
-        (err instanceof SyncHttpError && err.retryable);
+        err instanceof SyncNetworkError || (err instanceof SyncHttpError && err.retryable);
       if (!retryable) throw err;
       attempt += 1;
       if (attempt > maxRetries) throw err;
@@ -332,25 +311,17 @@ async function pullOneTable(
 
     const rows = (spec.toRows as (r: readonly unknown[]) => unknown[])(page.records);
     const nowIso = clock().toISOString();
-    const nextCursor = page.nextPageToken ? cursor : page.nextCursor ?? cursor;
-    await db.transaction(
-      "rw",
-      spec.targetTable(db),
-      db.sync_state,
-      async () => {
-        await (spec.upsert as (db: KassaDexie, rows: readonly unknown[]) => Promise<void>)(
-          db,
-          rows,
-        );
-        const existing = await db.sync_state.get(spec.table);
-        await db.sync_state.put({
-          table: spec.table,
-          cursor: nextCursor,
-          lastPulledAt: nowIso,
-          lastPushedAt: existing?.lastPushedAt ?? null,
-        });
-      },
-    );
+    const nextCursor = page.nextPageToken ? cursor : (page.nextCursor ?? cursor);
+    await db.transaction("rw", spec.targetTable(db), db.sync_state, async () => {
+      await (spec.upsert as (db: KassaDexie, rows: readonly unknown[]) => Promise<void>)(db, rows);
+      const existing = await db.sync_state.get(spec.table);
+      await db.sync_state.put({
+        table: spec.table,
+        cursor: nextCursor,
+        lastPulledAt: nowIso,
+        lastPushedAt: existing?.lastPushedAt ?? null,
+      });
+    });
     batches += 1;
     records += rows.length;
     cursor = nextCursor;
@@ -361,10 +332,7 @@ async function pullOneTable(
   return { table: spec.table, batches, records, cursor };
 }
 
-export async function pullAll(
-  database: Database,
-  opts: PullOptions,
-): Promise<PullAllResult> {
+export async function pullAll(database: Database, opts: PullOptions): Promise<PullAllResult> {
   const clock = opts.clock ?? (() => new Date());
   const startedAt = clock().toISOString();
   const isOnline = opts.isOnline ?? defaultIsOnline;

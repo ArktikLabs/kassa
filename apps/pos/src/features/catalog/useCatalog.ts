@@ -42,25 +42,21 @@ export function useCatalog(): {
     };
   }, []);
 
-  const result = useLiveQuery<CatalogQueryResult | undefined>(
-    async (): Promise<CatalogQueryResult | undefined> => {
-      if (!db) return undefined;
-      const items = await db.repos.items.listActive(200);
-      const outletId = (await db.repos.deviceSecret.get())?.outletId;
-      const stockRows = outletId
-        ? await db.repos.stockSnapshot.forOutlet(outletId)
-        : [];
-      const stockByItem: Record<string, StockSnapshot | undefined> = {};
-      for (const row of stockRows) stockByItem[row.itemId] = row;
-      const tiles: CatalogTileData[] = items.map((item) => ({
-        item,
-        outOfStock:
-          item.isStockTracked && (stockByItem[item.id]?.onHand ?? 0) <= 0,
-      }));
-      return { tiles, items, stockByItem };
-    },
-    [db],
-  );
+  const result = useLiveQuery<CatalogQueryResult | undefined>(async (): Promise<
+    CatalogQueryResult | undefined
+  > => {
+    if (!db) return undefined;
+    const items = await db.repos.items.listActive(200);
+    const outletId = (await db.repos.deviceSecret.get())?.outletId;
+    const stockRows = outletId ? await db.repos.stockSnapshot.forOutlet(outletId) : [];
+    const stockByItem: Record<string, StockSnapshot | undefined> = {};
+    for (const row of stockRows) stockByItem[row.itemId] = row;
+    const tiles: CatalogTileData[] = items.map((item) => ({
+      item,
+      outOfStock: item.isStockTracked && (stockByItem[item.id]?.onHand ?? 0) <= 0,
+    }));
+    return { tiles, items, stockByItem };
+  }, [db]);
 
   return {
     tiles: result?.tiles ?? EMPTY_RESULT.tiles,

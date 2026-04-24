@@ -29,8 +29,7 @@ export interface CartStore {
 export const useCartStore = create<CartStore>((set, get) => ({
   lines: emptyCart.lines,
   discountIdr: emptyCart.discountIdr,
-  addLine: (input) =>
-    set((s) => addLine({ lines: s.lines, discountIdr: s.discountIdr }, input)),
+  addLine: (input) => set((s) => addLine({ lines: s.lines, discountIdr: s.discountIdr }, input)),
   incrementLine: (itemId) =>
     set((s) => incrementLine({ lines: s.lines, discountIdr: s.discountIdr }, itemId)),
   decrementLine: (itemId) =>
@@ -39,8 +38,7 @@ export const useCartStore = create<CartStore>((set, get) => ({
     set((s) => setLineQuantity({ lines: s.lines, discountIdr: s.discountIdr }, itemId, quantity)),
   removeLine: (itemId) =>
     set((s) => removeLine({ lines: s.lines, discountIdr: s.discountIdr }, itemId)),
-  clear: () =>
-    set((s) => clearCart({ lines: s.lines, discountIdr: s.discountIdr })),
+  clear: () => set((s) => clearCart({ lines: s.lines, discountIdr: s.discountIdr })),
   totals: () => totals({ lines: get().lines, discountIdr: get().discountIdr }),
   count: () => lineCount({ lines: get().lines, discountIdr: get().discountIdr }),
 }));

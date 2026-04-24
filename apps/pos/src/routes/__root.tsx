@@ -15,7 +15,6 @@ function mapPhase(phase: SyncPhase): { state: ConnectionState; pendingCount: num
       return { state: "offline", pendingCount: 0 };
     case "error":
       return { state: "error", pendingCount: 0 };
-    case "idle":
     default:
       return { state: "online", pendingCount: 0 };
   }

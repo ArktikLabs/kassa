@@ -34,9 +34,7 @@ export function addLine(state: CartState, input: AddLineInput): CartState {
     const nextQty = existing.quantity + delta;
     return {
       ...state,
-      lines: state.lines.map((l) =>
-        l.itemId === input.itemId ? rebuildLine(l, nextQty) : l,
-      ),
+      lines: state.lines.map((l) => (l.itemId === input.itemId ? rebuildLine(l, nextQty) : l)),
     };
   }
   const newLine: CartLine = {
@@ -54,9 +52,7 @@ export function incrementLine(state: CartState, itemId: string): CartState {
   if (!existing) return state;
   return {
     ...state,
-    lines: state.lines.map((l) =>
-      l.itemId === itemId ? rebuildLine(l, l.quantity + 1) : l,
-    ),
+    lines: state.lines.map((l) => (l.itemId === itemId ? rebuildLine(l, l.quantity + 1) : l)),
   };
 }
 
@@ -68,26 +64,18 @@ export function decrementLine(state: CartState, itemId: string): CartState {
   }
   return {
     ...state,
-    lines: state.lines.map((l) =>
-      l.itemId === itemId ? rebuildLine(l, l.quantity - 1) : l,
-    ),
+    lines: state.lines.map((l) => (l.itemId === itemId ? rebuildLine(l, l.quantity - 1) : l)),
   };
 }
 
-export function setLineQuantity(
-  state: CartState,
-  itemId: string,
-  quantity: number,
-): CartState {
+export function setLineQuantity(state: CartState, itemId: string, quantity: number): CartState {
   if (!Number.isInteger(quantity) || quantity < 0) return state;
   if (quantity === 0) return removeLine(state, itemId);
   const existing = state.lines.find((l) => l.itemId === itemId);
   if (!existing) return state;
   return {
     ...state,
-    lines: state.lines.map((l) =>
-      l.itemId === itemId ? rebuildLine(l, quantity) : l,
-    ),
+    lines: state.lines.map((l) => (l.itemId === itemId ? rebuildLine(l, quantity) : l)),
   };
 }
 
@@ -108,9 +96,7 @@ export function totals(state: CartState): CartTotals {
     zeroRupiah,
   );
   const discount =
-    (state.discountIdr as number) > (subtotal as number)
-      ? subtotal
-      : state.discountIdr;
+    (state.discountIdr as number) > (subtotal as number) ? subtotal : state.discountIdr;
   const total = subtractRupiah(subtotal, discount);
   return { subtotalIdr: subtotal, discountIdr: discount, totalIdr: total };
 }

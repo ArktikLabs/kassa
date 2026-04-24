@@ -1,10 +1,6 @@
 import { uuidv7 } from "../../lib/uuid.js";
 import { CODE_LENGTH, generateEnrolmentCode } from "./code.js";
-import {
-  encodeApiKey,
-  generateApiSecret,
-  hashApiSecret,
-} from "./credentials.js";
+import { encodeApiKey, generateApiSecret, hashApiSecret } from "./credentials.js";
 import type { EnrolmentRepository } from "./repository.js";
 
 export const DEFAULT_CODE_TTL_MS = 10 * 60 * 1000;
@@ -101,10 +97,7 @@ export class EnrolmentService {
       throw new EnrolmentError("code_not_found", "Enrolment code is not recognised.");
     }
     if (codeRow.consumedAt !== null) {
-      throw new EnrolmentError(
-        "code_already_used",
-        "Enrolment code has already been consumed.",
-      );
+      throw new EnrolmentError("code_already_used", "Enrolment code has already been consumed.");
     }
     if (codeRow.expiresAt.getTime() <= this.now().getTime()) {
       throw new EnrolmentError("code_expired", "Enrolment code has expired.");

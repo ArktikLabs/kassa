@@ -11,15 +11,12 @@ import { expect, test } from "@playwright/test";
 async function waitForServiceWorker(page: import("@playwright/test").Page) {
   await page.waitForFunction(async () => {
     const reg = await navigator.serviceWorker.getRegistration();
-    return Boolean(reg && reg.active);
+    return Boolean(reg?.active);
   });
 }
 
 test.describe("Service worker offline shell", () => {
-  test("app shell renders after going offline and reloading", async ({
-    page,
-    context,
-  }) => {
+  test("app shell renders after going offline and reloading", async ({ page, context }) => {
     await page.goto("/enrol");
     // Brand link is part of the persistent header — proves the shell rendered.
     await expect(page.getByRole("link", { name: /Kassa POS/i })).toBeVisible();
@@ -30,14 +27,10 @@ test.describe("Service worker offline shell", () => {
 
     // Header renders from precache; route content (heading) from precache too.
     await expect(page.getByRole("link", { name: /Kassa POS/i })).toBeVisible();
-    await expect(
-      page.getByRole("heading", { name: "Enrol perangkat" }),
-    ).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Enrol perangkat" })).toBeVisible();
   });
 
-  test("waiting service worker does not auto-activate without SKIP_WAITING", async ({
-    page,
-  }) => {
+  test("waiting service worker does not auto-activate without SKIP_WAITING", async ({ page }) => {
     await page.goto("/enrol");
     await waitForServiceWorker(page);
 
@@ -45,7 +38,7 @@ test.describe("Service worker offline shell", () => {
     // without crashing — this exercises the message listener.
     const dispatched = await page.evaluate(async () => {
       const reg = await navigator.serviceWorker.getRegistration();
-      if (!reg || !reg.active) return false;
+      if (!reg?.active) return false;
       reg.active.postMessage({ type: "PING_FROM_TEST" });
       return true;
     });

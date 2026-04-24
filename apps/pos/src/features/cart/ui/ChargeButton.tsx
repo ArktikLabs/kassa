@@ -8,18 +8,11 @@ interface ChargeButtonProps {
   onClick(): void;
 }
 
-export function ChargeButton({
-  totalIdr,
-  disabled,
-  onClick,
-}: ChargeButtonProps) {
+export function ChargeButton({ totalIdr, disabled, onClick }: ChargeButtonProps) {
   const intl = useIntl();
   const label = disabled
     ? intl.formatMessage({ id: "cart.charge.empty" })
-    : intl.formatMessage(
-        { id: "cart.charge.pay" },
-        { total: formatIdr(totalIdr) },
-      );
+    : intl.formatMessage({ id: "cart.charge.pay" }, { total: formatIdr(totalIdr) });
   return (
     <button
       type="button"

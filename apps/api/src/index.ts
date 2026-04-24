@@ -49,9 +49,7 @@ async function main(): Promise<void> {
       "MIDTRANS_SERVER_KEY not set; /v1/payments/webhooks/midtrans will respond 503 until configured",
     );
   }
-  app.log.warn(
-    "Enrolment store is in-memory; persistent Postgres binding lands in KASA-21.",
-  );
+  app.log.warn("Enrolment store is in-memory; persistent Postgres binding lands in KASA-21.");
 
   try {
     await app.listen({ host: env.HOST, port: env.PORT });

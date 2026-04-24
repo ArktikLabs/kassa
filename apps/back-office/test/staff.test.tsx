@@ -10,18 +10,14 @@ describe("Staff CRUD", () => {
     renderAt("/staff", [{ path: "/staff", component: StaffScreen }]);
     const user = userEvent.setup();
 
-    await user.click(
-      await screen.findByRole("button", { name: "Tambah staf" }),
-    );
+    await user.click(await screen.findByRole("button", { name: "Tambah staf" }));
     await user.type(screen.getByLabelText("Nama tampilan"), "Budi Santoso");
     await user.type(screen.getByLabelText("Email"), "budi@warungpusat.id");
     await user.selectOptions(screen.getByLabelText("Peran"), "cashier");
     await user.type(screen.getByLabelText("PIN 4 digit"), "4321");
     await user.click(screen.getByRole("button", { name: "Simpan staf" }));
 
-    const created = getSnapshot().staff.find(
-      (s) => s.email === "budi@warungpusat.id",
-    );
+    const created = getSnapshot().staff.find((s) => s.email === "budi@warungpusat.id");
     expect(created).toBeDefined();
     expect(created!.role).toBe("cashier");
     expect(created!.pin).toBe("4321");
@@ -32,9 +28,7 @@ describe("Staff CRUD", () => {
     renderAt("/staff", [{ path: "/staff", component: StaffScreen }]);
     const user = userEvent.setup();
 
-    await user.click(
-      (await screen.findAllByRole("button", { name: "Atur ulang PIN" }))[0]!,
-    );
+    await user.click((await screen.findAllByRole("button", { name: "Atur ulang PIN" }))[0]!);
 
     const seeded = getSnapshot().staff[0]!;
     expect(seeded.pin).toMatch(/^\d{4}$/);

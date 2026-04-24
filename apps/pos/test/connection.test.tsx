@@ -1,10 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, render, screen, waitFor } from "@testing-library/react";
 import { IntlProvider } from "../src/i18n/IntlProvider";
-import {
-  ConnectionPill,
-  type ConnectionState,
-} from "../src/components/ConnectionPill";
+import { ConnectionPill, type ConnectionState } from "../src/components/ConnectionPill";
 import { useConnectionState } from "../src/lib/connection";
 
 function setOnLine(value: boolean) {
@@ -41,9 +38,7 @@ afterEach(() => {
 
 describe("useConnectionState", () => {
   it("reports online once the /health probe resolves OK", async () => {
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      new Response(null, { status: 200 }),
-    );
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(null, { status: 200 }));
     renderProbe();
     await waitFor(() => {
       expect(screen.getByRole("status")).toHaveAttribute("data-state", "online");
@@ -51,9 +46,7 @@ describe("useConnectionState", () => {
   });
 
   it("reports error when /health returns non-OK while the browser claims online", async () => {
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      new Response(null, { status: 503 }),
-    );
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(null, { status: 503 }));
     renderProbe();
     await waitFor(() => {
       expect(screen.getByRole("status")).toHaveAttribute("data-state", "error");
@@ -62,9 +55,7 @@ describe("useConnectionState", () => {
 
   it("reports offline when navigator.onLine is false even if fetch would succeed", async () => {
     setOnLine(false);
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      new Response(null, { status: 200 }),
-    );
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(null, { status: 200 }));
     renderProbe();
     await waitFor(() => {
       expect(screen.getByRole("status")).toHaveAttribute("data-state", "offline");
@@ -72,13 +63,9 @@ describe("useConnectionState", () => {
   });
 
   it("flips to offline when an offline event fires", async () => {
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      new Response(null, { status: 200 }),
-    );
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(null, { status: 200 }));
     renderProbe();
-    await waitFor(() =>
-      expect(screen.getByRole("status")).toHaveAttribute("data-state", "online"),
-    );
+    await waitFor(() => expect(screen.getByRole("status")).toHaveAttribute("data-state", "online"));
     setOnLine(false);
     act(() => {
       window.dispatchEvent(new Event("offline"));

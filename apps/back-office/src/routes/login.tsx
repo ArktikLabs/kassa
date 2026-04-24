@@ -55,10 +55,7 @@ export function LoginScreen() {
           <FormattedMessage id="login.subheading" />
         </p>
         <form onSubmit={submit} className="mt-6 space-y-4">
-          <Field
-            label={<FormattedMessage id="login.email" />}
-            htmlFor="login-email"
-          >
+          <Field label={<FormattedMessage id="login.email" />} htmlFor="login-email">
             <TextInput
               id="login-email"
               name="email"

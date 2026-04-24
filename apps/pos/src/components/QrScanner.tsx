@@ -9,7 +9,9 @@ import { useEffect, useRef, useState } from "react";
 import { useIntl } from "react-intl";
 
 interface BarcodeDetectorCtor {
-  new (options?: { formats?: string[] }): {
+  new (options?: {
+    formats?: string[];
+  }): {
     detect(source: CanvasImageSource): Promise<Array<{ rawValue: string }>>;
   };
 }
@@ -128,12 +130,7 @@ export function QrScanner({ onDetected, onClose }: QrScannerProps) {
         {error ? (
           <p className="max-w-md text-center text-sm text-red-200">{error}</p>
         ) : (
-          <video
-            ref={videoRef}
-            className="max-h-full max-w-full rounded-md"
-            playsInline
-            muted
-          />
+          <video ref={videoRef} className="max-h-full max-w-full rounded-md" playsInline muted />
         )}
       </div>
       <p className="mt-2 text-center text-xs text-white/70">

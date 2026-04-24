@@ -1,9 +1,5 @@
 import { FormattedMessage } from "react-intl";
-import {
-  acceptUpdate,
-  dismissOfflineReady,
-  usePwaState,
-} from "../lib/pwaStore";
+import { acceptUpdate, dismissOfflineReady, usePwaState } from "../lib/pwaStore";
 
 /*
  * DESIGN-SYSTEM §6.11 — toast container for the two PWA lifecycle

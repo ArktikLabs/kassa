@@ -8,15 +8,9 @@ describe("computeBackoffMs", () => {
 
   it("scales exponentially up to the cap and multiplies by the jitter", () => {
     const rand = () => 0.999;
-    expect(computeBackoffMs(1, { baseMs: 1000, capMs: 60_000, random: rand })).toBe(
-      999,
-    );
-    expect(computeBackoffMs(2, { baseMs: 1000, capMs: 60_000, random: rand })).toBe(
-      1998,
-    );
-    expect(computeBackoffMs(7, { baseMs: 1000, capMs: 60_000, random: rand })).toBe(
-      59_940,
-    );
+    expect(computeBackoffMs(1, { baseMs: 1000, capMs: 60_000, random: rand })).toBe(999);
+    expect(computeBackoffMs(2, { baseMs: 1000, capMs: 60_000, random: rand })).toBe(1998);
+    expect(computeBackoffMs(7, { baseMs: 1000, capMs: 60_000, random: rand })).toBe(59_940);
   });
 
   it("caps the jitter window at capMs", () => {

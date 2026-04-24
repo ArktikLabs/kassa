@@ -1,9 +1,4 @@
-import {
-  useEffect,
-  useRef,
-  type KeyboardEvent,
-  type ReactNode,
-} from "react";
+import { useEffect, useRef, type KeyboardEvent, type ReactNode } from "react";
 
 interface BottomSheetProps {
   open: boolean;
@@ -20,13 +15,7 @@ interface BottomSheetProps {
  * for the cart edit flow the sheet is small and the close button is
  * always visible.
  */
-export function BottomSheet({
-  open,
-  onClose,
-  title,
-  children,
-  labelledById,
-}: BottomSheetProps) {
+export function BottomSheet({ open, onClose, title, children, labelledById }: BottomSheetProps) {
   const panelRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -53,10 +42,7 @@ export function BottomSheet({
   }
 
   return (
-    <div
-      className="fixed inset-0 z-40 flex items-end justify-center"
-      aria-hidden={false}
-    >
+    <div className="fixed inset-0 z-40 flex items-end justify-center" aria-hidden={false}>
       <button
         type="button"
         className="absolute inset-0 bg-neutral-900/50"
@@ -73,16 +59,10 @@ export function BottomSheet({
         className="relative z-10 w-full max-w-[560px] rounded-t-lg bg-white pb-6 shadow-lg"
       >
         <div className="flex justify-center pt-2">
-          <span
-            aria-hidden
-            className="h-1 w-10 rounded-full bg-neutral-300"
-          />
+          <span aria-hidden className="h-1 w-10 rounded-full bg-neutral-300" />
         </div>
         <div className="px-5 pt-2 pb-1">
-          <h2
-            id={labelledById}
-            className="text-base font-bold text-neutral-900"
-          >
+          <h2 id={labelledById} className="text-base font-bold text-neutral-900">
             {title}
           </h2>
         </div>

@@ -4,11 +4,7 @@ import { Button } from "../components/Button";
 import { DataTable, type DataTableColumn } from "../components/DataTable";
 import { Field, SelectInput, TextInput } from "../components/Field";
 import { Modal } from "../components/Modal";
-import {
-  createEnrolmentCode,
-  createOutlet,
-  updateOutlet,
-} from "../data/store";
+import { createEnrolmentCode, createOutlet, updateOutlet } from "../data/store";
 import { useOutlets } from "../data/useStore";
 import type { Outlet } from "../data/types";
 
@@ -27,9 +23,11 @@ export function OutletsScreen() {
   const [editing, setEditing] = useState<Outlet | null>(null);
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState<Draft>(EMPTY_DRAFT);
-  const [codeIssuedFor, setCodeIssuedFor] = useState<
-    { outletId: string; code: string; expiresAt: string } | null
-  >(null);
+  const [codeIssuedFor, setCodeIssuedFor] = useState<{
+    outletId: string;
+    code: string;
+    expiresAt: string;
+  } | null>(null);
 
   const startNew = () => {
     setEditing(null);
@@ -74,11 +72,7 @@ export function OutletsScreen() {
       header: <FormattedMessage id="outlets.col.tax" />,
       render: (r) => (
         <FormattedMessage
-          id={
-            r.taxProfile === "ppn_11"
-              ? "outlets.form.tax.ppn_11"
-              : "outlets.form.tax.none"
-          }
+          id={r.taxProfile === "ppn_11" ? "outlets.form.tax.ppn_11" : "outlets.form.tax.none"}
         />
       ),
     },
@@ -124,9 +118,7 @@ export function OutletsScreen() {
             id="outlets.code.issued"
             values={{
               code: <code className="font-mono">{codeIssuedFor.code}</code>,
-              expires: new Date(codeIssuedFor.expiresAt).toLocaleTimeString(
-                "id-ID",
-              ),
+              expires: new Date(codeIssuedFor.expiresAt).toLocaleTimeString("id-ID"),
             }}
           />
         </div>
@@ -143,11 +135,7 @@ export function OutletsScreen() {
         open={open}
         onClose={() => setOpen(false)}
         title={
-          editing ? (
-            <FormattedMessage id="outlets.edit" />
-          ) : (
-            <FormattedMessage id="outlets.new" />
-          )
+          editing ? <FormattedMessage id="outlets.edit" /> : <FormattedMessage id="outlets.new" />
         }
         footer={
           <>
@@ -161,10 +149,7 @@ export function OutletsScreen() {
         }
       >
         <div className="space-y-4">
-          <Field
-            label={<FormattedMessage id="outlets.form.name" />}
-            htmlFor="outlet-name"
-          >
+          <Field label={<FormattedMessage id="outlets.form.name" />} htmlFor="outlet-name">
             <TextInput
               id="outlet-name"
               name="name"
@@ -172,10 +157,7 @@ export function OutletsScreen() {
               onChange={(e) => setDraft({ ...draft, name: e.target.value })}
             />
           </Field>
-          <Field
-            label={<FormattedMessage id="outlets.form.tax" />}
-            htmlFor="outlet-tax"
-          >
+          <Field label={<FormattedMessage id="outlets.form.tax" />} htmlFor="outlet-tax">
             <SelectInput
               id="outlet-tax"
               name="taxProfile"
@@ -187,38 +169,26 @@ export function OutletsScreen() {
                 })
               }
             >
-              <option value="none">
-                {intl.formatMessage({ id: "outlets.form.tax.none" })}
-              </option>
+              <option value="none">{intl.formatMessage({ id: "outlets.form.tax.none" })}</option>
               <option value="ppn_11">
                 {intl.formatMessage({ id: "outlets.form.tax.ppn_11" })}
               </option>
             </SelectInput>
           </Field>
-          <Field
-            label={<FormattedMessage id="outlets.form.receipt" />}
-            htmlFor="outlet-receipt"
-          >
+          <Field label={<FormattedMessage id="outlets.form.receipt" />} htmlFor="outlet-receipt">
             <TextInput
               id="outlet-receipt"
               name="receiptHeader"
               value={draft.receiptHeader}
-              onChange={(e) =>
-                setDraft({ ...draft, receiptHeader: e.target.value })
-              }
+              onChange={(e) => setDraft({ ...draft, receiptHeader: e.target.value })}
             />
           </Field>
-          <Field
-            label={<FormattedMessage id="outlets.form.address" />}
-            htmlFor="outlet-address"
-          >
+          <Field label={<FormattedMessage id="outlets.form.address" />} htmlFor="outlet-address">
             <TextInput
               id="outlet-address"
               name="addressLine"
               value={draft.addressLine}
-              onChange={(e) =>
-                setDraft({ ...draft, addressLine: e.target.value })
-              }
+              onChange={(e) => setDraft({ ...draft, addressLine: e.target.value })}
             />
           </Field>
         </div>

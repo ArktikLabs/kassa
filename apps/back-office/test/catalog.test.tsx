@@ -11,9 +11,7 @@ describe("Catalog CRUD", () => {
     const user = userEvent.setup();
 
     // Create
-    await user.click(
-      await screen.findByRole("button", { name: "Tambah produk" }),
-    );
+    await user.click(await screen.findByRole("button", { name: "Tambah produk" }));
     await user.type(screen.getByLabelText("SKU"), "ES-001");
     await user.type(screen.getByLabelText("Nama produk"), "Es Teh Manis");
     await user.type(screen.getByLabelText("Harga (IDR)"), "8000");

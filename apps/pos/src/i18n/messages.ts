@@ -47,10 +47,8 @@ const id: MessageMap = {
   "enrol.qr.dialog_label": "Pemindai kode QR enrolment",
   "enrol.qr.permission":
     "Tidak bisa mengakses kamera. Izinkan akses kamera atau masukkan kode manual.",
-  "enrol.qr.camera_failed":
-    "Kamera tidak dapat dibuka. Masukkan kode manual sebagai gantinya.",
-  "enrol.qr.unsupported":
-    "Peramban ini tidak mendukung pemindai QR. Masukkan kode manual.",
+  "enrol.qr.camera_failed": "Kamera tidak dapat dibuka. Masukkan kode manual sebagai gantinya.",
+  "enrol.qr.unsupported": "Peramban ini tidak mendukung pemindai QR. Masukkan kode manual.",
   "enrol.toast.success": "Perangkat terhubung ke {outlet}",
   "enrol.error.retry": "Coba lagi",
   "enrol.error.code_format": "Kode harus 8 karakter (huruf besar dan angka, tanpa O/I/L/U).",
@@ -74,8 +72,7 @@ const id: MessageMap = {
   "catalog.empty.body":
     "Tambahkan produk di back office — katalog akan muncul setelah sinkronisasi berikutnya.",
   "catalog.variant.title": "Varian untuk {name}",
-  "catalog.variant.placeholder":
-    "Pemilih varian akan diisi ketika data varian tersedia.",
+  "catalog.variant.placeholder": "Pemilih varian akan diisi ketika data varian tersedia.",
   "catalog.variant.close": "Tutup",
   "cart.heading": "Keranjang",
   "cart.aria": "Keranjang",
@@ -85,8 +82,7 @@ const id: MessageMap = {
   "cart.charge.empty": "Tambah barang dulu",
   "cart.charge.pay": "Bayar {total}",
   "cart.row.qtyLine": "{quantity}× {unit}",
-  "cart.row.editAria":
-    "{name}, {quantity} unit, total {total}. Ketuk untuk ubah jumlah.",
+  "cart.row.editAria": "{name}, {quantity} unit, total {total}. Ketuk untuk ubah jumlah.",
   "cart.row.remove": "Hapus",
   "cart.row.removeAria": "Hapus {name} dari keranjang",
   "cart.edit.title": "Ubah jumlah {name}",
@@ -143,8 +139,7 @@ const id: MessageMap = {
   "admin.device.outlet": "Outlet",
   "admin.device.merchant": "Merchant",
   "admin.device.id": "Device ID",
-  "admin.device.unenrolled":
-    "Perangkat ini belum terdaftar. Buka /enrol untuk menghubungkannya.",
+  "admin.device.unenrolled": "Perangkat ini belum terdaftar. Buka /enrol untuk menghubungkannya.",
   "admin.reset.heading": "Reset perangkat",
   "admin.reset.description":
     "Menghapus kredensial perangkat dan cache lokal. Anda perlu kode enrolment baru dari Back Office untuk menghubungkan ulang.",
@@ -189,18 +184,15 @@ const en: MessageMap = {
   "enrol.cta": "Connect device",
   "enrol.cta.submitting": "Connecting…",
   "enrol.cta.scan": "Scan QR",
-  "enrol.cta.scan_unsupported":
-    "This browser cannot scan QR codes. Enter the code manually.",
+  "enrol.cta.scan_unsupported": "This browser cannot scan QR codes. Enter the code manually.",
   "enrol.qr.heading": "Point the camera at the QR",
   "enrol.qr.close": "Close",
   "enrol.qr.hint": "Frame the full QR code and make sure there's enough light.",
   "enrol.qr.dialog_label": "Enrolment QR scanner",
   "enrol.qr.permission":
     "Can't access the camera. Grant camera permission or enter the code manually.",
-  "enrol.qr.camera_failed":
-    "Couldn't open the camera. Enter the code manually instead.",
-  "enrol.qr.unsupported":
-    "This browser doesn't support the QR scanner. Enter the code manually.",
+  "enrol.qr.camera_failed": "Couldn't open the camera. Enter the code manually instead.",
+  "enrol.qr.unsupported": "This browser doesn't support the QR scanner. Enter the code manually.",
   "enrol.toast.success": "Device connected to {outlet}",
   "enrol.error.retry": "Try again",
   "enrol.error.code_format":
@@ -211,8 +203,7 @@ const en: MessageMap = {
     "Code already used on another device. Generate a new one in Back Office.",
   "enrol.error.bad_request": "Invalid code.",
   "enrol.error.rate_limited": "Too many attempts. Wait a moment and try again.",
-  "enrol.error.network_error":
-    "No connection. Go online to enrol this device.",
+  "enrol.error.network_error": "No connection. Go online to enrol this device.",
   "enrol.error.unknown": "Unexpected error. Try again shortly.",
   "catalog.heading": "Catalog",
   "catalog.aria": "Product catalog",
@@ -222,11 +213,9 @@ const en: MessageMap = {
   "catalog.tile.ariaOutOfStock": "{name}, out of stock. Unavailable.",
   "catalog.tile.outOfStock": "Out of stock",
   "catalog.empty.heading": "No products yet",
-  "catalog.empty.body":
-    "Add products in the back office — they will appear after the next sync.",
+  "catalog.empty.body": "Add products in the back office — they will appear after the next sync.",
   "catalog.variant.title": "Variants for {name}",
-  "catalog.variant.placeholder":
-    "Variant picker will populate once variant data is available.",
+  "catalog.variant.placeholder": "Variant picker will populate once variant data is available.",
   "catalog.variant.close": "Close",
   "cart.heading": "Cart",
   "cart.aria": "Cart",
@@ -236,8 +225,7 @@ const en: MessageMap = {
   "cart.charge.empty": "Add items first",
   "cart.charge.pay": "Pay {total}",
   "cart.row.qtyLine": "{quantity}× {unit}",
-  "cart.row.editAria":
-    "{name}, {quantity} units, total {total}. Tap to change quantity.",
+  "cart.row.editAria": "{name}, {quantity} units, total {total}. Tap to change quantity.",
   "cart.row.remove": "Remove",
   "cart.row.removeAria": "Remove {name} from cart",
   "cart.edit.title": "Edit quantity for {name}",
@@ -294,8 +282,7 @@ const en: MessageMap = {
   "admin.device.outlet": "Outlet",
   "admin.device.merchant": "Merchant",
   "admin.device.id": "Device ID",
-  "admin.device.unenrolled":
-    "This device isn't enrolled yet. Visit /enrol to connect it.",
+  "admin.device.unenrolled": "This device isn't enrolled yet. Visit /enrol to connect it.",
   "admin.reset.heading": "Reset device",
   "admin.reset.description":
     "Clears this device's credentials and local cache. You will need a new enrolment code from the Back Office to reconnect.",
