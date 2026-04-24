@@ -1,9 +1,9 @@
 # Kassa CI/CD Pipeline
 
-Status: v0 (CI only). Owner: DevOps. Source issue: [KASA-12](/KASA/issues/KASA-12).
+Status: v0 (CI only). Owner: DevOps. Source issues: [KASA-12](/KASA/issues/KASA-12) (pipeline), [KASA-17](/KASA/issues/KASA-17) (deployable build artifacts).
 Companion docs: [TECH-STACK.md](./TECH-STACK.md), [ARCHITECTURE.md](./ARCHITECTURE.md), [ROADMAP.md](./ROADMAP.md).
 
-This is the authoritative description of how Kassa code moves from a contributor's branch into `main` and — in later milestones — into production. v0 scope covers **CI only** (lint/typecheck/test/build on every PR and every push to `main`). Continuous **deployment** (Cloudflare Pages for the POS PWA, Fly.io for the API) lands in follow-up tickets under the M0 milestone.
+This is the authoritative description of how Kassa code moves from a contributor's branch into `main` and — in later milestones — into production. v0 scope covers **CI only** (lint/typecheck/test/build on every PR and every push to `main`, with compiled outputs preserved as workflow artifacts). Continuous **deployment** (Cloudflare Pages for the POS PWA, Fly.io for the API) lands in follow-up tickets under the M0 milestone.
 
 ---
 
@@ -20,6 +20,7 @@ This is the authoritative description of how Kassa code moves from a contributor
 | Typecheck         | `tsc --noEmit` per package (`pnpm -r typecheck`) |
 | Test              | Vitest (`pnpm -r test`)                 |
 | Build             | `tsc -p tsconfig.build.json` (packages) + Vite (apps) (`pnpm -r build`) |
+| Build artifacts   | `actions/upload-artifact` — one per deployable, 7-day retention (see §2.3) |
 | E2E (deferred)    | Playwright — separate workflow in a later ticket |
 | CD (deferred)     | Cloudflare Pages (PWA) + Fly.io (API)   |
 
@@ -51,6 +52,7 @@ Runs on the same ref cancel each other so only the newest PR push is executing. 
 5. **Build workspace** — `pnpm -r build`. `pnpm -r` is topology-aware, so `packages/*` (no internal deps) build before `apps/*` (which depend on them).
 6. **Typecheck** — `pnpm -r typecheck`.
 7. **Test** — `pnpm -r test` (Vitest only; Playwright E2E is deferred).
+8. **Upload build artifacts** — `actions/upload-artifact` for each deployable. See §2.3.
 
 **Timeout**: 15 minutes. A healthy run is ~2 minutes today (see §4).
 
@@ -77,9 +79,42 @@ All actions are pinned to full commit SHAs with a trailing comment naming the ta
 uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
 uses: pnpm/action-setup@fe02b34f77f8bc703788d5817da081398fad5dd2 # v4.0.0
+uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
 ```
 
 Renovate/Dependabot may bump these; reviewers must verify the SHA against the upstream tag before approving a bump.
+
+### 2.3 Build artifacts
+
+After `pnpm -r build` succeeds, CI uploads one artifact per deployable so that:
+
+- reviewers can download the compiled output of a PR and inspect what will actually ship, and
+- CD (future ticket) can pull the exact bytes produced on `main` instead of rebuilding from source on the deploy runner, eliminating any build-vs-deploy drift.
+
+| Artifact name     | Contents                                                                                       | Consumed by                            |
+|:------------------|:-----------------------------------------------------------------------------------------------|:---------------------------------------|
+| `pos-dist`        | `apps/pos/dist/` (Vite PWA output — HTML, hashed JS/CSS, service worker, manifest, icons)      | Cloudflare Pages (POS PWA)             |
+| `back-office-dist`| `apps/back-office/dist/` (Vite SPA output)                                                     | Cloudflare Pages (Back Office SPA)     |
+| `api-dist`        | `apps/api/dist/` + `apps/api/package.json` + `packages/{payments,schemas}/dist/` + their `package.json` + `pnpm-lock.yaml` + `pnpm-workspace.yaml` | Fly.io deploy for `apps/api`           |
+
+**Why `api-dist` ships the workspace scaffolding, not just `apps/api/dist/`.** The API imports from `@kassa/payments` and `@kassa/schemas` via `workspace:*`. A Fly.io runtime needs enough of the workspace to resolve those deps and run `pnpm install --prod --frozen-lockfile` before `node apps/api/dist/index.js`. Bundling the two packages' compiled `dist/` folders + `package.json` + the root lockfile and `pnpm-workspace.yaml` gives the deployer a self-contained artifact. Third-party runtime deps (fastify, drizzle-orm, argon2, etc.) are installed on the deploy side — they are intentionally not in the artifact because argon2 is a native addon and must be compiled for the deploy target's glibc/musl.
+
+**Settings shared by all three uploads**:
+
+- `if-no-files-found: error` — a missing `dist/` almost always means the build silently skipped a workspace. Fail loudly.
+- `retention-days: 7` — short by GitHub's standards (default is 90) because v0 has no CD consuming them yet. Bump this when CD lands and wants to replay a prior build.
+
+**Uploaded on both PR and `push: main`.** PR uploads let reviewers pull a preview build locally (`gh run download <run-id>`) without running `pnpm build` themselves. Main-branch uploads are the input to CD. The overhead is ~5 s per artifact at ~2–5 MB per deployable — negligible against the 15-min timeout.
+
+**Consistency across environments.** The artifact is produced from:
+
+- a pinned Node version (`.nvmrc` → `22`),
+- a pinned pnpm version (`packageManager` field → `9.12.0`),
+- a frozen lockfile (`--frozen-lockfile`),
+- a fixed `ubuntu-latest` runner image,
+- no environment variables leaking in from the runner (CI sets none beyond GitHub defaults).
+
+Two runs of the same SHA must therefore produce byte-identical `dist/` output modulo timestamps; any drift is a bug in the build toolchain. This is the guarantee CD (once live) will rely on for preview/staging/prod parity.
 
 ---
 
