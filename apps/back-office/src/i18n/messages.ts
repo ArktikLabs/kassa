@@ -50,8 +50,7 @@ const id: MessageMap = {
   "outlets.form.save": "Simpan outlet",
   "outlets.form.cancel": "Batal",
   "outlets.form.generate_code": "Buat kode enrolment",
-  "outlets.code.issued":
-    "Kode {code} dibuat untuk outlet ini. Berlaku hingga {expires}.",
+  "outlets.code.issued": "Kode {code} dibuat untuk outlet ini. Berlaku hingga {expires}.",
   "catalog.heading": "Katalog",
   "catalog.new": "Tambah produk",
   "catalog.edit": "Ubah produk",
@@ -153,8 +152,7 @@ const en: MessageMap = {
   "login.email": "Email",
   "login.password": "Password",
   "login.submit": "Sign in",
-  "login.error":
-    "Email or password not recognised. Scaffold stub: use a seeded staff email.",
+  "login.error": "Email or password not recognised. Scaffold stub: use a seeded staff email.",
   "guard.forbidden.heading": "Access restricted",
   "guard.forbidden.body":
     "This page is for managers or owners only. Ask your outlet owner to grant access.",
@@ -174,8 +172,7 @@ const en: MessageMap = {
   "outlets.form.save": "Save outlet",
   "outlets.form.cancel": "Cancel",
   "outlets.form.generate_code": "Generate enrolment code",
-  "outlets.code.issued":
-    "Code {code} issued for this outlet. Valid until {expires}.",
+  "outlets.code.issued": "Code {code} issued for this outlet. Valid until {expires}.",
   "catalog.heading": "Catalog",
   "catalog.new": "Add item",
   "catalog.edit": "Edit item",
@@ -253,8 +250,7 @@ const en: MessageMap = {
   "reconciliation.col.settled": "Settled",
   "reconciliation.col.variance": "Variance",
   "reconciliation.col.status": "Status",
-  "reconciliation.empty":
-    "No reconciled days yet. Rows appear here once an outlet closes EOD.",
+  "reconciliation.empty": "No reconciled days yet. Rows appear here once an outlet closes EOD.",
   "table.empty": "No data yet.",
   "table.pagination.prev": "Previous",
   "table.pagination.next": "Next",

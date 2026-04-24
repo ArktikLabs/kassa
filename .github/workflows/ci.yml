@@ -15,7 +15,7 @@ permissions:
 
 jobs:
   ci:
-    name: install → build → typecheck → test
+    name: install → lint → build → typecheck → test
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -35,6 +35,9 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Lint (Biome)
+        run: pnpm lint --reporter=github
 
       # Build before typecheck: workspace packages export types only from dist/.
       - name: Build workspace

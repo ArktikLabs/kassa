@@ -16,14 +16,10 @@ test("owner signs in and creates a catalog item", async ({ page }) => {
   await page.getByLabel("Kata sandi").fill("welcome-to-kassa");
   await page.getByRole("button", { name: "Masuk" }).click();
 
-  await expect(
-    page.getByRole("heading", { name: "Outlet", level: 1 }),
-  ).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Outlet", level: 1 })).toBeVisible();
 
   await page.getByRole("link", { name: "Katalog", exact: true }).first().click();
-  await expect(
-    page.getByRole("heading", { name: "Katalog", level: 1 }),
-  ).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Katalog", level: 1 })).toBeVisible();
 
   await page.getByRole("button", { name: "Tambah produk" }).click();
   await page.getByLabel("SKU").fill("KOP-001");

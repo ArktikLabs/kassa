@@ -13,10 +13,7 @@ export function DevicesScreen() {
   const codes = useEnrolmentCodes();
   const outlets = useOutlets();
   const intl = useIntl();
-  const outletById = useMemo(
-    () => new Map(outlets.map((o) => [o.id, o])),
-    [outlets],
-  );
+  const outletById = useMemo(() => new Map(outlets.map((o) => [o.id, o])), [outlets]);
   const [open, setOpen] = useState(false);
   const [selectedOutlet, setSelectedOutlet] = useState(outlets[0]?.id ?? "");
 
@@ -128,10 +125,7 @@ export function DevicesScreen() {
           </>
         }
       >
-        <Field
-          label={<FormattedMessage id="devices.col.outlet" />}
-          htmlFor="code-outlet"
-        >
+        <Field label={<FormattedMessage id="devices.col.outlet" />} htmlFor="code-outlet">
           <SelectInput
             id="code-outlet"
             value={selectedOutlet}

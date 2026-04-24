@@ -95,10 +95,9 @@ export async function openKassaDb(
         return recovered;
       } catch (recoveryErr) {
         recovered.close();
-        throw new DbOpenError(
-          "Failed to open Kassa Dexie database even after rollback",
-          { cause: recoveryErr },
-        );
+        throw new DbOpenError("Failed to open Kassa Dexie database even after rollback", {
+          cause: recoveryErr,
+        });
       }
     }
     throw new DbOpenError("Failed to open Kassa Dexie database", { cause: err });

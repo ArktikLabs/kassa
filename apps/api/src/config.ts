@@ -9,16 +9,16 @@ const optionalTrimmedString = z.preprocess((v) => {
 }, z.string().min(1).optional());
 
 const envSchema = z.object({
-  NODE_ENV: z
-    .enum(["development", "test", "production"])
-    .default("development"),
+  NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   HOST: z.string().default("0.0.0.0"),
   PORT: z.coerce.number().int().positive().default(3000),
-  LOG_LEVEL: z
-    .enum(["fatal", "error", "warn", "info", "debug", "trace", "silent"])
-    .default("info"),
+  LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace", "silent"]).default("info"),
   STAFF_BOOTSTRAP_TOKEN: z.string().min(16).optional(),
-  ENROLMENT_CODE_TTL_MS: z.coerce.number().int().positive().default(10 * 60 * 1000),
+  ENROLMENT_CODE_TTL_MS: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(10 * 60 * 1000),
   MIDTRANS_SERVER_KEY: optionalTrimmedString,
   MIDTRANS_ENVIRONMENT: z.enum(["sandbox", "production"]).default("sandbox"),
 });
@@ -28,9 +28,7 @@ export type Env = z.infer<typeof envSchema>;
 export function loadEnv(source: NodeJS.ProcessEnv = process.env): Env {
   const parsed = envSchema.safeParse(source);
   if (!parsed.success) {
-    const details = parsed.error.issues
-      .map((i) => `${i.path.join(".")}: ${i.message}`)
-      .join("; ");
+    const details = parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ");
     throw new Error(`Invalid environment: ${details}`);
   }
   return parsed.data;

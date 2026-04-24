@@ -20,29 +20,18 @@ describe("DataTable primitive", () => {
     const rows = Array.from({ length: 52 }, (_, i) => mkRow(i + 1));
     render(
       <IntlProvider locale="id-ID">
-        <DataTable
-          columns={COLUMNS}
-          rows={rows}
-          getRowId={(r) => r.id}
-          pageSize={25}
-        />
+        <DataTable columns={COLUMNS} rows={rows} getRowId={(r) => r.id} pageSize={25} />
       </IntlProvider>,
     );
 
-    expect(screen.getByTestId("data-table-range")).toHaveTextContent(
-      "1–25 dari 52",
-    );
+    expect(screen.getByTestId("data-table-range")).toHaveTextContent("1–25 dari 52");
     expect(screen.getAllByTestId("data-table-row")).toHaveLength(25);
 
     const user = userEvent.setup();
     await user.click(screen.getByRole("button", { name: "Berikutnya" }));
-    expect(screen.getByTestId("data-table-range")).toHaveTextContent(
-      "26–50 dari 52",
-    );
+    expect(screen.getByTestId("data-table-range")).toHaveTextContent("26–50 dari 52");
     await user.click(screen.getByRole("button", { name: "Berikutnya" }));
-    expect(screen.getByTestId("data-table-range")).toHaveTextContent(
-      "51–52 dari 52",
-    );
+    expect(screen.getByTestId("data-table-range")).toHaveTextContent("51–52 dari 52");
   });
 
   it("renders the empty state when rows is empty", () => {
@@ -62,11 +51,7 @@ describe("DataTable primitive", () => {
   it("applies numeric alignment to numeric columns", () => {
     render(
       <IntlProvider locale="id-ID">
-        <DataTable
-          columns={COLUMNS}
-          rows={[mkRow(1)]}
-          getRowId={(r) => r.id}
-        />
+        <DataTable columns={COLUMNS} rows={[mkRow(1)]} getRowId={(r) => r.id} />
       </IntlProvider>,
     );
     const row = screen.getByTestId("data-table-row");

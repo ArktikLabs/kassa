@@ -21,12 +21,7 @@ export interface CatalogTileProps {
   onLongPress?(item: Item): void;
 }
 
-export function CatalogTile({
-  item,
-  outOfStock,
-  onAdd,
-  onLongPress,
-}: CatalogTileProps) {
+export function CatalogTile({ item, outOfStock, onAdd, onLongPress }: CatalogTileProps) {
   const intl = useIntl();
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const longPressed = useRef(false);
@@ -84,9 +79,7 @@ export function CatalogTile({
         "rounded-xl border bg-white p-3 text-left",
         "border-neutral-200",
         "transition-colors duration-[var(--animate-duration-fast)]",
-        outOfStock
-          ? "cursor-not-allowed"
-          : "active:border-primary-600 active:bg-primary-50",
+        outOfStock ? "cursor-not-allowed" : "active:border-primary-600 active:bg-primary-50",
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-600 focus-visible:ring-offset-2 focus-visible:ring-offset-white",
       ].join(" ")}
     >
@@ -99,10 +92,7 @@ export function CatalogTile({
         </div>
       </div>
       <div className="mt-2 min-w-0 space-y-1">
-        <p
-          title={item.name}
-          className="line-clamp-2 text-sm font-semibold text-neutral-800"
-        >
+        <p title={item.name} className="line-clamp-2 text-sm font-semibold text-neutral-800">
           {item.name}
         </p>
         <p

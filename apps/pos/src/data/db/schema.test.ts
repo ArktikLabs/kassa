@@ -82,7 +82,8 @@ describe("KassaDexie schema", () => {
         factory: (n) => {
           attempts += 1;
           const broken = new KassaDexie(n);
-          broken.open = (() => Promise.reject(new Error("simulated-read-error"))) as typeof broken.open;
+          broken.open = (() =>
+            Promise.reject(new Error("simulated-read-error"))) as typeof broken.open;
           return broken;
         },
       }),
@@ -216,16 +217,8 @@ describe("Repos — upsert idempotency and query surface", () => {
       items: [],
       tenders: [],
     });
-    await fixture.repos.pendingSales.markError(
-      "sale-2",
-      "network",
-      "2026-04-23T03:01:00.000Z",
-    );
-    await fixture.repos.pendingSales.markError(
-      "sale-2",
-      "500",
-      "2026-04-23T03:02:00.000Z",
-    );
+    await fixture.repos.pendingSales.markError("sale-2", "network", "2026-04-23T03:01:00.000Z");
+    await fixture.repos.pendingSales.markError("sale-2", "500", "2026-04-23T03:02:00.000Z");
     const row = await fixture.repos.pendingSales.getById("sale-2");
     expect(row?.attempts).toBe(2);
     expect(row?.lastError).toBe("500");

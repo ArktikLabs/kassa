@@ -9,7 +9,7 @@ export interface HealthResponse {
 }
 
 export async function healthRoutes(app: FastifyInstance): Promise<void> {
-  const version = process.env["npm_package_version"] ?? "0.0.0";
+  const version = process.env.npm_package_version ?? "0.0.0";
 
   app.get("/health", async (): Promise<HealthResponse> => {
     return {

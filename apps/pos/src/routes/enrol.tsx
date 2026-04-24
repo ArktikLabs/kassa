@@ -89,10 +89,7 @@ export function EnrolScreen() {
     try {
       const device = await enrolDevice(normalised);
       showToast(
-        intl.formatMessage(
-          { id: "enrol.toast.success" },
-          { outlet: device.outlet.name },
-        ),
+        intl.formatMessage({ id: "enrol.toast.success" }, { outlet: device.outlet.name }),
         "success",
       );
       await navigate({ to: "/catalog", replace: true });

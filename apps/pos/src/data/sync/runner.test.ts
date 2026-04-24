@@ -2,7 +2,7 @@ import "fake-indexeddb/auto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import Dexie from "dexie";
 import { createRepos, DB_NAME } from "../db/index.ts";
-import { KassaDexie, openKassaDb } from "../db/schema.ts";
+import { type KassaDexie, openKassaDb } from "../db/schema.ts";
 import { createSyncRunner } from "./runner.ts";
 import { createSyncStatusStore } from "./status.ts";
 
@@ -64,9 +64,7 @@ describe("createSyncRunner", () => {
 
   it("returns the in-flight promise when trigger() is called concurrently", async () => {
     const status = createSyncStatusStore();
-    const fetchImpl = vi.fn(async () =>
-      jsonResponse(emptyEnvelope()),
-    ) as unknown as typeof fetch;
+    const fetchImpl = vi.fn(async () => jsonResponse(emptyEnvelope())) as unknown as typeof fetch;
     const runner = createSyncRunner({
       database,
       baseUrl: "https://api.kassa.test",

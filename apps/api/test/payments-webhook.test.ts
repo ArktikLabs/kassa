@@ -1,13 +1,5 @@
 import { createHash } from "node:crypto";
-import {
-  afterAll,
-  afterEach,
-  beforeAll,
-  beforeEach,
-  describe,
-  expect,
-  it,
-} from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { FastifyInstance } from "fastify";
 import { createMidtransProvider } from "@kassa/payments";
 import type {
@@ -36,9 +28,7 @@ function signed(
   key = SERVER_KEY,
 ): MidtransPayload {
   const signature = createHash("sha512")
-    .update(
-      `${partial.order_id}${partial.status_code}${partial.gross_amount}${key}`,
-    )
+    .update(`${partial.order_id}${partial.status_code}${partial.gross_amount}${key}`)
     .digest("hex");
   return { ...partial, signature_key: signature };
 }
@@ -208,9 +198,7 @@ describe("POST /v1/payments/webhooks/midtrans", () => {
     expect(r1.json()).toEqual({ ok: true, duplicate: false });
     expect(r2.json()).toEqual({ ok: true, duplicate: true });
     expect(received.filter((e) => e.type === "tender.paid")).toHaveLength(1);
-    expect(
-      received.filter((e) => e.type === "tender.status_changed"),
-    ).toHaveLength(1);
+    expect(received.filter((e) => e.type === "tender.status_changed")).toHaveLength(1);
   });
 
   it("treats a new transaction_status for the same order_id as a new event", async () => {
@@ -258,9 +246,7 @@ describe("POST /v1/payments/webhooks/midtrans", () => {
       headers: { "Content-Type": "application/json" },
     });
     expect(res.statusCode).toBe(401);
-    expect((res.json() as { error: { code: string } }).error.code).toBe(
-      "invalid_signature",
-    );
+    expect((res.json() as { error: { code: string } }).error.code).toBe("invalid_signature");
   });
 });
 
@@ -276,9 +262,7 @@ describe("POST /v1/payments/webhooks/midtrans without a configured provider", ()
         headers: { "Content-Type": "application/json" },
       });
       expect(res.statusCode).toBe(503);
-      expect((res.json() as { error: { code: string } }).error.code).toBe(
-        "payments_unavailable",
-      );
+      expect((res.json() as { error: { code: string } }).error.code).toBe("payments_unavailable");
     } finally {
       await app.close();
     }

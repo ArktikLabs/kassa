@@ -70,13 +70,6 @@ export function _resetDatabaseSingletonForTest(): void {
   singleton = null;
 }
 
-export {
-  DB_NAME,
-  DB_VERSION,
-  DbOpenError,
-  KassaDexie,
-  openKassaDb,
-  resetKassaDb,
-};
+export { DB_NAME, DB_VERSION, DbOpenError, KassaDexie, openKassaDb, resetKassaDb };
 export type { OpenOptions };
 export * from "./types.ts";

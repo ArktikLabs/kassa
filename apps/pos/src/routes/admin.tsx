@@ -51,12 +51,9 @@ export function AdminScreen() {
     }
   };
 
-  const lastSuccessAt =
-    status.phase.kind === "idle" ? status.phase.lastSuccessAt : null;
-  const syncingTable =
-    status.phase.kind === "syncing" ? status.phase.table : null;
-  const errorMessage =
-    status.phase.kind === "error" ? status.phase.message : null;
+  const lastSuccessAt = status.phase.kind === "idle" ? status.phase.lastSuccessAt : null;
+  const syncingTable = status.phase.kind === "syncing" ? status.phase.table : null;
+  const errorMessage = status.phase.kind === "error" ? status.phase.message : null;
 
   return (
     <section className="mx-auto max-w-xl space-y-6">
@@ -140,9 +137,7 @@ export function AdminScreen() {
           className="inline-flex items-center justify-center rounded-md bg-primary-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-primary-700 disabled:cursor-not-allowed disabled:bg-neutral-300"
           data-testid="sync-refresh"
         >
-          <FormattedMessage
-            id={refreshing ? "admin.sync.refreshing" : "admin.sync.refresh"}
-          />
+          <FormattedMessage id={refreshing ? "admin.sync.refreshing" : "admin.sync.refresh"} />
         </button>
       </div>
 

@@ -12,6 +12,13 @@
     "dev": "pnpm --filter ./apps/* dev",
     "build": "pnpm --filter ./apps/* --filter ./packages/* build",
     "test": "pnpm --filter ./apps/* --filter ./packages/* test",
-    "typecheck": "pnpm --filter ./apps/* --filter ./packages/* typecheck"
+    "typecheck": "pnpm --filter ./apps/* --filter ./packages/* typecheck",
+    "lint": "biome check",
+    "lint:fix": "biome check --write",
+    "format": "biome format",
+    "format:write": "biome format --write"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.4.13"
   }
 }

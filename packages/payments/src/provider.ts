@@ -13,8 +13,5 @@ export interface PaymentProvider {
 
   getQrisStatus(orderId: string): Promise<QrisStatusResult>;
 
-  verifyWebhookSignature(
-    payload: unknown,
-    headers: WebhookHeaders,
-  ): NormalizedWebhookEvent;
+  verifyWebhookSignature(payload: unknown, headers: WebhookHeaders): NormalizedWebhookEvent;
 }

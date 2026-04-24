@@ -21,7 +21,9 @@ body {
    DESIGN-SYSTEM §3.2 & §6.13. */
 .tabular-nums,
 [data-tabular="true"] {
-  font-feature-settings: "tnum" 1, "lnum" 1;
+  font-feature-settings:
+    "tnum" 1,
+    "lnum" 1;
   font-variant-numeric: tabular-nums lining-nums;
 }
 

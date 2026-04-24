@@ -8,25 +8,18 @@ import { getSnapshot } from "../src/data/store";
 describe("Outlets CRUD", () => {
   it("lists seeded outlets and creates a new one via the modal form", async () => {
     renderAt("/outlets", [{ path: "/outlets", component: OutletsScreen }]);
-    expect(
-      await screen.findByRole("heading", { name: "Outlet", level: 1 }),
-    ).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Outlet", level: 1 })).toBeInTheDocument();
     expect(screen.getByText("Warung Pusat")).toBeInTheDocument();
 
     const user = userEvent.setup();
     await user.click(screen.getByRole("button", { name: "Tambah outlet" }));
 
     await user.type(screen.getByLabelText("Nama outlet"), "Cabang Bekasi");
-    await user.type(
-      screen.getByLabelText("Header struk"),
-      "Cabang Bekasi · Jl. Ahmad Yani",
-    );
+    await user.type(screen.getByLabelText("Header struk"), "Cabang Bekasi · Jl. Ahmad Yani");
     await user.type(screen.getByLabelText("Alamat"), "Jl. Ahmad Yani No.42");
     await user.click(screen.getByRole("button", { name: "Simpan outlet" }));
 
-    expect(getSnapshot().outlets.map((o) => o.name)).toContain(
-      "Cabang Bekasi",
-    );
+    expect(getSnapshot().outlets.map((o) => o.name)).toContain("Cabang Bekasi");
     expect(await screen.findByText("Cabang Bekasi")).toBeInTheDocument();
   });
 
@@ -44,8 +37,6 @@ describe("Outlets CRUD", () => {
     const banner = await screen.findByRole("status");
     expect(banner).toHaveTextContent(/Kode [A-HJ-NP-Z2-9]{8} dibuat/);
     expect(getSnapshot().enrolmentCodes).toHaveLength(1);
-    expect(getSnapshot().enrolmentCodes[0]!.code).toMatch(
-      /^[A-HJ-NP-Z2-9]{8}$/,
-    );
+    expect(getSnapshot().enrolmentCodes[0]!.code).toMatch(/^[A-HJ-NP-Z2-9]{8}$/);
   });
 });

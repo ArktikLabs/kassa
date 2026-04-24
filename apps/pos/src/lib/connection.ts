@@ -26,11 +26,8 @@ function initialState(): ConnectionState {
  * sync engine in a follow-up — this hook only emits the three states
  * needed by the M2 shell.
  */
-export function useConnectionState(
-  options: UseConnectionStateOptions = {},
-): ConnectionState {
-  const healthUrl =
-    options.healthUrl ?? import.meta.env.VITE_HEALTH_URL ?? "/health";
+export function useConnectionState(options: UseConnectionStateOptions = {}): ConnectionState {
+  const healthUrl = options.healthUrl ?? import.meta.env.VITE_HEALTH_URL ?? "/health";
   const intervalMs = options.intervalMs ?? DEFAULT_INTERVAL_MS;
   const fetchTimeoutMs = options.fetchTimeoutMs ?? DEFAULT_FETCH_TIMEOUT_MS;
 

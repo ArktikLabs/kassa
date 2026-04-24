@@ -98,7 +98,8 @@ Direct-to-main is permitted only for typos, comment-only changes, and minor docu
 ## Style and Tooling
 
 - Follow the conventions in [`docs/`](./docs/) (tech stack, architecture, design system) for code, naming, and UI contributions.
-- Run project formatters, linters, and tests locally before pushing. When a subsystem is scaffolded, the exact commands will be documented in its package `README`.
+- Lint and format with Biome: `pnpm lint` checks, `pnpm lint:fix` auto-fixes lint+format. Config lives at [`biome.json`](./biome.json). CI runs `pnpm lint` and blocks merges on failure.
+- Run tests locally before pushing (`pnpm -r test`). When a subsystem is scaffolded, per-package commands are documented in its `README`.
 
 ## Reporting Bugs and Proposing Changes
 

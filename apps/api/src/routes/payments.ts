@@ -1,5 +1,5 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
-import { WebhookSignatureError } from "@kassa/payments";
+import { type NormalizedWebhookEvent, WebhookSignatureError } from "@kassa/payments";
 import { notImplemented, sendError } from "../lib/errors.js";
 
 export async function paymentsRoutes(app: FastifyInstance): Promise<void> {
@@ -16,9 +16,7 @@ async function midtransWebhookHandler(
   const provider = app.midtransProvider;
 
   if (!provider) {
-    req.log.warn(
-      "midtrans webhook received but no provider configured; set MIDTRANS_SERVER_KEY",
-    );
+    req.log.warn("midtrans webhook received but no provider configured; set MIDTRANS_SERVER_KEY");
     return sendError(
       reply,
       503,
@@ -27,7 +25,7 @@ async function midtransWebhookHandler(
     );
   }
 
-  let event;
+  let event: NormalizedWebhookEvent;
   try {
     event = provider.verifyWebhookSignature(req.body, req.headers);
   } catch (err) {

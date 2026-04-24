@@ -27,11 +27,7 @@ export function itemsRepo(db: KassaDexie): ItemsRepo {
           .limit(limit)
           .toArray();
       }
-      const byName = await db.items
-        .where("name")
-        .startsWithIgnoreCase(q)
-        .limit(limit)
-        .toArray();
+      const byName = await db.items.where("name").startsWithIgnoreCase(q).limit(limit).toArray();
       if (byName.length >= limit) return byName;
       const byCode = await db.items
         .where("code")

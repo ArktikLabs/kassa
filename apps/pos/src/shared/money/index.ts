@@ -13,9 +13,11 @@ const MAX_SAFE_RUPIAH = Number.MAX_SAFE_INTEGER;
 
 function assertSafeInteger(value: number, source: string): void {
   if (!Number.isFinite(value)) throw new InvalidRupiahError(value, `${source} is not finite`);
-  if (!Number.isInteger(value)) throw new InvalidRupiahError(value, `${source} has a fractional part`);
+  if (!Number.isInteger(value))
+    throw new InvalidRupiahError(value, `${source} has a fractional part`);
   if (value < 0) throw new InvalidRupiahError(value, `${source} is negative`);
-  if (value > MAX_SAFE_RUPIAH) throw new InvalidRupiahError(value, `${source} exceeds MAX_SAFE_INTEGER`);
+  if (value > MAX_SAFE_RUPIAH)
+    throw new InvalidRupiahError(value, `${source} exceeds MAX_SAFE_INTEGER`);
 }
 
 export function toRupiah(value: number): Rupiah {
@@ -55,9 +57,6 @@ export function formatIdr(value: Rupiah): string {
 
 export function isRupiah(value: unknown): value is Rupiah {
   return (
-    typeof value === "number" &&
-    Number.isInteger(value) &&
-    value >= 0 &&
-    value <= MAX_SAFE_RUPIAH
+    typeof value === "number" && Number.isInteger(value) && value >= 0 && value <= MAX_SAFE_RUPIAH
   );
 }

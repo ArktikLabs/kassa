@@ -22,7 +22,7 @@ export function makeStaffBootstrapPreHandler(expectedToken: string) {
   const expected = Buffer.from(expectedToken, "utf8");
   return async function requireStaffSession(req: FastifyRequest, reply: FastifyReply) {
     const header = req.headers.authorization;
-    if (!header || !header.startsWith("Bearer ")) {
+    if (!header?.startsWith("Bearer ")) {
       sendError(reply, 401, "unauthorized", "Staff bootstrap token required.");
       return reply;
     }

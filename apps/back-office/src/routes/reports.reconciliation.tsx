@@ -19,10 +19,7 @@ export function ReconciliationScreen() {
   const rows = useReconciliation();
   const outlets = useOutlets();
   const intl = useIntl();
-  const outletById = useMemo(
-    () => new Map(outlets.map((o) => [o.id, o])),
-    [outlets],
-  );
+  const outletById = useMemo(() => new Map(outlets.map((o) => [o.id, o])), [outlets]);
 
   const columns: DataTableColumn<ReconciliationRow>[] = [
     {

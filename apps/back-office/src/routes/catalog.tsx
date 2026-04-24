@@ -2,20 +2,11 @@ import { useState } from "react";
 import { FormattedMessage, useIntl } from "react-intl";
 import { Button } from "../components/Button";
 import { DataTable, type DataTableColumn } from "../components/DataTable";
-import {
-  Checkbox,
-  Field,
-  SelectInput,
-  TextInput,
-} from "../components/Field";
+import { Checkbox, Field, SelectInput, TextInput } from "../components/Field";
 import { Modal } from "../components/Modal";
 import { createItem, setItemActive, updateItem } from "../data/store";
 import { useCatalogItems } from "../data/useStore";
-import {
-  UNIT_OF_MEASURE_OPTIONS,
-  type CatalogItem,
-  type UnitOfMeasure,
-} from "../data/types";
+import { UNIT_OF_MEASURE_OPTIONS, type CatalogItem, type UnitOfMeasure } from "../data/types";
 import { formatRupiah, parseRupiahInput } from "../lib/format";
 
 type Draft = Omit<CatalogItem, "id">;
@@ -120,9 +111,7 @@ export function CatalogScreen() {
             onClick={() => setItemActive(r.id, !r.isActive)}
           >
             <FormattedMessage
-              id={
-                r.isActive ? "catalog.action.deactivate" : "catalog.action.activate"
-              }
+              id={r.isActive ? "catalog.action.deactivate" : "catalog.action.activate"}
             />
           </Button>
         </div>
@@ -152,11 +141,7 @@ export function CatalogScreen() {
         open={open}
         onClose={() => setOpen(false)}
         title={
-          editing ? (
-            <FormattedMessage id="catalog.edit" />
-          ) : (
-            <FormattedMessage id="catalog.new" />
-          )
+          editing ? <FormattedMessage id="catalog.edit" /> : <FormattedMessage id="catalog.new" />
         }
         footer={
           <>
@@ -171,10 +156,7 @@ export function CatalogScreen() {
       >
         <div className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
-            <Field
-              label={<FormattedMessage id="catalog.form.sku" />}
-              htmlFor="item-sku"
-            >
+            <Field label={<FormattedMessage id="catalog.form.sku" />} htmlFor="item-sku">
               <TextInput
                 id="item-sku"
                 name="sku"
@@ -182,17 +164,12 @@ export function CatalogScreen() {
                 onChange={(e) => setDraft({ ...draft, sku: e.target.value })}
               />
             </Field>
-            <Field
-              label={<FormattedMessage id="catalog.form.uom" />}
-              htmlFor="item-uom"
-            >
+            <Field label={<FormattedMessage id="catalog.form.uom" />} htmlFor="item-uom">
               <SelectInput
                 id="item-uom"
                 name="uom"
                 value={draft.uom}
-                onChange={(e) =>
-                  setDraft({ ...draft, uom: e.target.value as UnitOfMeasure })
-                }
+                onChange={(e) => setDraft({ ...draft, uom: e.target.value as UnitOfMeasure })}
               >
                 {UNIT_OF_MEASURE_OPTIONS.map((u) => (
                   <option key={u} value={u}>
@@ -202,10 +179,7 @@ export function CatalogScreen() {
               </SelectInput>
             </Field>
           </div>
-          <Field
-            label={<FormattedMessage id="catalog.form.name" />}
-            htmlFor="item-name"
-          >
+          <Field label={<FormattedMessage id="catalog.form.name" />} htmlFor="item-name">
             <TextInput
               id="item-name"
               name="name"
@@ -213,10 +187,7 @@ export function CatalogScreen() {
               onChange={(e) => setDraft({ ...draft, name: e.target.value })}
             />
           </Field>
-          <Field
-            label={<FormattedMessage id="catalog.form.price" />}
-            htmlFor="item-price"
-          >
+          <Field label={<FormattedMessage id="catalog.form.price" />} htmlFor="item-price">
             <TextInput
               id="item-price"
               name="price"
@@ -230,10 +201,7 @@ export function CatalogScreen() {
               }
             />
           </Field>
-          <Field
-            label={<FormattedMessage id="catalog.form.image" />}
-            htmlFor="item-image"
-          >
+          <Field label={<FormattedMessage id="catalog.form.image" />} htmlFor="item-image">
             <TextInput
               id="item-image"
               name="imageUrl"
@@ -250,16 +218,12 @@ export function CatalogScreen() {
             <Checkbox
               label={<FormattedMessage id="catalog.form.stock" />}
               checked={draft.isStockTracked}
-              onChange={(e) =>
-                setDraft({ ...draft, isStockTracked: e.target.checked })
-              }
+              onChange={(e) => setDraft({ ...draft, isStockTracked: e.target.checked })}
             />
             <Checkbox
               label={<FormattedMessage id="catalog.form.active" />}
               checked={draft.isActive}
-              onChange={(e) =>
-                setDraft({ ...draft, isActive: e.target.checked })
-              }
+              onChange={(e) => setDraft({ ...draft, isActive: e.target.checked })}
             />
           </div>
         </div>

@@ -15,7 +15,9 @@ export function sendError(
   message: string,
   details?: unknown,
 ): FastifyReply {
-  const body: ApiErrorBody = { error: { code, message, ...(details !== undefined ? { details } : {}) } };
+  const body: ApiErrorBody = {
+    error: { code, message, ...(details !== undefined ? { details } : {}) },
+  };
   return reply.code(status).send(body);
 }
 

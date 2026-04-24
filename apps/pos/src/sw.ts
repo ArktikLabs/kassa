@@ -46,9 +46,7 @@ const catalogImageExpiration = new ExpirationPlugin({
 }) as never;
 
 registerRoute(
-  ({ request, url }) =>
-    request.destination === "image" &&
-    url.pathname.startsWith("/v1/catalog/"),
+  ({ request, url }) => request.destination === "image" && url.pathname.startsWith("/v1/catalog/"),
   new CacheFirst({
     cacheName: "kassa-catalog-images-v1",
     plugins: [catalogImageExpiration],
@@ -56,11 +54,5 @@ registerRoute(
 );
 
 const NETWORK_ONLY = new NetworkOnly();
-registerRoute(
-  ({ url }) => url.pathname.startsWith("/v1/sales/"),
-  NETWORK_ONLY,
-);
-registerRoute(
-  ({ url }) => url.pathname.startsWith("/v1/sync/"),
-  NETWORK_ONLY,
-);
+registerRoute(({ url }) => url.pathname.startsWith("/v1/sales/"), NETWORK_ONLY);
+registerRoute(({ url }) => url.pathname.startsWith("/v1/sync/"), NETWORK_ONLY);

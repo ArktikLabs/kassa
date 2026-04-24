@@ -43,16 +43,12 @@ const DEFAULT_REQUEST_TIMEOUT_MS = 10_000;
 
 export function createMidtransProvider(config: MidtransConfig): PaymentProvider {
   if (!config.serverKey || config.serverKey.trim() === "") {
-    throw new PaymentProviderError(
-      "missing_server_key",
-      "Midtrans serverKey is required.",
-    );
+    throw new PaymentProviderError("missing_server_key", "Midtrans serverKey is required.");
   }
 
   const environment: MidtransEnvironment = config.environment ?? "sandbox";
   const baseUrl =
-    config.apiBaseUrl ??
-    (environment === "production" ? PRODUCTION_BASE_URL : SANDBOX_BASE_URL);
+    config.apiBaseUrl ?? (environment === "production" ? PRODUCTION_BASE_URL : SANDBOX_BASE_URL);
   const fetchImpl = config.fetchImpl ?? globalThis.fetch;
   const now = config.now ?? (() => new Date());
   const requestTimeoutMs = config.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
@@ -66,10 +62,7 @@ export function createMidtransProvider(config: MidtransConfig): PaymentProvider 
 
   const authHeader = `Basic ${Buffer.from(`${config.serverKey}:`).toString("base64")}`;
 
-  async function withTimeout(
-    url: string,
-    init: RequestInit,
-  ): Promise<Response> {
+  async function withTimeout(url: string, init: RequestInit): Promise<Response> {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), requestTimeoutMs);
     try {
@@ -90,10 +83,7 @@ export function createMidtransProvider(config: MidtransConfig): PaymentProvider 
 
   async function chargeQris(order: QrisOrderRequest): Promise<QrisOrderResult> {
     if (order.expiryMinutes !== undefined) {
-      if (
-        !Number.isInteger(order.expiryMinutes) ||
-        order.expiryMinutes <= 0
-      ) {
+      if (!Number.isInteger(order.expiryMinutes) || order.expiryMinutes <= 0) {
         throw new PaymentProviderError(
           "invalid_expiry_minutes",
           "expiryMinutes must be a positive integer.",
@@ -114,7 +104,7 @@ export function createMidtransProvider(config: MidtransConfig): PaymentProvider 
     };
 
     if (order.expiryMinutes !== undefined) {
-      body["custom_expiry"] = {
+      body.custom_expiry = {
         order_time: formatJakartaTimestamp(now()),
         expiry_duration: order.expiryMinutes,
         unit: "minute",
@@ -136,8 +126,8 @@ export function createMidtransProvider(config: MidtransConfig): PaymentProvider 
     if (!response.ok) {
       throw new PaymentProviderError(
         "midtrans_charge_failed",
-        typeof json["status_message"] === "string"
-          ? (json["status_message"] as string)
+        typeof json.status_message === "string"
+          ? (json.status_message as string)
           : `Midtrans charge failed with status ${response.status}.`,
         response.status,
       );
@@ -151,16 +141,13 @@ export function createMidtransProvider(config: MidtransConfig): PaymentProvider 
       );
     }
 
-    const expiresAt = typeof json["expiry_time"] === "string"
-      ? (json["expiry_time"] as string)
-      : undefined;
+    const expiresAt =
+      typeof json.expiry_time === "string" ? (json.expiry_time as string) : undefined;
     const qrImageUrl = readQrImageUrl(json);
 
     const result: QrisOrderResult = {
       providerOrderId:
-        typeof json["order_id"] === "string"
-          ? (json["order_id"] as string)
-          : order.orderId,
+        typeof json.order_id === "string" ? (json.order_id as string) : order.orderId,
       qrString,
       rawResponse: json,
     };
@@ -170,24 +157,21 @@ export function createMidtransProvider(config: MidtransConfig): PaymentProvider 
   }
 
   async function getStatus(orderId: string): Promise<QrisStatusResult> {
-    const response = await withTimeout(
-      `${baseUrl}/v2/${encodeURIComponent(orderId)}/status`,
-      {
-        method: "GET",
-        headers: {
-          Accept: "application/json",
-          Authorization: authHeader,
-        },
+    const response = await withTimeout(`${baseUrl}/v2/${encodeURIComponent(orderId)}/status`, {
+      method: "GET",
+      headers: {
+        Accept: "application/json",
+        Authorization: authHeader,
       },
-    );
+    });
 
     const json = (await safeJson(response)) as Record<string, unknown>;
 
     if (!response.ok) {
       throw new PaymentProviderError(
         "midtrans_status_failed",
-        typeof json["status_message"] === "string"
-          ? (json["status_message"] as string)
+        typeof json.status_message === "string"
+          ? (json.status_message as string)
           : `Midtrans status query failed with status ${response.status}.`,
         response.status,
       );
@@ -229,10 +213,7 @@ export function createMidtransProvider(config: MidtransConfig): PaymentProvider 
       throw new WebhookSignatureError();
     }
 
-    const status = mapTransactionStatus(
-      parsed.transaction_status,
-      parsed.fraud_status,
-    );
+    const status = mapTransactionStatus(parsed.transaction_status, parsed.fraud_status);
     const occurredAt = resolveOccurredAt(parsed.transaction_time, now());
 
     return {
@@ -290,17 +271,19 @@ function timingSafeEqualHex(a: string, b: string): boolean {
 
 function parseWebhookPayload(payload: unknown): MidtransWebhookPayload {
   if (!payload || typeof payload !== "object") {
-    throw new WebhookSignatureError(
-      "Webhook payload must be a JSON object.",
-    );
+    throw new WebhookSignatureError("Webhook payload must be a JSON object.");
   }
   const body = payload as Record<string, unknown>;
-  const required = ["order_id", "status_code", "gross_amount", "signature_key", "transaction_status"] as const;
+  const required = [
+    "order_id",
+    "status_code",
+    "gross_amount",
+    "signature_key",
+    "transaction_status",
+  ] as const;
   for (const key of required) {
     if (typeof body[key] !== "string" || (body[key] as string).length === 0) {
-      throw new WebhookSignatureError(
-        `Webhook payload missing required field '${key}'.`,
-      );
+      throw new WebhookSignatureError(`Webhook payload missing required field '${key}'.`);
     }
   }
   return body as MidtransWebhookPayload;
@@ -366,21 +349,21 @@ function stringField(json: Record<string, unknown>, key: string): string | undef
 // to render the QR offline require the EMV string; the URL is for clients that
 // want Midtrans to render it.
 function readQrString(json: Record<string, unknown>): string | null {
-  const direct = json["qr_string"];
+  const direct = json.qr_string;
   return typeof direct === "string" ? direct : null;
 }
 
 function readQrImageUrl(json: Record<string, unknown>): string | undefined {
-  const actions = json["actions"];
+  const actions = json.actions;
   if (Array.isArray(actions)) {
     for (const action of actions) {
       if (
         action &&
         typeof action === "object" &&
-        (action as Record<string, unknown>)["name"] === "generate-qr-code" &&
-        typeof (action as Record<string, unknown>)["url"] === "string"
+        (action as Record<string, unknown>).name === "generate-qr-code" &&
+        typeof (action as Record<string, unknown>).url === "string"
       ) {
-        return (action as Record<string, unknown>)["url"] as string;
+        return (action as Record<string, unknown>).url as string;
       }
     }
   }
@@ -407,8 +390,7 @@ function formatJakartaTimestamp(date: Date): string {
 // offset-aware ISO-8601 string and fall back to the caller's UTC clock if
 // Midtrans ever sends something we can't parse. Indonesia observes no DST, so
 // Asia/Jakarta is a fixed +07:00 offset.
-const JAKARTA_TRANSACTION_TIME_RE =
-  /^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2})$/;
+const JAKARTA_TRANSACTION_TIME_RE = /^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2})$/;
 
 function resolveOccurredAt(raw: string | undefined, fallback: Date): string {
   if (raw !== undefined) {

@@ -35,9 +35,7 @@ export function RootLayout() {
         </Link>
         {session ? (
           <div className="flex items-center gap-4 text-sm">
-            <span className="font-medium text-neutral-800">
-              {session.displayName}
-            </span>
+            <span className="font-medium text-neutral-800">{session.displayName}</span>
             <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-xs font-semibold uppercase tracking-wide text-neutral-600">
               {session.role}
             </span>
