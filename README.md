@@ -1,5 +1,7 @@
 # Kassa
 
+[![CI](https://github.com/ArktikLabs/kassa/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/ArktikLabs/kassa/actions/workflows/ci.yml)
+
 Offline-capable Progressive Web App POS terminal for Indonesian merchants, backed by a TypeScript + Fastify back-office API.
 
 ## Vision
@@ -35,7 +37,7 @@ Every Indonesian merchant — from warung to chain — runs a reliable, offline-
 | Payments | Midtrans Core API (QRIS) |
 | Lint / format | Biome |
 | Testing | Vitest + React Testing Library + Playwright |
-| CI | GitHub Actions + Turborepo remote cache |
+| CI / CD | GitHub Actions (see [docs/CI-CD.md](./docs/CI-CD.md)); Turborepo remote cache planned |
 | Hosting | Fly.io (API, `sin`) + Neon (Postgres) + Cloudflare Pages (PWA) |
 
 See [docs/TECH-STACK.md](./docs/TECH-STACK.md) for decisive rationale on every slot, [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) for system shape and data flow, and [docs/DESIGN-SYSTEM.md](./docs/DESIGN-SYSTEM.md) for the visual foundation.
