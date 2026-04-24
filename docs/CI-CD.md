@@ -16,7 +16,7 @@ This is the authoritative description of how Kassa code moves from a contributor
 | Node version      | `22` (pinned via `.nvmrc`)              |
 | Package manager   | `pnpm@9.12.0` (pinned via `packageManager`) |
 | Dependency cache  | `actions/setup-node`'s built-in pnpm cache (keyed on `pnpm-lock.yaml`) |
-| Lint/format       | Biome (not yet installed — see §6 follow-ups) |
+| Lint/format       | Biome 2.x (`pnpm lint` / `pnpm format`; config in [`biome.json`](../biome.json)) |
 | Typecheck         | `tsc --noEmit` per package (`pnpm -r typecheck`) |
 | Test              | Vitest (`pnpm -r test`)                 |
 | Build             | `tsc -p tsconfig.build.json` (packages) + Vite (apps) (`pnpm -r build`) |
@@ -49,10 +49,11 @@ Runs on the same ref cancel each other so only the newest PR push is executing. 
 2. **Install pnpm** — `pnpm/action-setup` with `run_install: false` so `setup-node` owns cache restoration.
 3. **Setup Node.js** — `actions/setup-node` reads `.nvmrc` and restores the pnpm store from the cache keyed on `pnpm-lock.yaml`.
 4. **Install dependencies** — `pnpm install --frozen-lockfile`. This is deliberate: it turns any drift between `package.json` and `pnpm-lock.yaml` into a red CI run instead of a silent `pnpm install` that mutates the lockfile on the runner.
-5. **Build workspace** — `pnpm -r build`. `pnpm -r` is topology-aware, so `packages/*` (no internal deps) build before `apps/*` (which depend on them).
-6. **Typecheck** — `pnpm -r typecheck`.
-7. **Test** — `pnpm -r test` (Vitest only; Playwright E2E is deferred).
-8. **Upload build artifacts** — `actions/upload-artifact` for each deployable. See §2.3.
+5. **Lint (Biome)** — `pnpm lint --reporter=github`. Biome scans the whole tree from the repo root (see §2.4); the `github` reporter annotates violations on the PR diff. Runs before build because it has no artifacts dependency and fails fast on style/correctness regressions.
+6. **Build workspace** — `pnpm -r build`. `pnpm -r` is topology-aware, so `packages/*` (no internal deps) build before `apps/*` (which depend on them).
+7. **Typecheck** — `pnpm -r typecheck`.
+8. **Test** — `pnpm -r test` (Vitest only; Playwright E2E is deferred).
+9. **Upload build artifacts** — `actions/upload-artifact` for each deployable. See §2.3.
 
 **Timeout**: 15 minutes. A healthy run is ~2 minutes today (see §4).
 
@@ -115,6 +116,25 @@ After `pnpm -r build` succeeds, CI uploads one artifact per deployable so that:
 - no environment variables leaking in from the runner (CI sets none beyond GitHub defaults).
 
 Two runs of the same SHA must therefore produce byte-identical `dist/` output modulo timestamps; any drift is a bug in the build toolchain. This is the guarantee CD (once live) will rely on for preview/staging/prod parity.
+
+### 2.4 Lint (Biome)
+
+Biome is the single lint + format tool for the whole tree, per [TECH-STACK.md §11.2](./TECH-STACK.md). Config lives in [`biome.json`](../biome.json) at the repo root; there is intentionally no per-package `biome.json` and no per-package `lint` script.
+
+**Why one root scan, not `pnpm -r lint`.** Biome was designed to walk the workspace from a single entry point — it reads `biome.json` once, shares the parser and ignore lists across the whole tree, and parallelises internally. Fanning out via `pnpm -r` would re-initialise Biome per package, re-read the same config, and lose Biome's cross-file diagnostics. The root `pnpm lint` (`biome check`) covers 180+ files in well under a second; per-package scripts would be slower and add surface area without catching anything extra.
+
+**Local workflow**:
+
+| Script              | What it does                                              |
+|:--------------------|:----------------------------------------------------------|
+| `pnpm lint`         | `biome check` — lint + format-diagnostic, read-only.      |
+| `pnpm lint:fix`     | `biome check --write` — apply safe lint + format fixes.   |
+| `pnpm format`       | `biome format` — formatter diagnostics only, read-only.   |
+| `pnpm format:write` | `biome format --write` — apply formatter fixes.           |
+
+**CI step.** `pnpm lint --reporter=github` in `ci.yml` (step 5 above). The `github` reporter emits `::error` annotations so violations render inline on the PR diff. The step fails the run on any violation — there is no warning tier.
+
+**Editing `biome.json`.** Any change to lint rule severity needs a quick justification in the PR description (why the rule is being loosened or tightened) and a `pnpm lint` run against `main` to confirm no pre-existing violations are hidden by the change.
 
 ---
 
@@ -182,12 +202,13 @@ These are non-negotiable:
 
 These are out of scope for the initial CI setup but are **prerequisites to finishing M0**. Each gets its own child issue under [KASA-12](/KASA/issues/KASA-12):
 
-1. **Lint lane (Biome)** — add `@biomejs/biome` to the workspace, a root `biome.json`, `lint` scripts in each package, and a `lint` step in `ci.yml` ahead of typecheck.
-2. **Preview deploys for the POS PWA** — Cloudflare Pages project + preview-per-PR workflow.
-3. **Preview + staging deploys for the API** — Fly.io app (`kassa-api-staging`, region `sin`), Neon branch per PR.
-4. **Playwright E2E workflow** — nightly + on-merge run, not on PR.
-5. **Production promotion** — workflow-dispatch `cd-prod.yml` with environment protection rules.
-6. **Turborepo remote cache** — named in [TECH-STACK.md §10.3](./TECH-STACK.md); wire it once CI is live and we have a signal on cold vs warm install time.
+1. **Preview deploys for the POS PWA** — Cloudflare Pages project + preview-per-PR workflow.
+2. **Preview + staging deploys for the API** — Fly.io app (`kassa-api-staging`, region `sin`), Neon branch per PR.
+3. **Playwright E2E workflow** — nightly + on-merge run, not on PR.
+4. **Production promotion** — workflow-dispatch `cd-prod.yml` with environment protection rules.
+5. **Turborepo remote cache** — named in [TECH-STACK.md §10.3](./TECH-STACK.md); wire it once CI is live and we have a signal on cold vs warm install time.
+
+Done: **Lint lane (Biome)** landed in [KASA-13](/KASA/issues/KASA-13) (PR #18) with root-scan wiring documented in §2.4, and [KASA-101](/KASA/issues/KASA-101) closed out this doc update.
 
 ---
 
