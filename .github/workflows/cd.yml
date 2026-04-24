@@ -1,0 +1,151 @@
+name: CD
+
+# Continuous deployment for Kassa v0 static surfaces.
+#
+# Today: POS PWA and Back Office SPA → Cloudflare Pages (production).
+# Deferred (separate issues): API → Fly.io, preview-per-PR, production promotion gate.
+#
+# Trigger model:
+#   - `workflow_run`: when CI finishes successfully on main, consume the CI run's
+#     `pos-dist` / `back-office-dist` artifacts and publish to Cloudflare Pages.
+#     No rebuild on the deploy runner — same byte-identical `dist/` that CI verified.
+#   - `workflow_dispatch`: redeploy the artifacts from a prior CI run by id. This is
+#     the in-repo rollback path (Cloudflare Pages dashboard is the UI-driven path).
+#
+# Enablement (one-time, by the board / ops):
+#   1. Create Cloudflare Pages projects `kassa-pos` and `kassa-back-office`
+#      with production branch `main` (empty to start, deploys will fill them).
+#   2. In the GitHub `production` environment, add these secrets:
+#        CLOUDFLARE_API_TOKEN   (Pages → Edit on the account)
+#        CLOUDFLARE_ACCOUNT_ID
+#   3. Set repository variable DEPLOY_ENABLED=true.
+# Until DEPLOY_ENABLED is flipped, preflight emits a notice and all deploy jobs
+# are skipped — main stays green.
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      ci_run_id:
+        description: "CI run id whose main-branch artifacts to (re)deploy. Find it under Actions → CI."
+        required: true
+        type: string
+
+concurrency:
+  group: cd-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  preflight:
+    name: Preflight (enablement + source resolution)
+    runs-on: ubuntu-latest
+    # For workflow_run, only fire on a successful CI run on main.
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main')
+    outputs:
+      ready: ${{ steps.gate.outputs.ready }}
+      ci_run_id: ${{ steps.source.outputs.ci_run_id }}
+      commit_sha: ${{ steps.source.outputs.commit_sha }}
+    steps:
+      - name: Check deploy enablement
+        id: gate
+        env:
+          DEPLOY_ENABLED: ${{ vars.DEPLOY_ENABLED }}
+        run: |
+          if [ "${DEPLOY_ENABLED:-false}" != "true" ]; then
+            echo "::notice title=CD disabled::Set repository variable DEPLOY_ENABLED=true (and provision Cloudflare secrets in the 'production' environment) to activate deploys. See .github/workflows/cd.yml header."
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Resolve source CI run
+        id: source
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          WF_RUN_ID: ${{ github.event.workflow_run.id }}
+          WF_RUN_SHA: ${{ github.event.workflow_run.head_sha }}
+          INPUT_RUN_ID: ${{ inputs.ci_run_id }}
+          EVENT_NAME: ${{ github.event_name }}
+          REPO: ${{ github.repository }}
+        run: |
+          if [ "$EVENT_NAME" = "workflow_run" ]; then
+            echo "ci_run_id=$WF_RUN_ID" >> "$GITHUB_OUTPUT"
+            echo "commit_sha=$WF_RUN_SHA" >> "$GITHUB_OUTPUT"
+          else
+            # workflow_dispatch: resolve the head SHA of the named CI run so the
+            # Cloudflare deployment records the correct commit, not this run's SHA.
+            SHA=$(gh api "repos/$REPO/actions/runs/$INPUT_RUN_ID" --jq .head_sha)
+            if [ -z "$SHA" ]; then
+              echo "::error::Could not resolve head_sha for CI run $INPUT_RUN_ID"
+              exit 1
+            fi
+            echo "ci_run_id=$INPUT_RUN_ID" >> "$GITHUB_OUTPUT"
+            echo "commit_sha=$SHA" >> "$GITHUB_OUTPUT"
+          fi
+
+  deploy-pos:
+    name: Deploy POS PWA → Cloudflare Pages
+    needs: preflight
+    if: needs.preflight.outputs.ready == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: production
+      url: https://kassa-pos.pages.dev
+    steps:
+      - name: Download pos-dist from CI run
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+        with:
+          name: pos-dist
+          path: dist
+          run-id: ${{ needs.preflight.outputs.ci_run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Deploy to Cloudflare Pages (kassa-pos)
+        uses: cloudflare/wrangler-action@392082e81ffbcb9ebdde27400634aa004b35ea37 # v3.14.0
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: >-
+            pages deploy dist
+            --project-name=kassa-pos
+            --branch=main
+            --commit-hash=${{ needs.preflight.outputs.commit_sha }}
+
+  deploy-back-office:
+    name: Deploy Back Office SPA → Cloudflare Pages
+    needs: preflight
+    if: needs.preflight.outputs.ready == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: production
+      url: https://kassa-back-office.pages.dev
+    steps:
+      - name: Download back-office-dist from CI run
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+        with:
+          name: back-office-dist
+          path: dist
+          run-id: ${{ needs.preflight.outputs.ci_run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Deploy to Cloudflare Pages (kassa-back-office)
+        uses: cloudflare/wrangler-action@392082e81ffbcb9ebdde27400634aa004b35ea37 # v3.14.0
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: >-
+            pages deploy dist
+            --project-name=kassa-back-office
+            --branch=main
+            --commit-hash=${{ needs.preflight.outputs.commit_sha }}
