@@ -29,7 +29,10 @@ export class BluetoothUnsupportedError extends Error {
 }
 
 export class BluetoothPrintError extends Error {
-  constructor(message: string, public override readonly cause?: unknown) {
+  constructor(
+    message: string,
+    public override readonly cause?: unknown,
+  ) {
     super(message);
     this.name = "BluetoothPrintError";
   }
@@ -129,9 +132,7 @@ export const webBluetoothPrinter: BluetoothPrinterAdapter = {
     try {
       const server = await device.gatt.connect();
       const service = await server.getPrimaryService(GENERIC_PRINTER_SERVICE);
-      const characteristic = await service.getCharacteristic(
-        GENERIC_PRINTER_WRITE_CHAR,
-      );
+      const characteristic = await service.getCharacteristic(GENERIC_PRINTER_WRITE_CHAR);
       await writeChunks(characteristic, bytes);
     } catch (err) {
       throw new BluetoothPrintError("print failed", err);

@@ -3,7 +3,7 @@ import Dexie from "dexie";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { toRupiah } from "../../shared/money/index.ts";
 import { createRepos, type Repos } from "../../data/db/index.ts";
-import { KassaDexie, openKassaDb } from "../../data/db/schema.ts";
+import { type KassaDexie, openKassaDb } from "../../data/db/schema.ts";
 import { totals } from "../cart/reducer.ts";
 import type { CartState } from "../cart/reducer.ts";
 import { finalizeCashSale, SaleFinalizeError } from "./finalize.ts";
@@ -138,7 +138,11 @@ describe("finalizeCashSale", () => {
   it("refuses an empty cart", async () => {
     await expect(
       finalizeCashSale(
-        { lines: [], totals: { subtotalIdr: toRupiah(0), discountIdr: toRupiah(0), totalIdr: toRupiah(0) }, tenderedIdr: toRupiah(0) },
+        {
+          lines: [],
+          totals: { subtotalIdr: toRupiah(0), discountIdr: toRupiah(0), totalIdr: toRupiah(0) },
+          tenderedIdr: toRupiah(0),
+        },
         { database: { db: fx.db, repos: fx.repos, close: () => {} } },
       ),
     ).rejects.toBeInstanceOf(SaleFinalizeError);

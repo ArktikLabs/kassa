@@ -30,17 +30,12 @@ export function usePendingSale(localSaleId: string): PendingSaleView {
     };
   }, []);
 
-  const view = useLiveQuery(
-    async () => {
-      if (!db) return undefined;
-      const sale = await db.repos.pendingSales.getById(localSaleId);
-      const outlet = sale
-        ? await db.repos.outlets.getById(sale.outletId)
-        : undefined;
-      return { sale, outlet };
-    },
-    [db, localSaleId],
-  );
+  const view = useLiveQuery(async () => {
+    if (!db) return undefined;
+    const sale = await db.repos.pendingSales.getById(localSaleId);
+    const outlet = sale ? await db.repos.outlets.getById(sale.outletId) : undefined;
+    return { sale, outlet };
+  }, [db, localSaleId]);
 
   return {
     sale: view?.sale,

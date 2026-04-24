@@ -106,8 +106,7 @@ const id: MessageMap = {
   "tender.cash.chip.200k": "Rp 200.000",
   "tender.cash.chips.aria": "Nominal cepat",
   "tender.cash.keypad.aria": "Keypad nominal tunai",
-  "tender.cash.cart.empty":
-    "Keranjang kosong. Kembali ke katalog untuk menambah barang.",
+  "tender.cash.cart.empty": "Keranjang kosong. Kembali ke katalog untuk menambah barang.",
   "tender.cash.submit.done": "Selesai",
   "tender.cash.submit.insufficient": "Jumlah belum cukup",
   "tender.cash.submit.submitting": "Menyimpan…",
@@ -116,8 +115,7 @@ const id: MessageMap = {
   "receipt.aria": "Pratinjau struk",
   "receipt.loading": "Memuat struk…",
   "receipt.missing.heading": "Struk tidak ditemukan",
-  "receipt.missing.body":
-    "Transaksi ini sudah dihapus atau belum pernah ada di perangkat.",
+  "receipt.missing.body": "Transaksi ini sudah dihapus atau belum pernah ada di perangkat.",
   "receipt.outlet.unknown": "Outlet",
   "receipt.subtotal": "Subtotal",
   "receipt.discount": "Diskon",
@@ -129,8 +127,7 @@ const id: MessageMap = {
   "receipt.print.cetak": "Cetak",
   "receipt.print.spooling": "Mencetak…",
   "receipt.print.done": "Struk dikirim ke printer.",
-  "receipt.print.failed":
-    "Gagal mencetak. Pastikan printer menyala dan coba lagi.",
+  "receipt.print.failed": "Gagal mencetak. Pastikan printer menyala dan coba lagi.",
   "receipt.print.unsupported":
     "Peramban ini tidak mendukung Bluetooth. Gunakan cetak peramban sebagai cadangan.",
   "admin.heading": "Admin",
@@ -249,8 +246,7 @@ const en: MessageMap = {
   "tender.cash.chip.200k": "Rp 200,000",
   "tender.cash.chips.aria": "Quick tender",
   "tender.cash.keypad.aria": "Cash amount keypad",
-  "tender.cash.cart.empty":
-    "Cart is empty. Go back to the catalog to add items.",
+  "tender.cash.cart.empty": "Cart is empty. Go back to the catalog to add items.",
   "tender.cash.submit.done": "Done",
   "tender.cash.submit.insufficient": "Amount is insufficient",
   "tender.cash.submit.submitting": "Saving…",
@@ -259,8 +255,7 @@ const en: MessageMap = {
   "receipt.aria": "Receipt preview",
   "receipt.loading": "Loading receipt…",
   "receipt.missing.heading": "Receipt not found",
-  "receipt.missing.body":
-    "This sale has been cleared or never existed on this device.",
+  "receipt.missing.body": "This sale has been cleared or never existed on this device.",
   "receipt.outlet.unknown": "Outlet",
   "receipt.subtotal": "Subtotal",
   "receipt.discount": "Discount",
@@ -272,8 +267,7 @@ const en: MessageMap = {
   "receipt.print.cetak": "Print",
   "receipt.print.spooling": "Printing…",
   "receipt.print.done": "Receipt sent to printer.",
-  "receipt.print.failed":
-    "Print failed. Make sure the printer is on and try again.",
+  "receipt.print.failed": "Print failed. Make sure the printer is on and try again.",
   "receipt.print.unsupported":
     "This browser does not support Bluetooth. Falling back to browser print.",
   "admin.heading": "Admin",

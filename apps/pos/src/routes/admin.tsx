@@ -10,10 +10,7 @@ import {
 } from "../lib/enrolment";
 import { showToast } from "../components/Toast";
 import { useSyncActions, useSyncStatus } from "../lib/sync-provider";
-import {
-  usePaperWidthStore,
-  type PaperWidth,
-} from "../features/receipt/paperWidth";
+import { usePaperWidthStore, type PaperWidth } from "../features/receipt/paperWidth";
 
 const BOOT_STATE: EnrolmentSnapshot = { state: "loading" };
 
@@ -161,29 +158,27 @@ export function AdminScreen() {
           data-testid="admin-paper-width"
           className="flex gap-2"
         >
-          {(["58mm", "80mm"] as const satisfies readonly PaperWidth[]).map(
-            (value) => {
-              const active = value === paperWidth;
-              return (
-                <button
-                  key={value}
-                  type="button"
-                  role="radio"
-                  aria-checked={active}
-                  onClick={() => setPaperWidth(value)}
-                  data-testid={`admin-paper-width-${value}`}
-                  className={[
-                    "h-11 flex-1 rounded-md border text-sm font-semibold transition-colors",
-                    active
-                      ? "border-primary-600 bg-primary-50 text-primary-700"
-                      : "border-neutral-300 bg-white text-neutral-700 hover:bg-neutral-100",
-                  ].join(" ")}
-                >
-                  {value}
-                </button>
-              );
-            },
-          )}
+          {(["58mm", "80mm"] as const satisfies readonly PaperWidth[]).map((value) => {
+            const active = value === paperWidth;
+            return (
+              <button
+                key={value}
+                type="button"
+                role="radio"
+                aria-checked={active}
+                onClick={() => setPaperWidth(value)}
+                data-testid={`admin-paper-width-${value}`}
+                className={[
+                  "h-11 flex-1 rounded-md border text-sm font-semibold transition-colors",
+                  active
+                    ? "border-primary-600 bg-primary-50 text-primary-700"
+                    : "border-neutral-300 bg-white text-neutral-700 hover:bg-neutral-100",
+                ].join(" ")}
+              >
+                {value}
+              </button>
+            );
+          })}
         </div>
       </section>
 

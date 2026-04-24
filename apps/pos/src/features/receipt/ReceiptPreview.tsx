@@ -26,21 +26,14 @@ function formatDateTime(iso: string, timezone: string | undefined): string {
   }
 }
 
-export function ReceiptPreview({
-  sale,
-  outlet,
-  paperWidth,
-}: ReceiptPreviewProps) {
+export function ReceiptPreview({ sale, outlet, paperWidth }: ReceiptPreviewProps) {
   const intl = useIntl();
   const widthPx = PAPER_WIDTH_PX[paperWidth];
   const totalTendered = sale.tenders.reduce<number>(
     (acc, t) => acc + (t.amountIdr as number),
     0,
   ) as Rupiah;
-  const change = Math.max(
-    0,
-    (totalTendered as number) - (sale.totalIdr as number),
-  ) as Rupiah;
+  const change = Math.max(0, (totalTendered as number) - (sale.totalIdr as number)) as Rupiah;
 
   return (
     <article
@@ -56,9 +49,7 @@ export function ReceiptPreview({
         <p className="text-[12px] text-neutral-700">
           {formatDateTime(sale.createdAt, outlet?.timezone)}
         </p>
-        <p className="text-[11px] text-neutral-600">
-          ID {sale.localSaleId.slice(0, 8)}
-        </p>
+        <p className="text-[11px] text-neutral-600">ID {sale.localSaleId.slice(0, 8)}</p>
       </header>
       <hr className="my-2 border-dashed border-neutral-400" />
       <ul data-testid="receipt-lines" className="space-y-1">
@@ -96,10 +87,7 @@ export function ReceiptPreview({
           label={intl.formatMessage({ id: "receipt.tendered" })}
           value={formatIdr(totalTendered)}
         />
-        <Row
-          label={intl.formatMessage({ id: "receipt.change" })}
-          value={formatIdr(change)}
-        />
+        <Row label={intl.formatMessage({ id: "receipt.change" })} value={formatIdr(change)} />
       </dl>
       <hr className="my-2 border-dashed border-neutral-400" />
       <footer className="text-center text-[12px]">
@@ -109,21 +97,10 @@ export function ReceiptPreview({
   );
 }
 
-function Row({
-  label,
-  value,
-  strong,
-}: {
-  label: string;
-  value: string;
-  strong?: boolean;
-}) {
+function Row({ label, value, strong }: { label: string; value: string; strong?: boolean }) {
   return (
     <div
-      className={[
-        "flex items-baseline justify-between gap-2",
-        strong ? "font-bold" : "",
-      ].join(" ")}
+      className={["flex items-baseline justify-between gap-2", strong ? "font-bold" : ""].join(" ")}
     >
       <dt>{label}</dt>
       <dd>{value}</dd>
