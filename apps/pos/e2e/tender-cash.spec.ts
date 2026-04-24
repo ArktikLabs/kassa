@@ -19,7 +19,7 @@ async function seedEnrolledDevice(page: Page): Promise<void> {
   // renders after `hydrateEnrolment()` has settled.
   await page.waitForFunction(async () => {
     const reg = await navigator.serviceWorker.getRegistration();
-    return Boolean(reg && reg.active);
+    return Boolean(reg?.active);
   });
   await page.getByRole("heading", { name: /Enrol perangkat/ }).waitFor();
   await page.evaluate(

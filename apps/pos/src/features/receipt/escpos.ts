@@ -151,7 +151,9 @@ export function encodeReceipt(payload: ReceiptPayload): Uint8Array {
   if (payload.discount && payload.discount !== payload.subtotal) {
     b.line(padBetween("Diskon", `-${payload.discount}`, width));
   }
-  b.bold(true).line(padBetween("Total", payload.total, width)).bold(false);
+  b.bold(true)
+    .line(padBetween("Total", payload.total, width))
+    .bold(false);
   b.line(padBetween(payload.tenderedLabel, payload.tendered, width));
   b.line(padBetween(payload.changeLabel, payload.change, width));
   b.line("");
@@ -166,10 +168,6 @@ export function centerLineForWidth(value: string, width: 32 | 42): string {
   return centerLine(value, width);
 }
 
-export function padBetweenForWidth(
-  left: string,
-  right: string,
-  width: 32 | 42,
-): string {
+export function padBetweenForWidth(left: string, right: string, width: 32 | 42): string {
   return padBetween(left, right, width);
 }

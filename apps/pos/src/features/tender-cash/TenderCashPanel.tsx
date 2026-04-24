@@ -1,10 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { useIntl } from "react-intl";
-import {
-  NumericKeypad,
-  applyKeypadKey,
-} from "../../shared/components/NumericKeypad.tsx";
+import { NumericKeypad, applyKeypadKey } from "../../shared/components/NumericKeypad.tsx";
 import {
   formatIdr,
   subtractRupiah,
@@ -30,30 +27,29 @@ export function TenderCashPanel() {
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: lines.length is an intentional re-run trigger — reset stale error when cart contents change, not a captured value.
   useEffect(() => {
     setError(null);
   }, [lines.length]);
 
   const empty = lines.length === 0;
-  const changeDue: Rupiah = (tendered as number) >= (t.totalIdr as number)
-    ? subtractRupiah(tendered, t.totalIdr)
-    : zeroRupiah;
+  const changeDue: Rupiah =
+    (tendered as number) >= (t.totalIdr as number)
+      ? subtractRupiah(tendered, t.totalIdr)
+      : zeroRupiah;
   const coverage: Rupiah =
     (tendered as number) < (t.totalIdr as number)
       ? subtractRupiah(t.totalIdr, tendered)
       : zeroRupiah;
   const covered = (tendered as number) >= (t.totalIdr as number);
 
-  const handleKey = useCallback(
-    (key: Parameters<typeof applyKeypadKey>[1]) => {
-      setTendered((current) => {
-        const next = applyKeypadKey(current as number, key);
-        const clamped = Math.min(Math.max(0, next), MAX_TENDER_IDR);
-        return toRupiah(clamped);
-      });
-    },
-    [],
-  );
+  const handleKey = useCallback((key: Parameters<typeof applyKeypadKey>[1]) => {
+    setTendered((current) => {
+      const next = applyKeypadKey(current as number, key);
+      const clamped = Math.min(Math.max(0, next), MAX_TENDER_IDR);
+      return toRupiah(clamped);
+    });
+  }, []);
 
   const handleChip = useCallback((amount: Rupiah) => {
     setTendered(amount);

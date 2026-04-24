@@ -6,10 +6,7 @@ import { IntlProvider } from "react-intl";
 import { DEFAULT_LOCALE, messagesFor } from "../../i18n/messages.ts";
 import { toRupiah } from "../../shared/money/index.ts";
 import { _resetCartStoreForTest, useCartStore } from "../cart/store.ts";
-import {
-  _resetDatabaseSingletonForTest,
-  getDatabase,
-} from "../../data/db/index.ts";
+import { _resetDatabaseSingletonForTest, getDatabase } from "../../data/db/index.ts";
 import Dexie from "dexie";
 import { DB_NAME } from "../../data/db/schema.ts";
 import { TenderCashPanel } from "./TenderCashPanel.tsx";
@@ -114,9 +111,7 @@ describe("TenderCashPanel", () => {
     });
     renderPanel();
     const chips = screen.getByTestId("quick-tender-chips");
-    await user.click(
-      within(chips).getByTestId("chip-tender.cash.chip.100k"),
-    );
+    await user.click(within(chips).getByTestId("chip-tender.cash.chip.100k"));
     expect(screen.getByTestId("tender-total")).toHaveTextContent("50.000");
     expect(screen.getByTestId("tender-amount")).toHaveTextContent("100.000");
     expect(screen.getByTestId("tender-change")).toHaveTextContent("50.000");

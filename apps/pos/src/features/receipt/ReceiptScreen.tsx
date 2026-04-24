@@ -10,11 +10,7 @@ import {
 } from "./bluetooth.ts";
 import { encodeReceipt, type ReceiptLine } from "./escpos.ts";
 import { ReceiptPreview } from "./ReceiptPreview.tsx";
-import {
-  PAPER_WIDTH_CHAR_COLUMNS,
-  usePaperWidthStore,
-  type PaperWidth,
-} from "./paperWidth.ts";
+import { PAPER_WIDTH_CHAR_COLUMNS, usePaperWidthStore, type PaperWidth } from "./paperWidth.ts";
 import { usePendingSale } from "./usePendingSale.ts";
 
 type PrintState =
@@ -50,14 +46,10 @@ export function ReceiptScreen() {
         left: `${item.quantity}x ${item.itemId.slice(0, 8)}`,
         right: formatIdr(item.lineTotalIdr),
       }));
-      const tendered = sale.tenders.reduce(
-        (acc, t) => acc + (t.amountIdr as number),
-        0,
-      );
+      const tendered = sale.tenders.reduce((acc, t) => acc + (t.amountIdr as number), 0);
       const change = Math.max(0, tendered - (sale.totalIdr as number));
       const bytes = encodeReceipt({
-        outletName:
-          outlet?.name ?? intl.formatMessage({ id: "receipt.outlet.unknown" }),
+        outletName: outlet?.name ?? intl.formatMessage({ id: "receipt.outlet.unknown" }),
         outletTimezone: outlet?.timezone ?? null,
         address: null,
         createdAtIso: sale.createdAt,
@@ -96,9 +88,7 @@ export function ReceiptScreen() {
   if (!ready) {
     return (
       <section className="space-y-3" aria-busy>
-        <p className="text-sm text-neutral-500">
-          {intl.formatMessage({ id: "receipt.loading" })}
-        </p>
+        <p className="text-sm text-neutral-500">{intl.formatMessage({ id: "receipt.loading" })}</p>
       </section>
     );
   }
@@ -121,10 +111,7 @@ export function ReceiptScreen() {
   }
 
   return (
-    <section
-      className="space-y-4"
-      aria-label={intl.formatMessage({ id: "receipt.aria" })}
-    >
+    <section className="space-y-4" aria-label={intl.formatMessage({ id: "receipt.aria" })}>
       <header className="flex items-center justify-between">
         <h1 className="text-lg font-bold text-neutral-900">
           {intl.formatMessage({ id: "receipt.heading" })}
@@ -201,9 +188,7 @@ function PaperWidthToggle({
             data-testid={`receipt-paper-${value}`}
             className={[
               "rounded-full px-3 py-1 transition-colors",
-              active
-                ? "bg-primary-600 text-white"
-                : "text-neutral-700 hover:bg-neutral-100",
+              active ? "bg-primary-600 text-white" : "text-neutral-700 hover:bg-neutral-100",
             ].join(" ")}
           >
             {value}
