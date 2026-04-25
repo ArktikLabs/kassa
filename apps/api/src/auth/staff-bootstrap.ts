@@ -19,11 +19,7 @@ function readUuidHeader(req: FastifyRequest, header: string): string | null {
   return value;
 }
 
-function checkBearer(
-  req: FastifyRequest,
-  reply: FastifyReply,
-  expected: Buffer,
-): boolean {
+function checkBearer(req: FastifyRequest, reply: FastifyReply, expected: Buffer): boolean {
   const header = req.headers.authorization;
   if (!header?.startsWith("Bearer ")) {
     sendError(reply, 401, "unauthorized", "Staff bootstrap token required.");
