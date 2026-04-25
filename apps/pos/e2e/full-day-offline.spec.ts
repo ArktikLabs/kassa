@@ -206,11 +206,21 @@ interface SubmittedSale {
 
 async function enrolDevice(page: Page, code: string): Promise<DeviceCreds> {
   await page.goto("/enrol");
-  await page.waitForFunction(async () => {
-    const reg = await navigator.serviceWorker.getRegistration();
-    return Boolean(reg?.active);
-  });
-  await page.getByRole("heading", { name: /Enrol perangkat/ }).waitFor();
+  // Bound every wait in this helper: locale or service-worker regressions
+  // used to silently consume the entire 8-min suite ceiling instead of
+  // failing fast at the offending step (KASA-68 review feedback).
+  await page.waitForFunction(
+    async () => {
+      const reg = await navigator.serviceWorker.getRegistration();
+      return Boolean(reg?.active);
+    },
+    null,
+    { timeout: 30_000 },
+  );
+  // Match the heading by role + level rather than localized text — CI runs
+  // with `en-US` locale (renders "Enrol device") while developer machines
+  // typically render the Indonesian copy ("Enrol perangkat").
+  await page.getByRole("heading", { level: 1 }).first().waitFor({ timeout: 30_000 });
   // Type the 8-char code and submit. The screen's button is disabled until
   // the regex is satisfied, so wait for it to enable before clicking.
   await page.locator("#enrol-code").fill(code);
@@ -287,7 +297,9 @@ async function ringUpSalesViaUi(
   for (let i = 0; i < count; i += 1) {
     await page.goto("/catalog");
     await page.getByTestId(`catalog-tile-${ITEM_KOPI_ID}`).click();
-    await page.getByRole("link", { name: /Tunai/ }).click();
+    // Match by href, not localized link text ("Tunai" / "Cash"). The
+    // route is the contract; the label rotates per active locale.
+    await page.locator('a[href="/tender/cash"]').click();
     await page.getByTestId("chip-tender.cash.chip.pas").click();
     await page.getByTestId("tender-submit").click();
     await expect(page.getByTestId("receipt-preview")).toBeVisible({ timeout: 5_000 });
