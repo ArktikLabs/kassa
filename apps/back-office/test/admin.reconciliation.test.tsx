@@ -25,6 +25,10 @@ describe("Admin reconciliation page", () => {
   });
 
   afterEach(() => {
+    /* `vi.restoreAllMocks()` does not unwind `vi.stubGlobal()`, so we
+     * need both to keep the global `fetch` stub from leaking across
+     * specs. */
+    vi.unstubAllGlobals();
     vi.restoreAllMocks();
   });
 
@@ -101,5 +105,31 @@ describe("Admin reconciliation page", () => {
       getSnapshot().unmatchedStaticTenders.find((t) => t.id === "01H0000000000000UNMATCH0001"),
     ).toBeUndefined();
     expect(getSnapshot().unmatchedStaticTenders).toHaveLength(2);
+  });
+
+  it("surfaces an inline error and keeps the row when the match call fails", async () => {
+    saveSession({
+      email: "siti@warungpusat.id",
+      displayName: "Siti Rahayu",
+      role: "owner",
+      issuedAt: new Date().toISOString(),
+    });
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 500 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderAt("/admin/reconciliation", [
+      { path: "/admin/reconciliation", component: AdminReconciliationScreen },
+    ]);
+
+    const user = userEvent.setup();
+    const target = await screen.findByTestId("match-button-01H0000000000000UNMATCH0001");
+    await user.click(target);
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(await screen.findByRole("alert")).toHaveTextContent(/Gagal menandai tender/);
+    expect(
+      getSnapshot().unmatchedStaticTenders.find((t) => t.id === "01H0000000000000UNMATCH0001"),
+    ).toBeDefined();
+    expect(getSnapshot().unmatchedStaticTenders).toHaveLength(3);
   });
 });

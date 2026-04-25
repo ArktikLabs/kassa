@@ -151,6 +151,26 @@ function seed(): State {
   };
 }
 
+/* Hydrate every State slice even if the browser snapshot was written
+ * before that slice existed. Without this, adding a required slice
+ * (e.g. unmatchedStaticTenders in KASA-119) crashes any user with a
+ * stale snapshot the moment a screen does `[...state.<newSlice>]`.
+ * Seed defaults are used so devs still see scaffold rows when they
+ * had only a partial snapshot from an older build. */
+function hydrate(parsed: Partial<State>): State {
+  const defaults = seed();
+  return {
+    outlets: parsed.outlets ?? defaults.outlets,
+    items: parsed.items ?? defaults.items,
+    boms: parsed.boms ?? defaults.boms,
+    staff: parsed.staff ?? defaults.staff,
+    devices: parsed.devices ?? defaults.devices,
+    enrolmentCodes: parsed.enrolmentCodes ?? defaults.enrolmentCodes,
+    reconciliation: parsed.reconciliation ?? defaults.reconciliation,
+    unmatchedStaticTenders: parsed.unmatchedStaticTenders ?? defaults.unmatchedStaticTenders,
+  };
+}
+
 function load(): State {
   if (typeof localStorage === "undefined") return seed();
   const raw = localStorage.getItem(STORE_KEY);
@@ -160,7 +180,7 @@ function load(): State {
     return s;
   }
   try {
-    return JSON.parse(raw) as State;
+    return hydrate(JSON.parse(raw) as Partial<State>);
   } catch {
     const s = seed();
     localStorage.setItem(STORE_KEY, JSON.stringify(s));

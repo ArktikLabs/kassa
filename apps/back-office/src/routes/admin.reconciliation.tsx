@@ -13,11 +13,12 @@ import { loadSession, roleIsOwner } from "../lib/session";
  *
  * Renders the per-tender unmatched list described in KASA-64 §static
  * QRIS — the per-outlet variance summary continues to live at
- * `/reports/reconciliation`. Owners use the "Tandai telah diterima"
- * row action to flip a stuck tender to verified by calling the
- * KASA-117 endpoint `POST /v1/admin/reconciliation/match`. Manager and
- * cashier roles can read the list (route guard already restricts to
- * managers+) but the action is owner-only per the parent AC.
+ * `/reports/reconciliation`. Owner-only end-to-end per the parent AC:
+ * the route guard in `router.tsx` redirects non-owners to <Forbidden/>,
+ * the sidebar nav hides the link for non-owners, and the row action is
+ * additionally `disabled` for defence-in-depth. Owners use "Tandai
+ * telah diterima" to flip a stuck tender to verified by calling the
+ * KASA-117 endpoint `POST /v1/admin/reconciliation/match`.
  *
  * Data source: scaffold local store (mirrors the rest of the
  * back-office). When the GET endpoint lands the `useUnmatchedStaticTenders`
