@@ -9,6 +9,14 @@ import {
 export interface QrisPollState {
   status: QrisOrderStatusName | null;
   paidAt: string | null;
+  /**
+   * Latest `grossAmount` reported by the API (forwarded from Midtrans).
+   * Surfaced so the panel can refuse to finalise if it doesn't match the
+   * cart total — guards against a buyer paying a different amount than the
+   * QR was minted for, or a server-side cart mutation between create and
+   * status. `null` until the first successful poll.
+   */
+  grossAmount: number | null;
   /** Last poll failure; null once a poll succeeds again. */
   error: QrisApiError | null;
 }
@@ -31,12 +39,13 @@ export function useQrisPoll(
   const [state, setState] = useState<QrisPollState>({
     status: null,
     paidAt: null,
+    grossAmount: null,
     error: null,
   });
 
   useEffect(() => {
     if (!qrisOrderId) {
-      setState({ status: null, paidAt: null, error: null });
+      setState({ status: null, paidAt: null, grossAmount: null, error: null });
       return;
     }
 
@@ -52,7 +61,12 @@ export function useQrisPoll(
         if (options.fetchImpl) fetchOpts.fetchImpl = options.fetchImpl;
         const body: QrisOrderStatusResponseBody = await getQrisOrderStatus(qrisOrderId, fetchOpts);
         if (cancelled) return;
-        setState({ status: body.status, paidAt: body.paidAt, error: null });
+        setState({
+          status: body.status,
+          paidAt: body.paidAt,
+          grossAmount: body.grossAmount,
+          error: null,
+        });
         if (TERMINAL.includes(body.status)) return;
       } catch (err) {
         if (cancelled) return;

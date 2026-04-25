@@ -25,7 +25,11 @@ async function seedEnrolledDevice(page: Page): Promise<void> {
     async ({ outletId, itemId, uomId }) => {
       async function openDb(): Promise<IDBDatabase> {
         return new Promise((resolve, reject) => {
-          const req = indexedDB.open("kassa-pos", 1);
+          // Open without a version: the app schema is currently v2 and will
+          // bump again. Specifying a stale version triggers an upgrade with
+          // no handler and aborts the seed. Letting Dexie own the version
+          // means this test never lies about the schema shape.
+          const req = indexedDB.open("kassa-pos");
           req.onsuccess = () => resolve(req.result);
           req.onerror = () => reject(req.error);
         });

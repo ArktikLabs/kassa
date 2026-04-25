@@ -107,7 +107,12 @@ function handleProviderError(
     // Midtrans 4xx is a genuine client error (bad amount, dup order); Midtrans
     // 5xx / network failures are upstream outages, which we surface as 502 so
     // the PWA can fall back to static QRIS without retrying the same request.
-    const status = upstream >= 400 && upstream < 500 ? upstream : 502;
+    // 401/403 mean our server key is missing or wrong — that's a config
+    // problem on our side, not something the PWA can act on, so we collapse
+    // those into 502 too instead of leaking auth state downstream.
+    const isClientFixable =
+      upstream >= 400 && upstream < 500 && upstream !== 401 && upstream !== 403;
+    const status = isClientFixable ? upstream : 502;
     req.log.warn({ err, providerCode: err.code }, "midtrans request failed");
     return sendError(reply, status, err.code, err.message);
   }

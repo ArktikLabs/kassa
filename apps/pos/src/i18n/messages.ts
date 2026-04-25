@@ -132,6 +132,8 @@ const id: MessageMap = {
   "tender.qris.error.unavailable": "QRIS belum aktif di instance ini. Gunakan tunai.",
   "tender.qris.error.create": "Gagal membuat QR. Coba lagi atau beralih ke tunai.",
   "tender.qris.error.finalize": "Gagal menyimpan transaksi. Coba lagi.",
+  "tender.qris.error.amount_mismatch":
+    "Nominal pembayaran tidak cocok dengan total. Hubungi pelanggan dan coba lagi.",
   "tender.qris.static.fallback": "Offline — gunakan QRIS statis",
   "receipt.heading": "Struk",
   "receipt.aria": "Pratinjau struk",
@@ -304,6 +306,8 @@ const en: MessageMap = {
   "tender.qris.error.unavailable": "QRIS is not enabled on this instance. Use cash.",
   "tender.qris.error.create": "Couldn't create the QR. Try again or switch to cash.",
   "tender.qris.error.finalize": "Could not save the sale. Try again.",
+  "tender.qris.error.amount_mismatch":
+    "The paid amount doesn't match the cart total. Contact the customer and retry.",
   "tender.qris.static.fallback": "Offline — use static QRIS",
   "receipt.heading": "Receipt",
   "receipt.aria": "Receipt preview",

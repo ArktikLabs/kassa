@@ -97,8 +97,17 @@ export function TenderQrisPanel() {
   }, []);
 
   const finalize = useCallback(
-    async (current: CreatedOrder) => {
+    async (current: CreatedOrder, reportedGrossAmount: number) => {
       if (finalizedOrderRef.current === current.qrisOrderId) return;
+      // Defence-in-depth: refuse to enqueue the sale if the amount the
+      // provider reports having charged doesn't match the cart total. This
+      // catches a tampered status response, a cart mutation between create
+      // and paid, or a Midtrans bug that paid the wrong order.
+      const cartTotal = t.totalIdr as number;
+      if (reportedGrossAmount !== cartTotal) {
+        setFinalizeError(intl.formatMessage({ id: "tender.qris.error.amount_mismatch" }));
+        return;
+      }
       finalizedOrderRef.current = current.qrisOrderId;
       setStep("finalizing");
       setFinalizeError(null);
@@ -133,10 +142,10 @@ export function TenderQrisPanel() {
 
   useEffect(() => {
     if (step !== "waiting" || !order) return;
-    if (pollStatus === "paid") {
-      void finalize(order);
+    if (pollStatus === "paid" && poll.grossAmount !== null) {
+      void finalize(order, poll.grossAmount);
     }
-  }, [finalize, order, pollStatus, step]);
+  }, [finalize, order, poll.grossAmount, pollStatus, step]);
 
   return (
     <section

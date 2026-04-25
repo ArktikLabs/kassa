@@ -11,7 +11,17 @@ import { z } from "zod";
  * outbox row without a joining table.
  */
 
-const uuidV7 = z.string().uuid();
+// Match the strict UUIDv7 validator used by the POS finalize schema
+// (`apps/pos/src/features/sale/schema.ts`). The Midtrans `order_id` we send
+// equals the POS `localSaleId`, so accepting any UUID version here would
+// silently let other UUID flavours through and break the 1:1 mapping
+// between the outbox row and the webhook callback.
+const uuidV7 = z
+  .string()
+  .regex(
+    /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
+    "must be a UUIDv7",
+  );
 const rupiahInteger = z.number().int().positive();
 
 export const QRIS_ORDER_STATUSES = ["pending", "paid", "expired", "cancelled", "failed"] as const;
