@@ -55,6 +55,7 @@ async function main(): Promise<void> {
         ? { staffBootstrapToken: env.STAFF_BOOTSTRAP_TOKEN }
         : {}),
     },
+    deviceAuth: { repository },
     catalog: {
       items: itemsService,
       ...(env.STAFF_BOOTSTRAP_TOKEN !== undefined

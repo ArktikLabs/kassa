@@ -11,17 +11,26 @@ import {
   type QrisOrderStatus,
   type QrisOrderStatusResponse,
 } from "@kassa/schemas/payments";
+import type { DeviceAuthPreHandler } from "../auth/device-auth.js";
 import { sendError } from "../lib/errors.js";
 import { validate } from "../lib/validate.js";
 
-export async function paymentsRoutes(app: FastifyInstance): Promise<void> {
-  app.post<{ Body: QrisCreateOrderRequest }>(
-    "/qris",
-    { preHandler: validate({ body: qrisCreateOrderRequest }) },
-    createQrisOrderHandler,
-  );
-  app.get("/qris/:orderId/status", getQrisOrderStatusHandler);
-  app.post("/webhooks/midtrans", midtransWebhookHandler);
+export function paymentsRoutes(requireDevice: DeviceAuthPreHandler) {
+  return async function register(app: FastifyInstance): Promise<void> {
+    app.post<{ Body: QrisCreateOrderRequest }>(
+      "/qris",
+      { preHandler: [requireDevice, validate({ body: qrisCreateOrderRequest })] },
+      createQrisOrderHandler,
+    );
+    app.get<{ Params: { orderId: string } }>(
+      "/qris/:orderId/status",
+      { preHandler: requireDevice },
+      getQrisOrderStatusHandler,
+    );
+    // The Midtrans webhook authenticates via HMAC signature on the body, not
+    // device credentials, so it stays outside the `requireDevice` gate.
+    app.post("/webhooks/midtrans", midtransWebhookHandler);
+  };
 }
 
 async function createQrisOrderHandler(

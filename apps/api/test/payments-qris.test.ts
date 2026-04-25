@@ -2,6 +2,11 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { FastifyInstance } from "fastify";
 import { createMidtransProvider } from "@kassa/payments";
 import { buildApp } from "../src/app.js";
+import {
+  FakeDeviceAuthRepository,
+  seedTestDevice,
+  type TestDeviceCredentials,
+} from "./helpers/device-auth.js";
 
 /*
  * Integration tests for the QRIS tender side-channel (ARCHITECTURE.md §3.1
@@ -13,6 +18,26 @@ import { buildApp } from "../src/app.js";
 const SERVER_KEY = "SB-Mid-server-qris-test-AAAAAAAAAAAAAAAA";
 const LOCAL_SALE_ID = "01963f8a-1234-7456-8abc-0123456789ab";
 const OUTLET_ID = "01963f8a-0000-7000-8000-000000000001";
+const MERCHANT_ID = "01963f8a-0000-7000-8000-000000000099";
+const DEVICE_ID = "01963f8a-aaaa-7000-8000-000000000001";
+
+async function buildAuthedApp(midtransProvider?: unknown): Promise<{
+  app: FastifyInstance;
+  cred: TestDeviceCredentials;
+}> {
+  const repository = new FakeDeviceAuthRepository();
+  const cred = await seedTestDevice(repository, {
+    deviceId: DEVICE_ID,
+    merchantId: MERCHANT_ID,
+    outletId: OUTLET_ID,
+  });
+  const app = await buildApp({
+    deviceAuth: { repository },
+    ...(midtransProvider ? { midtransProvider: midtransProvider as never } : {}),
+  });
+  await app.ready();
+  return { app, cred };
+}
 
 interface FakeResponse {
   status: number;
@@ -41,13 +66,30 @@ function stubbedFetch(
 }
 
 describe("POST /v1/payments/qris", () => {
-  it("returns 503 payments_unavailable when no provider is configured", async () => {
-    const app = await buildApp();
-    await app.ready();
+  it("rejects requests without device credentials with 401", async () => {
+    const { app } = await buildAuthedApp(
+      createMidtransProvider({ serverKey: SERVER_KEY, environment: "sandbox" }),
+    );
     try {
       const res = await app.inject({
         method: "POST",
         url: "/v1/payments/qris",
+        payload: { amount: 25_000, localSaleId: LOCAL_SALE_ID, outletId: OUTLET_ID },
+      });
+      expect(res.statusCode).toBe(401);
+      expect((res.json() as { error: { code: string } }).error.code).toBe("unauthorized");
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("returns 503 payments_unavailable when no provider is configured", async () => {
+    const { app, cred } = await buildAuthedApp();
+    try {
+      const res = await app.inject({
+        method: "POST",
+        url: "/v1/payments/qris",
+        headers: { authorization: cred.authHeader },
         payload: { amount: 25_000, localSaleId: LOCAL_SALE_ID, outletId: OUTLET_ID },
       });
       expect(res.statusCode).toBe(503);
@@ -58,17 +100,14 @@ describe("POST /v1/payments/qris", () => {
   });
 
   it("validates the request body and returns 422 validation_error on bad input", async () => {
-    const app = await buildApp({
-      midtransProvider: createMidtransProvider({
-        serverKey: SERVER_KEY,
-        environment: "sandbox",
-      }),
-    });
-    await app.ready();
+    const { app, cred } = await buildAuthedApp(
+      createMidtransProvider({ serverKey: SERVER_KEY, environment: "sandbox" }),
+    );
     try {
       const res = await app.inject({
         method: "POST",
         url: "/v1/payments/qris",
+        headers: { authorization: cred.authHeader },
         payload: { amount: -1, localSaleId: LOCAL_SALE_ID, outletId: OUTLET_ID },
       });
       expect(res.statusCode).toBe(422);
@@ -106,19 +145,19 @@ describe("POST /v1/payments/qris", () => {
       captured,
     );
 
-    const app = await buildApp({
-      midtransProvider: createMidtransProvider({
+    const { app, cred } = await buildAuthedApp(
+      createMidtransProvider({
         serverKey: SERVER_KEY,
         environment: "sandbox",
         fetchImpl,
         now: () => new Date("2026-04-24T13:00:00.000Z"),
       }),
-    });
-    await app.ready();
+    );
     try {
       const res = await app.inject({
         method: "POST",
         url: "/v1/payments/qris",
+        headers: { authorization: cred.authHeader },
         payload: {
           amount: 25_000,
           localSaleId: LOCAL_SALE_ID,
@@ -165,18 +204,18 @@ describe("POST /v1/payments/qris", () => {
       captured,
     );
 
-    const app = await buildApp({
-      midtransProvider: createMidtransProvider({
+    const { app, cred } = await buildAuthedApp(
+      createMidtransProvider({
         serverKey: SERVER_KEY,
         environment: "sandbox",
         fetchImpl,
       }),
-    });
-    await app.ready();
+    );
     try {
       const res = await app.inject({
         method: "POST",
         url: "/v1/payments/qris",
+        headers: { authorization: cred.authHeader },
         payload: { amount: 25_000, localSaleId: LOCAL_SALE_ID, outletId: OUTLET_ID },
       });
       expect(res.statusCode).toBe(400);
@@ -198,18 +237,18 @@ describe("POST /v1/payments/qris", () => {
       captured,
     );
 
-    const app = await buildApp({
-      midtransProvider: createMidtransProvider({
+    const { app, cred } = await buildAuthedApp(
+      createMidtransProvider({
         serverKey: SERVER_KEY,
         environment: "sandbox",
         fetchImpl,
       }),
-    });
-    await app.ready();
+    );
     try {
       const res = await app.inject({
         method: "POST",
         url: "/v1/payments/qris",
+        headers: { authorization: cred.authHeader },
         payload: { amount: 25_000, localSaleId: LOCAL_SALE_ID, outletId: OUTLET_ID },
       });
       expect(res.statusCode).toBe(502);
@@ -221,6 +260,7 @@ describe("POST /v1/payments/qris", () => {
 
 describe("GET /v1/payments/qris/:orderId/status", () => {
   let app: FastifyInstance;
+  let cred: TestDeviceCredentials;
   const captured: { calls: Array<{ url: string; init?: RequestInit }> } = { calls: [] };
   const statusFor = (status: string, extra: Record<string, unknown> = {}): FakeResponse => ({
     status: 200,
@@ -239,18 +279,27 @@ describe("GET /v1/payments/qris/:orderId/status", () => {
   };
 
   beforeAll(async () => {
-    app = await buildApp({
-      midtransProvider: createMidtransProvider({
+    const built = await buildAuthedApp(
+      createMidtransProvider({
         serverKey: SERVER_KEY,
         environment: "sandbox",
         fetchImpl: stubbedFetch(responses, captured),
       }),
-    });
-    await app.ready();
+    );
+    app = built.app;
+    cred = built.cred;
   });
 
   afterAll(async () => {
     await app.close();
+  });
+
+  it("rejects unauthenticated callers with 401", async () => {
+    const res = await app.inject({
+      method: "GET",
+      url: `/v1/payments/qris/${LOCAL_SALE_ID}/status`,
+    });
+    expect(res.statusCode).toBe(401);
   });
 
   it("returns 200 with status=pending while Midtrans reports pending", async () => {
@@ -258,6 +307,7 @@ describe("GET /v1/payments/qris/:orderId/status", () => {
     const res = await app.inject({
       method: "GET",
       url: `/v1/payments/qris/${LOCAL_SALE_ID}/status`,
+      headers: { authorization: cred.authHeader },
     });
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual({
@@ -275,6 +325,7 @@ describe("GET /v1/payments/qris/:orderId/status", () => {
     const res = await app.inject({
       method: "GET",
       url: `/v1/payments/qris/${LOCAL_SALE_ID}/status`,
+      headers: { authorization: cred.authHeader },
     });
     expect(res.statusCode).toBe(200);
     const body = res.json() as { status: string; paidAt: string | null };
@@ -289,6 +340,7 @@ describe("GET /v1/payments/qris/:orderId/status", () => {
     const res = await app.inject({
       method: "GET",
       url: `/v1/payments/qris/${LOCAL_SALE_ID}/status`,
+      headers: { authorization: cred.authHeader },
     });
     expect(res.statusCode).toBe(200);
     expect((res.json() as { status: string }).status).toBe("expired");
@@ -299,6 +351,7 @@ describe("GET /v1/payments/qris/:orderId/status", () => {
     const res = await app.inject({
       method: "GET",
       url: `/v1/payments/qris/${LOCAL_SALE_ID}/status`,
+      headers: { authorization: cred.authHeader },
     });
     expect(res.statusCode).toBe(200);
     expect((res.json() as { status: string }).status).toBe("cancelled");
@@ -307,12 +360,12 @@ describe("GET /v1/payments/qris/:orderId/status", () => {
 
 describe("GET /v1/payments/qris/:orderId/status without a configured provider", () => {
   it("responds 503 payments_unavailable", async () => {
-    const app = await buildApp();
-    await app.ready();
+    const { app, cred } = await buildAuthedApp();
     try {
       const res = await app.inject({
         method: "GET",
         url: `/v1/payments/qris/${LOCAL_SALE_ID}/status`,
+        headers: { authorization: cred.authHeader },
       });
       expect(res.statusCode).toBe(503);
     } finally {

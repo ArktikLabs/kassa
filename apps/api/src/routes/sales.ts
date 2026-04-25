@@ -1,4 +1,4 @@
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyRequest } from "fastify";
 import { saleSubmitRequest, type SaleSubmitRequest, type SaleSubmitResponse } from "@kassa/schemas";
 import { notImplemented, sendError } from "../lib/errors.js";
 import { validate } from "../lib/validate.js";
@@ -7,11 +7,12 @@ import { SalesError, type SalesService } from "../services/sales/index.js";
 export interface SalesRouteDeps {
   service: SalesService;
   /**
-   * Resolves the caller's merchantId from the authenticated request. Today
-   * we pass a header-based resolver (see app.ts); KASA-25 will swap in a
-   * JWT-based one without touching the route handler.
+   * Resolves the caller's merchantId from the authenticated request. The
+   * default resolver in app.ts prefers `req.devicePrincipal.merchantId`
+   * (set by the device-auth preHandler) and falls back to the
+   * `x-kassa-merchant-id` header for the legacy bootstrap callers.
    */
-  resolveMerchantId: (req: { headers: Record<string, unknown> }) => string | null;
+  resolveMerchantId: (req: FastifyRequest) => string | null;
 }
 
 export function salesRoutes(deps: SalesRouteDeps) {
