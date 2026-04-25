@@ -221,13 +221,15 @@ async function enrolDevice(page: Page, code: string): Promise<DeviceCreds> {
   // with `en-US` locale (renders "Enrol device") while developer machines
   // typically render the Indonesian copy ("Enrol perangkat").
   await page.getByRole("heading", { level: 1 }).first().waitFor({ timeout: 30_000 });
-  // Type the 8-char code and submit. The screen's button is disabled until
-  // the regex is satisfied, so wait for it to enable before clicking.
+  // Type the 8-char code, then click the submit CTA. Pressing Enter on the
+  // input races React's re-render: Chromium refuses to submit a form when
+  // the only submit button is still `disabled`, so the keystroke fires
+  // before `canSubmit` flips and the form silently no-ops. `click()`
+  // auto-waits for actionable state, sidestepping the race. The selector
+  // stays locale-immune because the scan/retry buttons are `type="button"`,
+  // making `button[type="submit"]` unique on `/enrol`.
   await page.locator("#enrol-code").fill(code);
-  // The CTA's text is "Hubungkan perangkat" (id) / "Connect device" (en); the
-  // type=submit form-button is the only button that responds to Enter, so
-  // press Enter to keep the selector independent of the active locale.
-  await page.locator("#enrol-code").press("Enter");
+  await page.locator('button[type="submit"]').click();
   // Successful enrolment redirects to /catalog.
   await page.waitForURL(/\/catalog$/, { timeout: 30_000 });
 
