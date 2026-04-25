@@ -33,6 +33,23 @@ export interface FinalizeCashInput {
   tenderedIdr: Rupiah;
 }
 
+export interface FinalizeQrisInput {
+  lines: readonly CartLine[];
+  totals: CartTotals;
+  /**
+   * The client-generated UUIDv7 passed to `POST /v1/payments/qris` — we use
+   * the same id as both `localSaleId` and the Midtrans `order_id` so the
+   * tender row and the outbox row reconcile 1:1 by primary key.
+   */
+  localSaleId: string;
+  /**
+   * The Midtrans order id the webhook will carry. In our current wiring this
+   * equals `localSaleId`, but the field is carried through verbatim so that
+   * a future provider that mints its own id still reconciles.
+   */
+  qrisOrderId: string;
+}
+
 export interface FinalizeContext {
   database: Database;
   /** Injected for tests. Defaults to `uuidv7()`. */
@@ -195,5 +212,120 @@ export async function finalizeCashSale(
     sale,
     pendingSale,
     changeDueIdr: toRupiah((input.tenderedIdr as number) - (input.totals.totalIdr as number)),
+  };
+}
+
+/**
+ * Finalise a cart as a QRIS-tendered sale. Called by the QRIS tender panel
+ * after `GET /v1/payments/qris/:orderId/status` returns `paid`. The sale is
+ * enqueued to the outbox with `tenders[0].method = "qris"` and
+ * `tenders[0].reference = qrisOrderId` so the server-side sync can
+ * reconcile it against the Midtrans webhook state.
+ *
+ * QRIS cannot leave change due, so `changeDueIdr` is always zero.
+ */
+export async function finalizeQrisSale(
+  input: FinalizeQrisInput,
+  ctx: FinalizeContext,
+): Promise<FinalizeResult> {
+  const { database } = ctx;
+  const now = ctx.now?.() ?? new Date();
+
+  if (input.lines.length === 0) {
+    throw new SaleFinalizeError("cart is empty");
+  }
+
+  const deviceSecret = await database.repos.deviceSecret.get();
+  if (!deviceSecret) {
+    throw new SaleFinalizeError("device is not enrolled");
+  }
+  const outlet = await database.repos.outlets.getById(deviceSecret.outletId);
+
+  const businessDate = toBusinessDate(now, outlet?.timezone);
+  const createdAtIso = now.toISOString();
+
+  const items = await Promise.all(
+    input.lines.map(async (line) => {
+      const item = await database.repos.items.getById(line.itemId);
+      return [line.itemId, item] as const;
+    }),
+  );
+  const itemById = new Map<string, Item>();
+  for (const [id, item] of items) {
+    if (item) itemById.set(id, item);
+  }
+
+  const saleItems = buildSaleItems(input.lines, itemById);
+  const tenders: PendingSaleTender[] = [
+    {
+      method: "qris",
+      amountIdr: input.totals.totalIdr,
+      reference: input.qrisOrderId,
+    },
+  ];
+
+  const sale: KassaSale = kassaSale.parse({
+    localSaleId: input.localSaleId,
+    outletId: deviceSecret.outletId,
+    clerkId: deviceSecret.deviceId,
+    businessDate,
+    createdAt: createdAtIso,
+    subtotalIdr: input.totals.subtotalIdr as number,
+    discountIdr: input.totals.discountIdr as number,
+    totalIdr: input.totals.totalIdr as number,
+    items: saleItems,
+    tenders,
+  });
+
+  const pendingSale: PendingSale = await database.db.transaction(
+    "rw",
+    database.db.pending_sales,
+    database.db.stock_snapshot,
+    async () => {
+      const row: PendingSale = {
+        localSaleId: sale.localSaleId,
+        outletId: sale.outletId,
+        clerkId: sale.clerkId,
+        businessDate: sale.businessDate,
+        createdAt: sale.createdAt,
+        subtotalIdr: toRupiah(sale.subtotalIdr),
+        discountIdr: toRupiah(sale.discountIdr),
+        totalIdr: toRupiah(sale.totalIdr),
+        items: saleItems.map((line) => ({
+          ...line,
+          unitPriceIdr: toRupiah(line.unitPriceIdr),
+          lineTotalIdr: toRupiah(line.lineTotalIdr),
+        })),
+        tenders: tenders.map((t) => ({
+          ...t,
+          amountIdr: toRupiah(t.amountIdr),
+        })),
+        status: "queued",
+        attempts: 0,
+        lastError: null,
+        lastAttemptAt: null,
+        serverSaleName: null,
+      };
+      await database.db.pending_sales.put(row);
+
+      for (const line of input.lines) {
+        const item = itemById.get(line.itemId);
+        if (!item?.isStockTracked) continue;
+        await database.repos.stockSnapshot.applyOptimisticDelta(
+          sale.outletId,
+          line.itemId,
+          -line.quantity,
+          createdAtIso,
+        );
+      }
+      return row;
+    },
+  );
+
+  return {
+    localSaleId: sale.localSaleId,
+    sale,
+    pendingSale,
+    changeDueIdr: toRupiah(0),
   };
 }

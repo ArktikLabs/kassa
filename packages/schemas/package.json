@@ -19,6 +19,10 @@
     "./catalog": {
       "types": "./dist/catalog.d.ts",
       "import": "./dist/catalog.js"
+    },
+    "./payments": {
+      "types": "./dist/payments.d.ts",
+      "import": "./dist/payments.js"
     }
   },
   "files": [

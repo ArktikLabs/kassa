@@ -188,6 +188,26 @@ export function TenderCashPanel() {
               ? intl.formatMessage({ id: "tender.cash.submit.done" })
               : intl.formatMessage({ id: "tender.cash.submit.insufficient" })}
         </button>
+        <button
+          type="button"
+          // Hard-disable while a cash finalize is in flight: navigating away
+          // mid-Dexie-transaction would race `clear()` and the receipt
+          // route, leaving an orphaned outbox row.
+          disabled={submitting}
+          onClick={() => {
+            if (submitting) return;
+            void navigate({ to: "/tender/qris" });
+          }}
+          data-testid="tender-cash-switch-qris"
+          className={[
+            "w-full h-12 rounded-md border text-base font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-600 focus-visible:ring-offset-2 focus-visible:ring-offset-white",
+            submitting
+              ? "border-neutral-200 text-neutral-400 cursor-not-allowed"
+              : "border-neutral-300 text-neutral-800 active:bg-neutral-100",
+          ].join(" ")}
+        >
+          {intl.formatMessage({ id: "tender.cash.switch.qris" })}
+        </button>
       </div>
     </section>
   );
