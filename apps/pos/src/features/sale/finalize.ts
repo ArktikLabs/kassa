@@ -3,6 +3,7 @@ import type { Database } from "../../data/db/index.ts";
 import type { Item, PendingSale, PendingSaleItem, PendingSaleTender } from "../../data/db/types.ts";
 import { uuidv7 } from "../../lib/uuidv7.ts";
 import type { CartLine, CartTotals } from "../cart/types.ts";
+import { explodeLines } from "../stock/index.ts";
 import { kassaSale, type KassaSale } from "./schema.ts";
 
 /*
@@ -143,8 +144,19 @@ export async function finalizeCashSale(
     tenders,
   });
 
-  // Single rw-transaction: enqueue outbox row AND decrement each tracked item's
-  // snapshot. Either both succeed or neither does — Dexie aborts the tx on throw.
+  // Resolve BOM explosion outside the rw-tx: boms table is read-only here and
+  // the resolved list is deterministic w.r.t. the cart + catalog snapshot we
+  // already fetched. Keeping the boms read off the rw-tx lets Dexie scope the
+  // transaction to (pending_sales, stock_snapshot) — fewer locks, same atomicity.
+  const stockMoves = await explodeLines(
+    database,
+    input.lines.map((line) => ({ itemId: line.itemId, quantity: line.quantity })),
+    itemById,
+  );
+
+  // Single rw-transaction: enqueue outbox row AND decrement each exploded
+  // stock row. Either both succeed or neither does — Dexie aborts the tx on
+  // throw. BOM-backed items decrement components, not the finished good.
   const pendingSale: PendingSale = await database.db.transaction(
     "rw",
     database.db.pending_sales,
@@ -176,13 +188,11 @@ export async function finalizeCashSale(
       };
       await database.db.pending_sales.put(row);
 
-      for (const line of input.lines) {
-        const item = itemById.get(line.itemId);
-        if (!item?.isStockTracked) continue;
+      for (const move of stockMoves) {
         await database.repos.stockSnapshot.applyOptimisticDelta(
           sale.outletId,
-          line.itemId,
-          -line.quantity,
+          move.itemId,
+          -move.quantity,
           createdAtIso,
         );
       }

@@ -13,6 +13,11 @@ import { createDomainEventBus, type DomainEventBus } from "./lib/events.js";
 import { createInMemoryDedupeStore, type WebhookDedupeStore } from "./lib/webhook-dedupe.js";
 import { EnrolmentService, InMemoryEnrolmentRepository } from "./services/enrolment/index.js";
 import { InMemoryItemsRepository, ItemsService } from "./services/catalog/index.js";
+import {
+  InMemorySalesRepository,
+  SalesService,
+  type SalesRepository,
+} from "./services/sales/index.js";
 
 export interface BuildAppOptions {
   logger?: FastifyServerOptions["logger"];
@@ -28,6 +33,16 @@ export interface BuildAppOptions {
     items: ItemsService;
     staffBootstrapToken?: string;
   };
+  sales?: {
+    service: SalesService;
+    repository: SalesRepository;
+  };
+  /**
+   * Resolves the merchantId for incoming requests. Defaults to reading the
+   * `x-kassa-merchant-id` header so test fixtures and the POS client can
+   * send a merchant context without waiting for KASA-25 JWT auth.
+   */
+  resolveMerchantId?: (req: { headers: Record<string, unknown> }) => string | null;
 }
 
 declare module "fastify" {
@@ -69,6 +84,10 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     items: new ItemsService({ repository: new InMemoryItemsRepository() }),
   };
 
+  const salesRepository = options.sales?.repository ?? new InMemorySalesRepository();
+  const salesService = options.sales?.service ?? new SalesService({ repository: salesRepository });
+  const resolveMerchantId = options.resolveMerchantId ?? defaultMerchantResolver;
+
   const v1Deps: V1RouteDeps = {
     auth: {
       enrolment: enrolment.service,
@@ -85,10 +104,30 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
         ? { staffBootstrapToken: catalog.staffBootstrapToken }
         : {}),
     },
+    sales: {
+      service: salesService,
+      resolveMerchantId,
+    },
+    stock: {
+      repository: salesRepository,
+      resolveMerchantId,
+    },
   };
 
   await app.register(healthRoutes);
   await app.register(async (instance) => registerV1Routes(instance, v1Deps), { prefix: "/v1" });
 
   return app;
+}
+
+// TODO(KASA-25): replace with a JWT-derived merchant resolver before this
+// endpoint is reachable from anything other than the trusted PWA on a private
+// network. The header-only resolver lets any caller claim any merchantId.
+function defaultMerchantResolver(req: { headers: Record<string, unknown> }): string | null {
+  const header = req.headers["x-kassa-merchant-id"];
+  if (typeof header === "string" && header.length > 0) return header;
+  if (Array.isArray(header) && typeof header[0] === "string" && header[0].length > 0) {
+    return header[0];
+  }
+  return null;
 }

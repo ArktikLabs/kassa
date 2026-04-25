@@ -178,6 +178,124 @@ describe("finalizeCashSale", () => {
     expect(result.changeDueIdr).toBe(0);
   });
 
+  it("explodes BOM-backed sales into per-component stock decrements", async () => {
+    // Shadow the default fixture: set up a Kopi Susu BOM parent (not
+    // stock-tracked on its own) with three components the outlet stocks.
+    const BOM_ID = "66666666-6666-7666-8666-666666666601";
+    const BEANS = "44444444-4444-7444-8444-4444444444aa";
+    const MILK = "44444444-4444-7444-8444-4444444444bb";
+    const WATER = "44444444-4444-7444-8444-4444444444cc";
+    const OUTLET = "22222222-2222-7222-8222-222222222222";
+
+    await fx.repos.items.upsertMany([
+      {
+        id: "44444444-4444-7444-8444-444444444444",
+        code: "KP-001",
+        name: "Kopi Susu",
+        priceIdr: toRupiah(25_000),
+        uomId: "55555555-5555-7555-8555-555555555555",
+        bomId: BOM_ID,
+        isStockTracked: false,
+        isActive: true,
+        updatedAt: "2026-04-23T00:00:00.000Z",
+      },
+      {
+        id: BEANS,
+        code: "BN-001",
+        name: "Biji Kopi",
+        priceIdr: toRupiah(0),
+        uomId: "55555555-5555-7555-8555-555555555555",
+        bomId: null,
+        isStockTracked: true,
+        isActive: true,
+        updatedAt: "2026-04-23T00:00:00.000Z",
+      },
+      {
+        id: MILK,
+        code: "MK-001",
+        name: "Susu",
+        priceIdr: toRupiah(0),
+        uomId: "55555555-5555-7555-8555-555555555555",
+        bomId: null,
+        isStockTracked: true,
+        isActive: true,
+        updatedAt: "2026-04-23T00:00:00.000Z",
+      },
+      {
+        id: WATER,
+        code: "WT-001",
+        name: "Air",
+        priceIdr: toRupiah(0),
+        uomId: "55555555-5555-7555-8555-555555555555",
+        bomId: null,
+        isStockTracked: true,
+        isActive: true,
+        updatedAt: "2026-04-23T00:00:00.000Z",
+      },
+    ]);
+    await fx.repos.boms.upsertMany([
+      {
+        id: BOM_ID,
+        itemId: "44444444-4444-7444-8444-444444444444",
+        components: [
+          { componentItemId: BEANS, quantity: 15, uomId: "55555555-5555-7555-8555-555555555555" },
+          { componentItemId: MILK, quantity: 120, uomId: "55555555-5555-7555-8555-555555555555" },
+          { componentItemId: WATER, quantity: 60, uomId: "55555555-5555-7555-8555-555555555555" },
+        ],
+        updatedAt: "2026-04-23T00:00:00.000Z",
+      },
+    ]);
+    await fx.repos.stockSnapshot.upsertMany([
+      {
+        key: "",
+        outletId: OUTLET,
+        itemId: BEANS,
+        onHand: 500,
+        updatedAt: "2026-04-23T00:00:00.000Z",
+      },
+      {
+        key: "",
+        outletId: OUTLET,
+        itemId: MILK,
+        onHand: 1_000,
+        updatedAt: "2026-04-23T00:00:00.000Z",
+      },
+      {
+        key: "",
+        outletId: OUTLET,
+        itemId: WATER,
+        onHand: 2_000,
+        updatedAt: "2026-04-23T00:00:00.000Z",
+      },
+    ]);
+
+    const cart = cartWithKopi(2);
+    await finalizeCashSale(
+      {
+        lines: cart.lines,
+        totals: totals(cart),
+        tenderedIdr: toRupiah(100_000),
+      },
+      {
+        database: { db: fx.db, repos: fx.repos, close: () => {} },
+        generateLocalSaleId: () => "01929b2d-1e03-7f00-80aa-000000000003",
+      },
+    );
+
+    const [beans, milk, water, kopi] = await Promise.all([
+      fx.repos.stockSnapshot.forOutletItem(OUTLET, BEANS),
+      fx.repos.stockSnapshot.forOutletItem(OUTLET, MILK),
+      fx.repos.stockSnapshot.forOutletItem(OUTLET, WATER),
+      // The original Kopi Susu snapshot from setup() is still there but the
+      // finished-good row must NOT have moved.
+      fx.repos.stockSnapshot.forOutletItem(OUTLET, "44444444-4444-7444-8444-444444444444"),
+    ]);
+    expect(beans?.onHand).toBe(500 - 15 * 2);
+    expect(milk?.onHand).toBe(1_000 - 120 * 2);
+    expect(water?.onHand).toBe(2_000 - 60 * 2);
+    expect(kopi?.onHand).toBe(10); // untouched — BOM parent does not decrement
+  });
+
   it("generates a UUIDv7 localSaleId by default", async () => {
     const cart = cartWithKopi(1);
     const result = await finalizeCashSale(

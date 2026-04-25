@@ -29,6 +29,12 @@ export const items = pgTable(
       .references(() => uoms.id),
     bomId: uuid("bom_id"),
     isStockTracked: boolean("is_stock_tracked").notNull().default(true),
+    /**
+     * When false (the default), `sale.submit` refuses lines that would take
+     * `on_hand` below zero. Flipped to true for raw materials whose inventory
+     * is managed outside the system (ARCHITECTURE.md ADR-006, KASA-66 AC).
+     */
+    allowNegative: boolean("allow_negative").notNull().default(false),
     isActive: boolean("is_active").notNull().default(true),
     createdAt: createdAtCol(),
     updatedAt: updatedAtCol(),
