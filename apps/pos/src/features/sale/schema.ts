@@ -39,11 +39,45 @@ export type KassaSaleItem = z.infer<typeof kassaSaleItem>;
 
 export const kassaSaleTender = z
   .object({
-    method: z.enum(["cash", "qris", "card", "other"]),
+    method: z.enum(["cash", "qris", "qris_static", "card", "other"]),
     amountIdr: rupiah,
     reference: z.string().nullable(),
+    /**
+     * Server-confirmed against an upstream settlement record. Always `false`
+     * for `qris_static` at write time; reconciliation flips it on the
+     * server. Optional on the wire so legacy outbox rows keep validating.
+     */
+    verified: z.boolean().optional(),
+    /**
+     * Last 4 digits of the buyer's QRIS reference (KASA-118). Required for
+     * `qris_static`; absent for every other method. Captured client-side
+     * so the back-office matcher can disambiguate same-amount tenders.
+     */
+    buyerRefLast4: z
+      .string()
+      .regex(/^\d{4}$/, "must be exactly 4 digits")
+      .nullable()
+      .optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((value, ctx) => {
+    if (value.method === "qris_static") {
+      if (!value.buyerRefLast4) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["buyerRefLast4"],
+          message: "qris_static tenders require buyerRefLast4",
+        });
+      }
+      if (value.verified === true) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["verified"],
+          message: "qris_static tenders are unverified at write time",
+        });
+      }
+    }
+  });
 export type KassaSaleTender = z.infer<typeof kassaSaleTender>;
 
 export const kassaSale = z

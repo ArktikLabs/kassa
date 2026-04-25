@@ -51,10 +51,50 @@ export interface StockSnapshot {
   updatedAt: string;
 }
 
+/**
+ * Tender method codes as written to the local outbox.
+ *
+ * `qris_static` is the printed-merchant-QR fallback (KASA-64 / ADR-008): the
+ * clerk shows the buyer the merchant's static EMV QR, the buyer pays from
+ * their banking app, and the clerk captures the last 4 digits of the buyer's
+ * reference into `buyerRefLast4`. The tender is stored unverified — server-
+ * side reconciliation against the Midtrans EOD settlement report flips
+ * `verified` when the row matches by amount + last4 + outlet + ±10-min window.
+ */
+export type PendingSaleTenderMethod = "cash" | "qris" | "qris_static" | "card" | "other";
+
 export interface PendingSaleTender {
-  method: "cash" | "qris" | "card" | "other";
+  method: PendingSaleTenderMethod;
   amountIdr: Rupiah;
   reference: string | null;
+  /**
+   * `true` once the server has matched this tender against an upstream
+   * settlement record. Always `false` for `qris_static` at write time;
+   * always `true` for `cash` (no settlement needed). Optional on the wire
+   * so existing outbox rows survive the schema bump unchanged.
+   */
+  verified?: boolean;
+  /**
+   * Last 4 digits of the buyer's QRIS reference, captured by the clerk on
+   * the static-QRIS panel. Required for `qris_static` so the back-office
+   * matcher can reconcile ambiguous amounts; absent for every other method.
+   */
+  buyerRefLast4?: string | null;
+}
+
+/**
+ * Per-outlet cache of the merchant's printed-QR image. The clerk shows this
+ * to the buyer when the device is offline (ADR-008 fallback). Cached as a
+ * data URL so the panel can render it under StrictMode without re-fetching
+ * a Blob URL across renders. Refreshed when older than ~24h.
+ */
+export interface PrintedQris {
+  outletId: string;
+  /** Data URL (e.g. `data:image/png;base64,...`) ready to drop into `<img src>`. */
+  image: string;
+  /** Original MIME type so the receipt printer or admin export can re-encode if needed. */
+  mimeType: string;
+  fetchedAt: string;
 }
 
 export interface PendingSaleItem {
