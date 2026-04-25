@@ -86,6 +86,22 @@ export interface SaleTender {
   buyerRefLast4?: string | null | undefined;
 }
 
+/**
+ * One booked refund against a sale. A sale can carry many refunds; the
+ * server enforces (sum of refund amounts) ≤ sale.totalIdr and per-line
+ * (sum of refunded quantity) ≤ original line quantity. `clientRefundId`
+ * is the idempotency key — replays return the originally recorded row.
+ */
+export interface SaleRefund {
+  id: string;
+  clientRefundId: string;
+  refundedAt: string;
+  refundBusinessDate: string;
+  amountIdr: number;
+  reason: string | null;
+  lines: readonly { itemId: string; quantity: number }[];
+}
+
 export interface Sale {
   id: string;
   merchantId: string;
@@ -100,6 +116,13 @@ export interface Sale {
   items: readonly SaleLine[];
   tenders: readonly SaleTender[];
   createdAt: string;
+  /** Stamped by `POST /v1/sales/:saleId/void`; null on a live sale. */
+  voidedAt: string | null;
+  /** Business date the void counts against in EOD variance; null on a live sale. */
+  voidBusinessDate: string | null;
+  voidReason: string | null;
+  /** Booked refunds, ordered by `refundedAt` ascending. */
+  refunds: readonly SaleRefund[];
 }
 
 export interface SubmitSaleInput {
@@ -118,5 +141,35 @@ export interface SubmitSaleInput {
 
 export interface SubmitSaleResult {
   sale: Sale;
+  ledger: readonly StockLedgerEntry[];
+}
+
+export interface VoidSaleInput {
+  merchantId: string;
+  saleId: string;
+  voidedAt: string;
+  voidBusinessDate: string;
+  reason: string | null;
+}
+
+export interface VoidSaleResult {
+  sale: Sale;
+  ledger: readonly StockLedgerEntry[];
+}
+
+export interface RefundSaleInput {
+  merchantId: string;
+  saleId: string;
+  clientRefundId: string;
+  refundedAt: string;
+  refundBusinessDate: string;
+  amountIdr: number;
+  reason: string | null;
+  lines: readonly { itemId: string; quantity: number }[];
+}
+
+export interface RefundSaleResult {
+  sale: Sale;
+  refund: SaleRefund;
   ledger: readonly StockLedgerEntry[];
 }

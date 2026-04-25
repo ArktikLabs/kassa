@@ -148,6 +148,10 @@ async function seedSale(
     items,
     tenders,
     createdAt: overrides.createdAt ?? "2026-04-23T03:00:00.000Z",
+    voidedAt: null,
+    voidBusinessDate: null,
+    voidReason: null,
+    refunds: [],
   };
   let ledgerCursor = 0;
   const persisted = await repository.recordSale({
