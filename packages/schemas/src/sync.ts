@@ -19,6 +19,23 @@ export type SyncCursor = z.infer<typeof syncCursor>;
 export const syncPageToken = z.string().min(1).max(512).nullable();
 export type SyncPageToken = z.infer<typeof syncPageToken>;
 
+/**
+ * Shared query schema for every reference-data pull endpoint
+ * (`GET /v1/outlets`, `/v1/catalog/boms`, `/v1/catalog/uoms`, `/v1/catalog/items`).
+ * `updatedAfter` is the cursor returned by the previous response (`nextCursor`);
+ * `pageToken` is the opaque within-window page key (`nextPageToken`). Pass one
+ * or the other per request; `pageToken` wins if both are present. `limit` is
+ * clamped server-side to the per-resource maximum.
+ */
+export const referencePullQuery = z
+  .object({
+    updatedAfter: isoTimestamp.optional(),
+    pageToken: z.string().min(1).max(512).optional(),
+    limit: z.coerce.number().int().min(1).max(500).optional(),
+  })
+  .strict();
+export type ReferencePullQuery = z.infer<typeof referencePullQuery>;
+
 function envelope<T extends z.ZodTypeAny>(record: T) {
   return z
     .object({

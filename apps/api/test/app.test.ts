@@ -69,11 +69,9 @@ describe("api scaffold", () => {
       // /v1/auth/enroll and /v1/auth/enrolment-codes are now live; see enrolment.test.ts.
       // /v1/sales/submit and /v1/eod/close are now live; see eod.test.ts.
       // /v1/catalog/items CRUD is now live; see catalog-items.test.ts.
+      // /v1/outlets, /v1/catalog/boms, /v1/catalog/uoms are now live (KASA-122).
       { method: "POST", url: "/v1/auth/heartbeat" },
       { method: "POST", url: "/v1/auth/session/login" },
-      { method: "GET", url: "/v1/catalog/boms" },
-      { method: "GET", url: "/v1/catalog/uoms" },
-      { method: "GET", url: "/v1/outlets" },
       { method: "POST", url: "/v1/sales" },
       { method: "POST", url: "/v1/sales/sync" },
       // /v1/payments/qris and /v1/payments/qris/:orderId/status are now live; see payments-qris.test.ts.

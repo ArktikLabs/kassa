@@ -12,12 +12,20 @@ import { sendError } from "./lib/errors.js";
 import { createDomainEventBus, type DomainEventBus } from "./lib/events.js";
 import { createInMemoryDedupeStore, type WebhookDedupeStore } from "./lib/webhook-dedupe.js";
 import { EnrolmentService, InMemoryEnrolmentRepository } from "./services/enrolment/index.js";
-import { InMemoryItemsRepository, ItemsService } from "./services/catalog/index.js";
+import {
+  BomsService,
+  InMemoryBomsRepository,
+  InMemoryItemsRepository,
+  InMemoryUomsRepository,
+  ItemsService,
+  UomsService,
+} from "./services/catalog/index.js";
 import {
   EodService,
   InMemoryEodRepository,
   SalesRepositorySalesReader,
 } from "./services/eod/index.js";
+import { InMemoryOutletsRepository, OutletsService } from "./services/outlets/index.js";
 import {
   InMemoryReconciliationRepository,
   ReconciliationService,
@@ -46,6 +54,12 @@ export interface BuildAppOptions {
   };
   catalog?: {
     items: ItemsService;
+    boms?: BomsService;
+    uoms?: UomsService;
+    staffBootstrapToken?: string;
+  };
+  outlets?: {
+    service: OutletsService;
     staffBootstrapToken?: string;
   };
   reconciliation?: {
@@ -102,6 +116,12 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   const catalog = options.catalog ?? {
     items: new ItemsService({ repository: new InMemoryItemsRepository() }),
   };
+  const catalogBoms = catalog.boms ?? new BomsService({ repository: new InMemoryBomsRepository() });
+  const catalogUoms = catalog.uoms ?? new UomsService({ repository: new InMemoryUomsRepository() });
+
+  const outletsCfg = options.outlets ?? {
+    service: new OutletsService({ repository: new InMemoryOutletsRepository() }),
+  };
 
   const salesRepository = options.sales?.repository ?? new InMemorySalesRepository();
   const salesService = options.sales?.service ?? new SalesService({ repository: salesRepository });
@@ -137,8 +157,16 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     },
     catalog: {
       items: catalog.items,
+      boms: catalogBoms,
+      uoms: catalogUoms,
       ...(catalog.staffBootstrapToken !== undefined
         ? { staffBootstrapToken: catalog.staffBootstrapToken }
+        : {}),
+    },
+    outlets: {
+      outlets: outletsCfg.service,
+      ...(outletsCfg.staffBootstrapToken !== undefined
+        ? { staffBootstrapToken: outletsCfg.staffBootstrapToken }
         : {}),
     },
     sales: {
