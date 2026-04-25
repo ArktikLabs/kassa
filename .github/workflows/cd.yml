@@ -194,6 +194,8 @@ jobs:
       # staging cost stays at one idle Fly VM until a machine boots.
       # --image-label pins the release tag to the source commit so rollback
       # can point `flyctl deploy --image <repo>:staging-<sha>` at a prior release.
+      # --env KASSA_API_VERSION propagates the release tag into the running
+      # app so `/health.version` matches what the smoke-tests job expects.
       - name: Deploy to Fly (kassa-api-staging)
         working-directory: api-image
         env:
@@ -207,24 +209,42 @@ jobs:
             --dockerfile apps/api/Dockerfile \
             --local-only \
             --image-label "staging-${SHORT_SHA}" \
+            --env "KASSA_API_VERSION=staging-${SHORT_SHA}" \
             --strategy rolling \
             --wait-timeout 300
 
-      - name: Smoke-check /health
+  smoke-tests:
+    name: Smoke tests (POS + Back Office + API)
+    needs: [preflight, deploy-pos, deploy-back-office, deploy-api-staging]
+    if: needs.preflight.outputs.ready == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      # Check out scripts/ from the same commit that produced the deployed
+      # artifacts. This guarantees the smoke checks match the shape of the
+      # code that is now live, not whatever is on main at this moment.
+      - name: Checkout (for scripts/deploy-smoke.sh)
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ needs.preflight.outputs.commit_sha }}
+          sparse-checkout: scripts
+          sparse-checkout-cone-mode: false
+
+      # Each deploy job owns its own readiness; this job assumes DNS and the
+      # routers are live by the time we reach it. --attempts 5 × --delay 6
+      # gives a ~30s envelope per surface for cold-start propagation
+      # (Cloudflare Pages edge + Fly HTTP router).
+      - name: Run post-deploy smoke tests
         env:
           COMMIT_SHA: ${{ needs.preflight.outputs.commit_sha }}
         run: |
           set -euo pipefail
-          # Give Fly's HTTP router a moment after the rolling deploy settles.
-          for attempt in 1 2 3 4 5; do
-            if curl -fsSL --max-time 10 https://kassa-api-staging.fly.dev/health \
-              | tee /tmp/health.json \
-              | grep -q '"status":"ok"'; then
-              echo "health ok on attempt $attempt"
-              exit 0
-            fi
-            sleep 6
-          done
-          echo "::error title=API health check failed::kassa-api-staging did not report status=ok within 5 attempts"
-          cat /tmp/health.json || true
-          exit 1
+          SHORT_SHA="${COMMIT_SHA:0:12}"
+          bash scripts/deploy-smoke.sh \
+            --api-url https://kassa-api-staging.fly.dev \
+            --pos-url https://kassa-pos.pages.dev \
+            --back-office-url https://kassa-back-office.pages.dev \
+            --expected-version "staging-${SHORT_SHA}" \
+            --attempts 5 \
+            --delay-seconds 6 \
+            --timeout-seconds 10
