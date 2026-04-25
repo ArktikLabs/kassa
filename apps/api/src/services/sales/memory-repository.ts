@@ -1,4 +1,10 @@
-import type { LedgerAppendInput, SalesRepository } from "./repository.js";
+import { decodePageToken, encodePageToken } from "../../lib/page-token.js";
+import type {
+  LedgerAppendInput,
+  ListLedgerInput,
+  ListLedgerResult,
+  SalesRepository,
+} from "./repository.js";
 import type { Bom, Item, Outlet, Sale, SaleRefund, StockLedgerEntry } from "./types.js";
 
 export class InMemorySalesRepository implements SalesRepository {
@@ -163,6 +169,54 @@ export class InMemorySalesRepository implements SalesRepository {
     const sale = this.sales.get(saleId);
     if (!sale || sale.merchantId !== merchantId) return null;
     return sale;
+  }
+
+  async listLedger(input: ListLedgerInput): Promise<ListLedgerResult> {
+    // Tenancy gate: an outlet that does not belong to the caller's merchant
+    // returns an empty bucket so cross-tenant existence is indistinguishable
+    // from a genuinely empty outlet.
+    const outlet = await this.findOutlet(input.merchantId, input.outletId);
+    if (!outlet) return { records: [], nextCursor: null, nextPageToken: null };
+
+    let tokenBoundary: { occurredAt: number; id: string } | null = null;
+    if (input.pageToken) {
+      const decoded = decodePageToken(input.pageToken);
+      tokenBoundary = { occurredAt: Date.parse(decoded.a), id: decoded.i };
+    }
+    const updatedAfterMs = input.updatedAfter ? input.updatedAfter.getTime() : null;
+
+    const filtered = this.ledger
+      .filter((row) => row.outletId === input.outletId)
+      .filter((row) => {
+        const rowAt = Date.parse(row.occurredAt);
+        if (tokenBoundary) {
+          if (rowAt > tokenBoundary.occurredAt) return true;
+          if (rowAt === tokenBoundary.occurredAt) return row.id > tokenBoundary.id;
+          return false;
+        }
+        if (updatedAfterMs !== null) return rowAt > updatedAfterMs;
+        return true;
+      })
+      .sort((a, b) => {
+        const diff = Date.parse(a.occurredAt) - Date.parse(b.occurredAt);
+        if (diff !== 0) return diff;
+        return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+      });
+
+    const page = filtered.slice(0, input.limit);
+    const hasMore = filtered.length > input.limit;
+    const last = page.at(-1);
+
+    let nextCursor: Date | null = null;
+    let nextPageToken: string | null = null;
+
+    if (hasMore && last) {
+      nextPageToken = encodePageToken({ a: last.occurredAt, i: last.id });
+    } else if (last) {
+      nextCursor = new Date(last.occurredAt);
+    }
+
+    return { records: page.map((r) => ({ ...r })), nextCursor, nextPageToken };
   }
 
   async voidSale(input: {

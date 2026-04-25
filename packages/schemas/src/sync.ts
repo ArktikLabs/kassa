@@ -394,3 +394,30 @@ export const saleListResponse = z
   })
   .strict();
 export type SaleListResponse = z.infer<typeof saleListResponse>;
+
+/*
+ * `GET /v1/stock/ledger?outletId=&updatedAfter=&pageToken=&limit=` —
+ * KASA-122 PR4. Append-only stock-ledger projection scoped to one
+ * (merchant, outlet) bucket. The acceptance suite (KASA-68) reads this
+ * after the offline outbox drains to assert "correct BOM deductions in
+ * Stock Ledger" — every sale, void, and refund writes one row per
+ * exploded BOM component with a signed `delta`.
+ *
+ * Ordering is `(occurredAt ASC, id ASC)`, matching the cursor + page-token
+ * semantics already shared by `referencePullQuery`. `outletId` scopes
+ * the bucket; an outlet that does not belong to the caller's merchant
+ * returns an empty bucket, indistinguishable from a genuinely empty
+ * outlet — same tenancy model as `GET /v1/sales`.
+ */
+export const stockLedgerPullQuery = z
+  .object({
+    outletId: uuidV7Typed,
+    updatedAfter: isoTimestamp.optional(),
+    pageToken: z.string().min(1).max(512).optional(),
+    limit: z.coerce.number().int().min(1).max(500).optional(),
+  })
+  .strict();
+export type StockLedgerPullQuery = z.infer<typeof stockLedgerPullQuery>;
+
+export const stockLedgerPullResponse = envelope(stockLedgerEntry);
+export type StockLedgerPullResponse = z.infer<typeof stockLedgerPullResponse>;

@@ -4,6 +4,8 @@ import {
   itemPullResponse,
   outletPullResponse,
   saleSubmitTender,
+  stockLedgerPullQuery,
+  stockLedgerPullResponse,
   stockPullResponse,
   uomPullResponse,
 } from "./sync.js";
@@ -89,6 +91,49 @@ describe("sync wire schemas", () => {
       nextPageToken: null,
     });
     expect(parsed.records).toEqual([]);
+  });
+
+  it("requires outletId on stockLedgerPullQuery and clamps limit to int 1..500", () => {
+    expect(() => stockLedgerPullQuery.parse({})).toThrow();
+    expect(() =>
+      stockLedgerPullQuery.parse({
+        outletId: "018f9c1a-4b2e-7c00-b000-000000000010",
+        limit: 0,
+      }),
+    ).toThrow();
+    expect(() =>
+      stockLedgerPullQuery.parse({
+        outletId: "018f9c1a-4b2e-7c00-b000-000000000010",
+        limit: 501,
+      }),
+    ).toThrow();
+    const ok = stockLedgerPullQuery.parse({
+      outletId: "018f9c1a-4b2e-7c00-b000-000000000010",
+      limit: 100,
+      updatedAfter: "2026-04-24T01:00:00Z",
+    });
+    expect(ok.limit).toBe(100);
+  });
+
+  it("accepts a stock-ledger pull envelope with one signed-delta row", () => {
+    const parsed = stockLedgerPullResponse.parse({
+      records: [
+        {
+          id: "018f9c1a-4b2e-7c00-b000-000000000020",
+          outletId: "018f9c1a-4b2e-7c00-b000-000000000021",
+          itemId: "018f9c1a-4b2e-7c00-b000-000000000022",
+          delta: -15,
+          reason: "sale",
+          refType: "sale",
+          refId: "018f9c1a-4b2e-7c00-b000-000000000023",
+          occurredAt: "2026-04-24T01:00:00Z",
+        },
+      ],
+      nextCursor: "2026-04-24T01:00:00Z",
+      nextPageToken: null,
+    });
+    expect(parsed.records).toHaveLength(1);
+    expect(parsed.records[0]?.delta).toBe(-15);
   });
 });
 
