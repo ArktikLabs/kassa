@@ -108,3 +108,101 @@ export type UomPullResponse = z.infer<typeof uomPullResponse>;
 
 export const stockPullResponse = envelope(stockSnapshotRecord);
 export type StockPullResponse = z.infer<typeof stockPullResponse>;
+
+/*
+ * `POST /v1/sales/submit` — KASA-66. The client posts the same shape Dexie
+ * stores in `pending_sales`; we re-use the field names so the wire contract
+ * is the serialised row, not a translated DTO. Server explodes BOMs against
+ * the active BOM version at sale time and writes per-component ledger rows.
+ * Idempotency key on the server is (merchantId, localSaleId) — replays return
+ * the same `saleId` body with 200, but the sales pipeline treats a duplicate
+ * `localSaleId` that disagrees on lines as 409.
+ */
+
+const uuidV7Regex = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const uuidV7Typed = z.string().regex(uuidV7Regex, "must be a UUIDv7");
+const rupiahAmount = z.number().int().nonnegative();
+const businessDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
+
+export const saleSubmitItem = z
+  .object({
+    itemId: uuidV7Typed,
+    bomId: uuidV7Typed.nullable(),
+    quantity: z.number().positive(),
+    uomId: uuidV7Typed,
+    unitPriceIdr: rupiahAmount,
+    lineTotalIdr: rupiahAmount,
+  })
+  .strict();
+export type SaleSubmitItem = z.infer<typeof saleSubmitItem>;
+
+export const saleSubmitTender = z
+  .object({
+    method: z.enum(["cash", "qris", "card", "other"]),
+    amountIdr: rupiahAmount,
+    reference: z.string().nullable(),
+  })
+  .strict();
+export type SaleSubmitTender = z.infer<typeof saleSubmitTender>;
+
+export const saleSubmitRequest = z
+  .object({
+    localSaleId: uuidV7Typed,
+    outletId: uuidV7Typed,
+    clerkId: z.string().min(1),
+    businessDate,
+    createdAt: isoTimestamp,
+    subtotalIdr: rupiahAmount,
+    discountIdr: rupiahAmount,
+    totalIdr: rupiahAmount,
+    items: z.array(saleSubmitItem).min(1),
+    tenders: z.array(saleSubmitTender).min(1),
+  })
+  .strict();
+export type SaleSubmitRequest = z.infer<typeof saleSubmitRequest>;
+
+/**
+ * Stock-ledger reason values mirror the server drizzle enum
+ * (`stockLedgerReasonValues` in apps/api/src/db/schema/stock.ts). v0 only
+ * writes `"sale"` from this endpoint; the other values are reserved for the
+ * void/refund and replenishment endpoints (KASA-69/70).
+ */
+export const stockLedgerReason = z.enum([
+  "sale",
+  "sale_void",
+  "refund",
+  "receipt",
+  "adjustment",
+  "transfer_in",
+  "transfer_out",
+  "reconcile",
+]);
+export type StockLedgerReason = z.infer<typeof stockLedgerReason>;
+
+export const stockLedgerEntry = z
+  .object({
+    id: uuidV7Typed,
+    outletId: uuidV7Typed,
+    itemId: uuidV7Typed,
+    delta: z.number().finite(),
+    reason: stockLedgerReason,
+    /** Back-link shape `(refType, refId)` — "sale" + saleId for sale writes. */
+    refType: z.string().nullable(),
+    refId: uuidV7Typed.nullable(),
+    occurredAt: isoTimestamp,
+  })
+  .strict();
+export type StockLedgerEntry = z.infer<typeof stockLedgerEntry>;
+
+export const saleSubmitResponse = z
+  .object({
+    saleId: uuidV7Typed,
+    /** Server-canonical sale name shown in receipts / back-office. */
+    name: z.string().min(1),
+    localSaleId: uuidV7Typed,
+    outletId: uuidV7Typed,
+    createdAt: isoTimestamp,
+    ledger: z.array(stockLedgerEntry),
+  })
+  .strict();
+export type SaleSubmitResponse = z.infer<typeof saleSubmitResponse>;
