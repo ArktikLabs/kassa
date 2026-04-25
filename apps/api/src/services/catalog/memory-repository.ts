@@ -121,6 +121,7 @@ export class InMemoryItemsRepository implements ItemsRepository {
       uomId: input.uomId,
       bomId: input.bomId ?? null,
       isStockTracked: input.isStockTracked ?? true,
+      allowNegative: false,
       isActive: input.isActive ?? true,
       createdAt: input.now,
       updatedAt: input.now,

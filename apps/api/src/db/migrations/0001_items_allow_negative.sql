@@ -1,0 +1,1 @@
+ALTER TABLE "items" ADD COLUMN "allow_negative" boolean DEFAULT false NOT NULL;
