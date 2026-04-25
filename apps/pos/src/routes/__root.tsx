@@ -52,13 +52,14 @@ export function RootLayout({ children }: { children: ReactNode }) {
       {/*
        * `/enrol` is intentionally not surfaced in the nav: once the device is
        * enrolled the route redirects to `/catalog`, and the reset flow routes
-       * the clerk back via `/admin`. Keeping four tabs also matches the
-       * acceptance criteria for KASA-58.
+       * the clerk back via `/admin`. `/eod` lands next to `/admin` for the
+       * clerk's end-of-day ritual (KASA-65).
        */}
-      <nav className="grid grid-cols-4 border-t border-neutral-200 bg-white text-[12px] font-semibold text-neutral-600">
+      <nav className="grid grid-cols-5 border-t border-neutral-200 bg-white text-[12px] font-semibold text-neutral-600">
         <NavItem to="/catalog" labelId="nav.catalog" />
         <NavItem to="/cart" labelId="nav.cart" />
         <NavItem to="/tender/cash" labelId="nav.tender.cash" />
+        <NavItem to="/eod" labelId="nav.eod" />
         <NavItem to="/admin" labelId="nav.admin" />
       </nav>
       <ToastViewport />

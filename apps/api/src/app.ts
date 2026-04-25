@@ -12,6 +12,9 @@ import { sendError } from "./lib/errors.js";
 import { createDomainEventBus, type DomainEventBus } from "./lib/events.js";
 import { createInMemoryDedupeStore, type WebhookDedupeStore } from "./lib/webhook-dedupe.js";
 import { EnrolmentService, InMemoryEnrolmentRepository } from "./services/enrolment/index.js";
+import { EodService, InMemoryEodDataPlane } from "./services/eod/index.js";
+
+const BOOTSTRAP_MERCHANT_ID = "01890abc-1234-7def-8000-00000000a001";
 
 export interface BuildAppOptions {
   logger?: FastifyServerOptions["logger"];
@@ -22,6 +25,10 @@ export interface BuildAppOptions {
     service: EnrolmentService;
     staffBootstrapToken?: string;
     enrollRateLimitPerMinute?: number;
+  };
+  eod?: {
+    service: EodService;
+    resolveMerchantId?: () => string;
   };
 }
 
@@ -60,6 +67,11 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     service: new EnrolmentService({ repository: new InMemoryEnrolmentRepository() }),
   };
 
+  const eod = options.eod ?? {
+    service: new EodService({ dataPlane: new InMemoryEodDataPlane() }),
+  };
+  const resolveMerchantId = eod.resolveMerchantId ?? (() => BOOTSTRAP_MERCHANT_ID);
+
   const v1Deps: V1RouteDeps = {
     auth: {
       enrolment: enrolment.service,
@@ -70,6 +82,8 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
         ? { enrollRateLimitPerMinute: enrolment.enrollRateLimitPerMinute }
         : {}),
     },
+    sales: { eodService: eod.service, resolveMerchantId },
+    eod: { service: eod.service, resolveMerchantId },
   };
 
   await app.register(healthRoutes);

@@ -15,6 +15,10 @@
     "./auth": {
       "types": "./dist/auth.d.ts",
       "import": "./dist/auth.js"
+    },
+    "./eod": {
+      "types": "./dist/eod.d.ts",
+      "import": "./dist/eod.js"
     }
   },
   "files": [
