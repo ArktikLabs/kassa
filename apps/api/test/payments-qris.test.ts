@@ -57,7 +57,7 @@ describe("POST /v1/payments/qris", () => {
     }
   });
 
-  it("validates the request body and returns 400 on bad input", async () => {
+  it("validates the request body and returns 422 validation_error on bad input", async () => {
     const app = await buildApp({
       midtransProvider: createMidtransProvider({
         serverKey: SERVER_KEY,
@@ -71,8 +71,12 @@ describe("POST /v1/payments/qris", () => {
         url: "/v1/payments/qris",
         payload: { amount: -1, localSaleId: LOCAL_SALE_ID, outletId: OUTLET_ID },
       });
-      expect(res.statusCode).toBe(400);
-      expect((res.json() as { error: { code: string } }).error.code).toBe("bad_request");
+      expect(res.statusCode).toBe(422);
+      const body = res.json() as {
+        error: { code: string; details: { issues: Array<{ source: string; path: string }> } };
+      };
+      expect(body.error.code).toBe("validation_error");
+      expect(body.error.details.issues.some((i) => i.path === "amount")).toBe(true);
     } finally {
       await app.close();
     }

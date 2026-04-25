@@ -6,20 +6,26 @@ import {
 } from "@kassa/payments";
 import {
   qrisCreateOrderRequest,
+  type QrisCreateOrderRequest,
   type QrisCreateOrderResponse,
   type QrisOrderStatus,
   type QrisOrderStatusResponse,
 } from "@kassa/schemas/payments";
 import { sendError } from "../lib/errors.js";
+import { validate } from "../lib/validate.js";
 
 export async function paymentsRoutes(app: FastifyInstance): Promise<void> {
-  app.post("/qris", createQrisOrderHandler);
+  app.post<{ Body: QrisCreateOrderRequest }>(
+    "/qris",
+    { preHandler: validate({ body: qrisCreateOrderRequest }) },
+    createQrisOrderHandler,
+  );
   app.get("/qris/:orderId/status", getQrisOrderStatusHandler);
   app.post("/webhooks/midtrans", midtransWebhookHandler);
 }
 
 async function createQrisOrderHandler(
-  req: FastifyRequest,
+  req: FastifyRequest<{ Body: QrisCreateOrderRequest }>,
   reply: FastifyReply,
 ): Promise<FastifyReply> {
   const provider = req.server.midtransProvider;
@@ -32,23 +38,16 @@ async function createQrisOrderHandler(
     );
   }
 
-  const parsed = qrisCreateOrderRequest.safeParse(req.body);
-  if (!parsed.success) {
-    return sendError(reply, 400, "bad_request", "Invalid request body.", parsed.error.flatten());
-  }
-
   // The POS's `localSaleId` (UUIDv7) is the Midtrans `order_id`. Using it
   // directly avoids an extra lookup table on the webhook path — the paid
   // callback arrives already keyed to the outbox row the PWA will finalise.
   try {
     const result = await provider.createQris({
-      orderId: parsed.data.localSaleId,
-      grossAmount: parsed.data.amount,
+      orderId: req.body.localSaleId,
+      grossAmount: req.body.amount,
       currency: "IDR",
-      outletId: parsed.data.outletId,
-      ...(parsed.data.expiryMinutes !== undefined
-        ? { expiryMinutes: parsed.data.expiryMinutes }
-        : {}),
+      outletId: req.body.outletId,
+      ...(req.body.expiryMinutes !== undefined ? { expiryMinutes: req.body.expiryMinutes } : {}),
     });
     const body: QrisCreateOrderResponse = {
       qrisOrderId: result.providerOrderId,

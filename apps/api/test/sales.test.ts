@@ -491,13 +491,19 @@ describe("GET /v1/stock/snapshot", () => {
     }
   });
 
-  it("rejects a missing outlet query param with 400", async () => {
+  it("rejects a missing outlet query param with 422 validation_error", async () => {
     const res = await app.inject({
       method: "GET",
       url: "/v1/stock/snapshot",
       headers: { "x-kassa-merchant-id": MERCHANT },
     });
-    expect(res.statusCode).toBe(400);
+    expect(res.statusCode).toBe(422);
+    const body = res.json() as {
+      error: { code: string; details: { issues: Array<{ source: string; path: string }> } };
+    };
+    expect(body.error.code).toBe("validation_error");
+    expect(body.error.details.issues[0]?.source).toBe("query");
+    expect(body.error.details.issues[0]?.path).toBe("outlet");
   });
 
   it("rejects unknown outlets with 404", async () => {

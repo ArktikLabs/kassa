@@ -3,10 +3,13 @@ import rateLimit from "@fastify/rate-limit";
 import {
   deviceEnrolRequest,
   enrolmentCodeIssueRequest,
+  type DeviceEnrolRequest,
   type DeviceEnrolResponse,
+  type EnrolmentCodeIssueRequest,
   type EnrolmentCodeIssueResponse,
 } from "@kassa/schemas/auth";
 import { sendError, notImplemented } from "../lib/errors.js";
+import { validate } from "../lib/validate.js";
 import { EnrolmentError, type EnrolmentService } from "../services/enrolment/index.js";
 import { makeStaffBootstrapPreHandler } from "../auth/staff-bootstrap.js";
 
@@ -28,28 +31,26 @@ export function authRoutes(deps: AuthRouteDeps) {
     // otherwise per-instance counters defeat the limit.
     await app.register(rateLimit, { global: false });
 
-    app.post(
+    app.post<{ Body: EnrolmentCodeIssueRequest }>(
       "/enrolment-codes",
       {
-        preHandler: async (req, reply) => {
-          if (!requireStaff) {
-            sendError(
-              reply,
-              503,
-              "staff_bootstrap_disabled",
-              "Set STAFF_BOOTSTRAP_TOKEN to enable enrolment-code issuance until KASA-25 ships staff sessions.",
-            );
-            return reply;
-          }
-          return requireStaff(req, reply);
-        },
+        preHandler: [
+          async (req, reply) => {
+            if (!requireStaff) {
+              sendError(
+                reply,
+                503,
+                "staff_bootstrap_disabled",
+                "Set STAFF_BOOTSTRAP_TOKEN to enable enrolment-code issuance until KASA-25 ships staff sessions.",
+              );
+              return reply;
+            }
+            return requireStaff(req, reply);
+          },
+          validate({ body: enrolmentCodeIssueRequest }),
+        ],
       },
       async (req, reply) => {
-        const parsed = enrolmentCodeIssueRequest.safeParse(req.body);
-        if (!parsed.success) {
-          sendError(reply, 400, "bad_request", "Invalid request body.", parsed.error.flatten());
-          return reply;
-        }
         const principal = req.staffPrincipal;
         if (!principal) {
           sendError(reply, 401, "unauthorized", "Staff session missing.");
@@ -57,7 +58,7 @@ export function authRoutes(deps: AuthRouteDeps) {
         }
         try {
           const result = await deps.enrolment.issueCode({
-            outletId: parsed.data.outletId,
+            outletId: req.body.outletId,
             createdByUserId: principal.userId,
           });
           const body: EnrolmentCodeIssueResponse = {
@@ -77,7 +78,7 @@ export function authRoutes(deps: AuthRouteDeps) {
       },
     );
 
-    app.post(
+    app.post<{ Body: DeviceEnrolRequest }>(
       "/enroll",
       {
         config: {
@@ -86,17 +87,13 @@ export function authRoutes(deps: AuthRouteDeps) {
             timeWindow: "1 minute",
           },
         },
+        preHandler: validate({ body: deviceEnrolRequest }),
       },
       async (req, reply) => {
-        const parsed = deviceEnrolRequest.safeParse(req.body);
-        if (!parsed.success) {
-          sendError(reply, 400, "bad_request", "Invalid request body.", parsed.error.flatten());
-          return reply;
-        }
         try {
           const result = await deps.enrolment.enrolDevice({
-            code: parsed.data.code,
-            deviceFingerprint: parsed.data.deviceFingerprint,
+            code: req.body.code,
+            deviceFingerprint: req.body.deviceFingerprint,
           });
           // Structured audit line: the fingerprint is persisted on
           // `devices.fingerprint`, but the log keeps ops correlation cheap
@@ -107,7 +104,7 @@ export function authRoutes(deps: AuthRouteDeps) {
               deviceId: result.deviceId,
               outletId: result.outlet.id,
               merchantId: result.merchant.id,
-              deviceFingerprint: parsed.data.deviceFingerprint,
+              deviceFingerprint: req.body.deviceFingerprint,
             },
             "device enrolled",
           );
