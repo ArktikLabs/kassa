@@ -306,7 +306,15 @@ async function ringUpSalesViaUi(
   // is exercised in `tender-qris.spec.ts`; we keep the UI portion of this
   // suite to cash so the spec remains insulated from QRIS-screen churn.
   for (let i = 0; i < count; i += 1) {
-    await page.goto("/catalog");
+    // SPA-navigate via the bottom-nav `<Link to="/catalog">` rather than
+    // `page.goto("/catalog")`. Playwright's `setOffline(true)` blocks the
+    // raw HTML request a hard navigation issues even when the service
+    // worker has the bundle cached, so a `goto` after going offline fails
+    // with `ERR_INTERNET_DISCONNECTED`. The TanStack Router link handles
+    // navigation client-side and reads from Dexie, which is exactly what
+    // we want to exercise. Two `<a href="/catalog">` exist on the page
+    // (header brand + bottom nav); scope to the bottom nav.
+    await page.locator('nav a[href="/catalog"]').click();
     await page.getByTestId(`catalog-tile-${ITEM_KOPI_ID}`).click();
     // Match by href, not localized link text ("Tunai" / "Cash"). The
     // route is the contract; the label rotates per active locale.
