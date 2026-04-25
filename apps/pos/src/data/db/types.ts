@@ -114,6 +114,25 @@ export interface SyncState {
 }
 
 /**
+ * Read-only marker that the outlet's business day has been closed on the
+ * server. Keyed on `outletId::businessDate` (see `eodClosureKey`). The PWA
+ * writes it after a successful `POST /v1/eod/close` so re-visiting `/eod`
+ * for that date renders the summary without re-posting, and the catalog
+ * could later refuse new sales for a locked date (future work).
+ */
+export interface EodClosure {
+  key: string;
+  outletId: string;
+  businessDate: string;
+  eodId: string;
+  closedAt: string;
+  countedCashIdr: number;
+  expectedCashIdr: number;
+  varianceIdr: number;
+  varianceReason: string | null;
+}
+
+/**
  * Device credentials returned by `POST /v1/auth/enroll` and kept in IndexedDB
  * (never `localStorage` — ARCHITECTURE.md §2.1). The field `apiKey` holds the
  * raw key the client sends on every request; the server stores only its hash
@@ -146,4 +165,8 @@ export interface DeviceMeta {
 
 export function stockSnapshotKey(outletId: string, itemId: string): string {
   return `${outletId}::${itemId}`;
+}
+
+export function eodClosureKey(outletId: string, businessDate: string): string {
+  return `${outletId}::${businessDate}`;
 }

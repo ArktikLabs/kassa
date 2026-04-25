@@ -14,10 +14,17 @@ import { createInMemoryDedupeStore, type WebhookDedupeStore } from "./lib/webhoo
 import { EnrolmentService, InMemoryEnrolmentRepository } from "./services/enrolment/index.js";
 import { InMemoryItemsRepository, ItemsService } from "./services/catalog/index.js";
 import {
+  EodService,
+  InMemoryEodRepository,
+  SalesRepositorySalesReader,
+} from "./services/eod/index.js";
+import {
   InMemorySalesRepository,
   SalesService,
   type SalesRepository,
 } from "./services/sales/index.js";
+
+const BOOTSTRAP_MERCHANT_ID = "01890abc-1234-7def-8000-00000000a001";
 
 export interface BuildAppOptions {
   logger?: FastifyServerOptions["logger"];
@@ -28,6 +35,10 @@ export interface BuildAppOptions {
     service: EnrolmentService;
     staffBootstrapToken?: string;
     enrollRateLimitPerMinute?: number;
+  };
+  eod?: {
+    service: EodService;
+    resolveMerchantId?: () => string;
   };
   catalog?: {
     items: ItemsService;
@@ -86,7 +97,15 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
 
   const salesRepository = options.sales?.repository ?? new InMemorySalesRepository();
   const salesService = options.sales?.service ?? new SalesService({ repository: salesRepository });
-  const resolveMerchantId = options.resolveMerchantId ?? defaultMerchantResolver;
+  const resolveRequestMerchantId = options.resolveMerchantId ?? defaultMerchantResolver;
+
+  const eod = options.eod ?? {
+    service: new EodService({
+      salesReader: new SalesRepositorySalesReader(salesRepository),
+      eodRepository: new InMemoryEodRepository(),
+    }),
+  };
+  const resolveEodMerchantId = eod.resolveMerchantId ?? (() => BOOTSTRAP_MERCHANT_ID);
 
   const v1Deps: V1RouteDeps = {
     auth: {
@@ -106,12 +125,13 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     },
     sales: {
       service: salesService,
-      resolveMerchantId,
+      resolveMerchantId: resolveRequestMerchantId,
     },
     stock: {
       repository: salesRepository,
-      resolveMerchantId,
+      resolveMerchantId: resolveRequestMerchantId,
     },
+    eod: { service: eod.service, resolveMerchantId: resolveEodMerchantId },
   };
 
   await app.register(healthRoutes);

@@ -98,6 +98,24 @@ export class InMemorySalesRepository implements SalesRepository {
     return out;
   }
 
+  async listSalesByBusinessDate(
+    merchantId: string,
+    outletId: string,
+    businessDate: string,
+  ): Promise<readonly Sale[]> {
+    const matches: Sale[] = [];
+    for (const sale of this.sales.values()) {
+      if (
+        sale.merchantId === merchantId &&
+        sale.outletId === outletId &&
+        sale.businessDate === businessDate
+      ) {
+        matches.push(sale);
+      }
+    }
+    return matches.sort((a, b) => (a.createdAt < b.createdAt ? -1 : 1));
+  }
+
   async recordSale(input: {
     sale: Sale;
     ledger: readonly Omit<StockLedgerEntry, "id">[];

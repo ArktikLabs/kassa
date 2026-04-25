@@ -13,6 +13,7 @@ import { TenderCashScreen } from "./routes/tender.cash";
 import { TenderQrisScreen } from "./routes/tender.qris";
 import { ReceiptScreen } from "./routes/receipt.$id";
 import { AdminScreen } from "./routes/admin";
+import { EodRoute } from "./routes/eod";
 import { hydrateEnrolment, isEnrolled } from "./lib/enrolment";
 
 async function guardEnrolled(): Promise<void> {
@@ -94,6 +95,13 @@ const adminRoute = createRoute({
   component: AdminScreen,
 });
 
+const eodRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/eod",
+  beforeLoad: guardEnrolled,
+  component: EodRoute,
+});
+
 const routeTree = rootRoute.addChildren([
   indexRoute,
   enrolRoute,
@@ -103,6 +111,7 @@ const routeTree = rootRoute.addChildren([
   tenderQrisRoute,
   receiptRoute,
   adminRoute,
+  eodRoute,
 ]);
 
 export const router = createRouter({ routeTree });
