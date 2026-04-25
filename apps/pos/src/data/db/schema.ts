@@ -7,13 +7,14 @@ import type {
   Item,
   Outlet,
   PendingSale,
+  PrintedQris,
   StockSnapshot,
   SyncState,
   Uom,
 } from "./types.ts";
 
 export const DB_NAME = "kassa-pos";
-export const DB_VERSION = 3;
+export const DB_VERSION = 4;
 
 export class KassaDexie extends Dexie {
   items!: Table<Item, string>;
@@ -26,6 +27,7 @@ export class KassaDexie extends Dexie {
   device_secret!: Table<DeviceSecret, string>;
   device_meta!: Table<DeviceMeta, string>;
   eod_closures!: Table<EodClosure, string>;
+  printed_qris!: Table<PrintedQris, string>;
 
   constructor(name: string = DB_NAME) {
     super(name);
@@ -78,6 +80,22 @@ export class KassaDexie extends Dexie {
       device_secret: "id",
       device_meta: "id",
       eod_closures: "key, outletId, businessDate, closedAt",
+    });
+    // v4 — add `printed_qris` to cache the merchant's printed-QR image per
+    // outlet so the static-QRIS tender flow (KASA-118) renders offline.
+    // New table, no backfill required.
+    this.version(4).stores({
+      items: "id, code, name, isActive, updatedAt",
+      boms: "id, itemId, updatedAt",
+      uoms: "id, code, updatedAt",
+      outlets: "id, code, updatedAt",
+      stock_snapshot: "key, outletId, itemId, updatedAt",
+      pending_sales: "localSaleId, status, outletId, createdAt",
+      sync_state: "table",
+      device_secret: "id",
+      device_meta: "id",
+      eod_closures: "key, outletId, businessDate, closedAt",
+      printed_qris: "outletId, fetchedAt",
     });
   }
 }

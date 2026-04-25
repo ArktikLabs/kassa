@@ -6,7 +6,12 @@ import { createRepos, type Repos } from "../../data/db/index.ts";
 import { type KassaDexie, openKassaDb } from "../../data/db/schema.ts";
 import { totals } from "../cart/reducer.ts";
 import type { CartState } from "../cart/reducer.ts";
-import { finalizeCashSale, finalizeQrisSale, SaleFinalizeError } from "./finalize.ts";
+import {
+  finalizeCashSale,
+  finalizeQrisSale,
+  finalizeQrisStaticSale,
+  SaleFinalizeError,
+} from "./finalize.ts";
 
 let counter = 0;
 function nextDbName(): string {
@@ -368,6 +373,94 @@ describe("finalizeQrisSale", () => {
           totals: { subtotalIdr: toRupiah(0), discountIdr: toRupiah(0), totalIdr: toRupiah(0) },
           localSaleId: LOCAL_SALE_ID,
           qrisOrderId: LOCAL_SALE_ID,
+        },
+        { database: { db: fx.db, repos: fx.repos, close: () => {} } },
+      ),
+    ).rejects.toBeInstanceOf(SaleFinalizeError);
+  });
+});
+
+describe("finalizeQrisStaticSale", () => {
+  let fx: Fixture;
+
+  beforeEach(async () => {
+    fx = await setup();
+  });
+
+  afterEach(async () => {
+    await teardown(fx);
+  });
+
+  it("persists a queued unverified qris_static tender carrying buyerRefLast4", async () => {
+    const cart = cartWithKopi(2);
+    const result = await finalizeQrisStaticSale(
+      {
+        lines: cart.lines,
+        totals: totals(cart),
+        buyerRefLast4: "1234",
+      },
+      {
+        database: { db: fx.db, repos: fx.repos, close: () => {} },
+        generateLocalSaleId: () => "01929b2d-1e04-7f00-80aa-000000000004",
+        now: () => new Date("2026-04-23T15:30:00+07:00"),
+      },
+    );
+
+    expect(result.changeDueIdr).toBe(0);
+    expect(result.sale.tenders[0]).toEqual({
+      method: "qris_static",
+      amountIdr: 50_000,
+      reference: null,
+      verified: false,
+      buyerRefLast4: "1234",
+    });
+
+    const stored = await fx.repos.pendingSales.getById(result.localSaleId);
+    expect(stored?.status).toBe("queued");
+    expect(stored?.tenders?.[0]?.method).toBe("qris_static");
+    expect(stored?.tenders?.[0]?.verified).toBe(false);
+    expect(stored?.tenders?.[0]?.buyerRefLast4).toBe("1234");
+    expect(stored?.tenders?.[0]?.reference).toBeNull();
+    expect(stored?.totalIdr).toBe(50_000);
+
+    const stock = await fx.repos.stockSnapshot.forOutletItem(
+      "22222222-2222-7222-8222-222222222222",
+      "44444444-4444-7444-8444-444444444444",
+    );
+    expect(stock?.onHand).toBe(8);
+  });
+
+  it("refuses an empty cart", async () => {
+    await expect(
+      finalizeQrisStaticSale(
+        {
+          lines: [],
+          totals: { subtotalIdr: toRupiah(0), discountIdr: toRupiah(0), totalIdr: toRupiah(0) },
+          buyerRefLast4: "1234",
+        },
+        { database: { db: fx.db, repos: fx.repos, close: () => {} } },
+      ),
+    ).rejects.toBeInstanceOf(SaleFinalizeError);
+  });
+
+  it("refuses a buyerRefLast4 that is not exactly 4 digits", async () => {
+    const cart = cartWithKopi(1);
+    await expect(
+      finalizeQrisStaticSale(
+        {
+          lines: cart.lines,
+          totals: totals(cart),
+          buyerRefLast4: "12a4",
+        },
+        { database: { db: fx.db, repos: fx.repos, close: () => {} } },
+      ),
+    ).rejects.toBeInstanceOf(SaleFinalizeError);
+    await expect(
+      finalizeQrisStaticSale(
+        {
+          lines: cart.lines,
+          totals: totals(cart),
+          buyerRefLast4: "12",
         },
         { database: { db: fx.db, repos: fx.repos, close: () => {} } },
       ),

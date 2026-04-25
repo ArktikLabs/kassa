@@ -11,6 +11,7 @@ import { CatalogScreen } from "./routes/catalog";
 import { CartScreen } from "./routes/cart";
 import { TenderCashScreen } from "./routes/tender.cash";
 import { TenderQrisScreen } from "./routes/tender.qris";
+import { TenderQrisStaticScreen } from "./routes/tender.qris.static";
 import { ReceiptScreen } from "./routes/receipt.$id";
 import { AdminScreen } from "./routes/admin";
 import { EodRoute } from "./routes/eod";
@@ -82,6 +83,13 @@ const tenderQrisRoute = createRoute({
   component: TenderQrisScreen,
 });
 
+const tenderQrisStaticRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/tender/qris/static",
+  beforeLoad: guardEnrolled,
+  component: TenderQrisStaticScreen,
+});
+
 const receiptRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/receipt/$id",
@@ -109,6 +117,7 @@ const routeTree = rootRoute.addChildren([
   cartRoute,
   tenderCashRoute,
   tenderQrisRoute,
+  tenderQrisStaticRoute,
   receiptRoute,
   adminRoute,
   eodRoute,

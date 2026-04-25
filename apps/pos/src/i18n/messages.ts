@@ -135,6 +135,23 @@ const id: MessageMap = {
   "tender.qris.error.amount_mismatch":
     "Nominal pembayaran tidak cocok dengan total. Hubungi pelanggan dan coba lagi.",
   "tender.qris.static.fallback": "Offline — gunakan QRIS statis",
+  "tender.qris.static.heading": "QRIS statis",
+  "tender.qris.static.aria": "Bayar QRIS statis",
+  "tender.qris.static.total": "Total",
+  "tender.qris.static.cart.empty": "Keranjang kosong. Kembali ke katalog untuk menambah barang.",
+  "tender.qris.static.image.alt": "QR statis merchant",
+  "tender.qris.static.image.loading": "Memuat QR statis…",
+  "tender.qris.static.image.missing":
+    "QR statis belum tersedia. Tunjukkan QR tercetak di kasir kepada pelanggan.",
+  "tender.qris.static.instructions":
+    "Tunjukkan QR ini ke pelanggan. Setelah pelanggan membayar, masukkan 4 digit terakhir referensi mereka.",
+  "tender.qris.static.last4.label": "4 digit terakhir referensi pembayaran",
+  "tender.qris.static.last4.hint":
+    "Lihat layar aplikasi pembayaran pelanggan — biasanya berakhiran 4 angka.",
+  "tender.qris.static.submit.done": "Selesai",
+  "tender.qris.static.submit.submitting": "Menyimpan…",
+  "tender.qris.static.switch.cash": "Beralih ke tunai",
+  "tender.qris.static.error.finalize": "Gagal menyimpan transaksi. Coba lagi.",
   "receipt.heading": "Struk",
   "receipt.aria": "Pratinjau struk",
   "receipt.loading": "Memuat struk…",
@@ -346,6 +363,23 @@ const en: MessageMap = {
   "tender.qris.error.amount_mismatch":
     "The paid amount doesn't match the cart total. Contact the customer and retry.",
   "tender.qris.static.fallback": "Offline — use static QRIS",
+  "tender.qris.static.heading": "Static QRIS",
+  "tender.qris.static.aria": "Static QRIS payment",
+  "tender.qris.static.total": "Total",
+  "tender.qris.static.cart.empty": "Cart is empty. Go back to the catalog to add items.",
+  "tender.qris.static.image.alt": "Merchant static QR",
+  "tender.qris.static.image.loading": "Loading static QR…",
+  "tender.qris.static.image.missing":
+    "Static QR is not available yet. Show the printed QR at the till to the customer.",
+  "tender.qris.static.instructions":
+    "Show this QR to the customer. Once they pay, enter the last 4 digits of their reference.",
+  "tender.qris.static.last4.label": "Last 4 digits of the payment reference",
+  "tender.qris.static.last4.hint":
+    "Look at the customer's payment app screen — the reference usually ends in 4 digits.",
+  "tender.qris.static.submit.done": "Done",
+  "tender.qris.static.submit.submitting": "Saving…",
+  "tender.qris.static.switch.cash": "Switch to cash",
+  "tender.qris.static.error.finalize": "Could not save the sale. Try again.",
   "receipt.heading": "Receipt",
   "receipt.aria": "Receipt preview",
   "receipt.loading": "Loading receipt…",

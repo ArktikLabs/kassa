@@ -51,6 +51,17 @@ export interface FinalizeQrisInput {
   qrisOrderId: string;
 }
 
+export interface FinalizeQrisStaticInput {
+  lines: readonly CartLine[];
+  totals: CartTotals;
+  /**
+   * Last 4 digits of the buyer's QRIS reference, captured by the clerk on
+   * the static-QRIS panel. The reconciliation matcher (KASA-64 server side)
+   * keys on `last4 + amount + outlet + ±10-min window`.
+   */
+  buyerRefLast4: string;
+}
+
 export interface FinalizeContext {
   database: Database;
   /** Injected for tests. Defaults to `uuidv7()`. */
@@ -325,6 +336,135 @@ export async function finalizeQrisSale(
           sale.outletId,
           line.itemId,
           -line.quantity,
+          createdAtIso,
+        );
+      }
+      return row;
+    },
+  );
+
+  return {
+    localSaleId: sale.localSaleId,
+    sale,
+    pendingSale,
+    changeDueIdr: toRupiah(0),
+  };
+}
+
+/**
+ * Finalise a cart as a static-QRIS-tendered sale (ADR-008 fallback). Called
+ * by the static-QRIS tender panel after the clerk confirms the buyer paid
+ * to the printed merchant QR. The tender is enqueued to the outbox with
+ * `method: "qris_static"`, `verified: false`, and `buyerRefLast4` so the
+ * back-office reconciliation job (KASA-64) can match it against the
+ * Midtrans EOD settlement report.
+ *
+ * Static QRIS cannot leave change due, so `changeDueIdr` is always zero.
+ */
+export async function finalizeQrisStaticSale(
+  input: FinalizeQrisStaticInput,
+  ctx: FinalizeContext,
+): Promise<FinalizeResult> {
+  const { database } = ctx;
+  const genId = ctx.generateLocalSaleId ?? uuidv7;
+  const now = ctx.now?.() ?? new Date();
+
+  if (input.lines.length === 0) {
+    throw new SaleFinalizeError("cart is empty");
+  }
+  if (!/^\d{4}$/.test(input.buyerRefLast4)) {
+    throw new SaleFinalizeError("buyerRefLast4 must be exactly 4 digits");
+  }
+
+  const deviceSecret = await database.repos.deviceSecret.get();
+  if (!deviceSecret) {
+    throw new SaleFinalizeError("device is not enrolled");
+  }
+  const outlet = await database.repos.outlets.getById(deviceSecret.outletId);
+
+  const businessDate = toBusinessDate(now, outlet?.timezone);
+  const localSaleId = genId();
+  const createdAtIso = now.toISOString();
+
+  const items = await Promise.all(
+    input.lines.map(async (line) => {
+      const item = await database.repos.items.getById(line.itemId);
+      return [line.itemId, item] as const;
+    }),
+  );
+  const itemById = new Map<string, Item>();
+  for (const [id, item] of items) {
+    if (item) itemById.set(id, item);
+  }
+
+  const saleItems = buildSaleItems(input.lines, itemById);
+  const tenders: PendingSaleTender[] = [
+    {
+      method: "qris_static",
+      amountIdr: input.totals.totalIdr,
+      reference: null,
+      verified: false,
+      buyerRefLast4: input.buyerRefLast4,
+    },
+  ];
+
+  const sale: KassaSale = kassaSale.parse({
+    localSaleId,
+    outletId: deviceSecret.outletId,
+    clerkId: deviceSecret.deviceId,
+    businessDate,
+    createdAt: createdAtIso,
+    subtotalIdr: input.totals.subtotalIdr as number,
+    discountIdr: input.totals.discountIdr as number,
+    totalIdr: input.totals.totalIdr as number,
+    items: saleItems,
+    tenders,
+  });
+
+  // BOM explosion identical to cash/dynamic — the tender method only changes
+  // the outbox row, not the inventory accounting.
+  const stockMoves = await explodeLines(
+    database,
+    input.lines.map((line) => ({ itemId: line.itemId, quantity: line.quantity })),
+    itemById,
+  );
+
+  const pendingSale: PendingSale = await database.db.transaction(
+    "rw",
+    database.db.pending_sales,
+    database.db.stock_snapshot,
+    async () => {
+      const row: PendingSale = {
+        localSaleId: sale.localSaleId,
+        outletId: sale.outletId,
+        clerkId: sale.clerkId,
+        businessDate: sale.businessDate,
+        createdAt: sale.createdAt,
+        subtotalIdr: toRupiah(sale.subtotalIdr),
+        discountIdr: toRupiah(sale.discountIdr),
+        totalIdr: toRupiah(sale.totalIdr),
+        items: saleItems.map((line) => ({
+          ...line,
+          unitPriceIdr: toRupiah(line.unitPriceIdr),
+          lineTotalIdr: toRupiah(line.lineTotalIdr),
+        })),
+        tenders: tenders.map((t) => ({
+          ...t,
+          amountIdr: toRupiah(t.amountIdr),
+        })),
+        status: "queued",
+        attempts: 0,
+        lastError: null,
+        lastAttemptAt: null,
+        serverSaleName: null,
+      };
+      await database.db.pending_sales.put(row);
+
+      for (const move of stockMoves) {
+        await database.repos.stockSnapshot.applyOptimisticDelta(
+          sale.outletId,
+          move.itemId,
+          -move.quantity,
           createdAtIso,
         );
       }
