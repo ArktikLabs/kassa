@@ -420,16 +420,22 @@ describe("POST /v1/eod/close", () => {
     expect(body.expectedCashIdr).toBe(10_000);
   });
 
-  it("rejects a malformed request with 400 bad_request", async () => {
+  it("rejects a malformed request with 422 validation_error", async () => {
     const res = await h.app.inject({
       method: "POST",
       url: "/v1/eod/close",
       headers: { "content-type": "application/json" },
       payload: { outletId: "not-a-uuid", businessDate: "nope", countedCashIdr: -1 },
     });
-    expect(res.statusCode).toBe(400);
-    const body = res.json() as { error: { code: string } };
-    expect(body.error.code).toBe("bad_request");
+    expect(res.statusCode).toBe(422);
+    const body = res.json() as {
+      error: { code: string; details: { issues: Array<{ source: string; path: string }> } };
+    };
+    expect(body.error.code).toBe("validation_error");
+    const paths = body.error.details.issues.map((i) => `${i.source}:${i.path}`);
+    expect(paths).toContain("body:outletId");
+    expect(paths).toContain("body:businessDate");
+    expect(paths).toContain("body:countedCashIdr");
   });
 });
 

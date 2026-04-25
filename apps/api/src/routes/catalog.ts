@@ -1,6 +1,14 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
-import { itemCreateRequest, itemListQuery, itemUpdateRequest } from "@kassa/schemas/catalog";
+import {
+  itemCreateRequest,
+  itemListQuery,
+  itemUpdateRequest,
+  type ItemCreateRequest,
+  type ItemListQuery,
+  type ItemUpdateRequest,
+} from "@kassa/schemas/catalog";
 import { notImplemented, sendError } from "../lib/errors.js";
+import { validate } from "../lib/validate.js";
 import { makeMerchantScopedStaffPreHandler } from "../auth/staff-bootstrap.js";
 import { ItemError, type ItemsService, toItemResponse } from "../services/catalog/index.js";
 
@@ -68,37 +76,36 @@ export function catalogRoutes(deps: CatalogRouteDeps) {
     };
 
     // GET /v1/catalog/items — merchant-scoped delta pull.
-    app.get("/items", { preHandler: gatedPreHandler }, async (req, reply) => {
-      const principal = requireStaffPrincipal(req, reply);
-      if (!principal) return reply;
-      const parsed = itemListQuery.safeParse(req.query);
-      if (!parsed.success) {
-        sendError(reply, 400, "bad_request", "Invalid query.", parsed.error.flatten());
-        return reply;
-      }
-      try {
-        const result = await deps.items.list({
-          merchantId: principal.merchantId,
-          ...(parsed.data.updatedAfter !== undefined
-            ? { updatedAfter: new Date(parsed.data.updatedAfter) }
-            : {}),
-          ...(parsed.data.pageToken !== undefined ? { pageToken: parsed.data.pageToken } : {}),
-          ...(parsed.data.limit !== undefined ? { limit: parsed.data.limit } : {}),
-        });
-        reply.code(200).send({
-          records: result.records.map(toItemResponse),
-          nextCursor: result.nextCursor ? result.nextCursor.toISOString() : null,
-          nextPageToken: result.nextPageToken,
-        });
-        return reply;
-      } catch (err) {
-        if (err instanceof ItemError) {
-          handleItemError(reply, err);
+    app.get<{ Querystring: ItemListQuery }>(
+      "/items",
+      { preHandler: [gatedPreHandler, validate({ query: itemListQuery })] },
+      async (req, reply) => {
+        const principal = requireStaffPrincipal(req, reply);
+        if (!principal) return reply;
+        try {
+          const result = await deps.items.list({
+            merchantId: principal.merchantId,
+            ...(req.query.updatedAfter !== undefined
+              ? { updatedAfter: new Date(req.query.updatedAfter) }
+              : {}),
+            ...(req.query.pageToken !== undefined ? { pageToken: req.query.pageToken } : {}),
+            ...(req.query.limit !== undefined ? { limit: req.query.limit } : {}),
+          });
+          reply.code(200).send({
+            records: result.records.map(toItemResponse),
+            nextCursor: result.nextCursor ? result.nextCursor.toISOString() : null,
+            nextPageToken: result.nextPageToken,
+          });
           return reply;
+        } catch (err) {
+          if (err instanceof ItemError) {
+            handleItemError(reply, err);
+            return reply;
+          }
+          throw err;
         }
-        throw err;
-      }
-    });
+      },
+    );
 
     // GET /v1/catalog/items/:itemId
     app.get<{ Params: { itemId: string } }>(
@@ -129,58 +136,46 @@ export function catalogRoutes(deps: CatalogRouteDeps) {
     );
 
     // POST /v1/catalog/items
-    app.post("/items", { preHandler: gatedPreHandler }, async (req, reply) => {
-      const principal = requireStaffPrincipal(req, reply);
-      if (!principal) return reply;
-      const parsed = itemCreateRequest.safeParse(req.body);
-      if (!parsed.success) {
-        sendError(reply, 422, "validation_error", "Invalid request body.", parsed.error.flatten());
-        return reply;
-      }
-      try {
-        const row = await deps.items.create({
-          merchantId: principal.merchantId,
-          code: parsed.data.code,
-          name: parsed.data.name,
-          priceIdr: parsed.data.priceIdr,
-          uomId: parsed.data.uomId,
-          ...(parsed.data.bomId !== undefined ? { bomId: parsed.data.bomId } : {}),
-          ...(parsed.data.isStockTracked !== undefined
-            ? { isStockTracked: parsed.data.isStockTracked }
-            : {}),
-          ...(parsed.data.isActive !== undefined ? { isActive: parsed.data.isActive } : {}),
-        });
-        reply.code(201).send(toItemResponse(row));
-        return reply;
-      } catch (err) {
-        if (err instanceof ItemError) {
-          handleItemError(reply, err);
+    app.post<{ Body: ItemCreateRequest }>(
+      "/items",
+      { preHandler: [gatedPreHandler, validate({ body: itemCreateRequest })] },
+      async (req, reply) => {
+        const principal = requireStaffPrincipal(req, reply);
+        if (!principal) return reply;
+        try {
+          const row = await deps.items.create({
+            merchantId: principal.merchantId,
+            code: req.body.code,
+            name: req.body.name,
+            priceIdr: req.body.priceIdr,
+            uomId: req.body.uomId,
+            ...(req.body.bomId !== undefined ? { bomId: req.body.bomId } : {}),
+            ...(req.body.isStockTracked !== undefined
+              ? { isStockTracked: req.body.isStockTracked }
+              : {}),
+            ...(req.body.isActive !== undefined ? { isActive: req.body.isActive } : {}),
+          });
+          reply.code(201).send(toItemResponse(row));
           return reply;
+        } catch (err) {
+          if (err instanceof ItemError) {
+            handleItemError(reply, err);
+            return reply;
+          }
+          throw err;
         }
-        throw err;
-      }
-    });
+      },
+    );
 
     // PATCH /v1/catalog/items/:itemId
-    app.patch<{ Params: { itemId: string } }>(
+    app.patch<{ Params: { itemId: string }; Body: ItemUpdateRequest }>(
       "/items/:itemId",
-      { preHandler: gatedPreHandler },
+      { preHandler: [gatedPreHandler, validate({ body: itemUpdateRequest })] },
       async (req, reply) => {
         const principal = requireStaffPrincipal(req, reply);
         if (!principal) return reply;
         if (!UUID_RE.test(req.params.itemId)) {
           sendError(reply, 404, "item_not_found", `No item ${req.params.itemId}.`);
-          return reply;
-        }
-        const parsed = itemUpdateRequest.safeParse(req.body);
-        if (!parsed.success) {
-          sendError(
-            reply,
-            422,
-            "validation_error",
-            "Invalid request body.",
-            parsed.error.flatten(),
-          );
           return reply;
         }
         try {
@@ -193,14 +188,13 @@ export function catalogRoutes(deps: CatalogRouteDeps) {
             isStockTracked?: boolean;
             isActive?: boolean;
           } = {};
-          if (parsed.data.code !== undefined) patch.code = parsed.data.code;
-          if (parsed.data.name !== undefined) patch.name = parsed.data.name;
-          if (parsed.data.priceIdr !== undefined) patch.priceIdr = parsed.data.priceIdr;
-          if (parsed.data.uomId !== undefined) patch.uomId = parsed.data.uomId;
-          if (parsed.data.bomId !== undefined) patch.bomId = parsed.data.bomId;
-          if (parsed.data.isStockTracked !== undefined)
-            patch.isStockTracked = parsed.data.isStockTracked;
-          if (parsed.data.isActive !== undefined) patch.isActive = parsed.data.isActive;
+          if (req.body.code !== undefined) patch.code = req.body.code;
+          if (req.body.name !== undefined) patch.name = req.body.name;
+          if (req.body.priceIdr !== undefined) patch.priceIdr = req.body.priceIdr;
+          if (req.body.uomId !== undefined) patch.uomId = req.body.uomId;
+          if (req.body.bomId !== undefined) patch.bomId = req.body.bomId;
+          if (req.body.isStockTracked !== undefined) patch.isStockTracked = req.body.isStockTracked;
+          if (req.body.isActive !== undefined) patch.isActive = req.body.isActive;
           const row = await deps.items.update({
             merchantId: principal.merchantId,
             id: req.params.itemId,

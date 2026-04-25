@@ -587,13 +587,18 @@ describe("GET /v1/catalog/items — pagination", () => {
     expect(body.records.map((r) => r.code)).toEqual(["PAG-3", "PAG-4"]);
   });
 
-  it("400s an invalid limit", async () => {
+  it("422s an invalid limit", async () => {
     const res = await h.app.inject({
       method: "GET",
       url: "/v1/catalog/items?limit=9999",
       headers: headers(),
     });
-    expect(res.statusCode).toBe(400);
-    expect((res.json() as { error: { code: string } }).error.code).toBe("bad_request");
+    expect(res.statusCode).toBe(422);
+    const body = res.json() as {
+      error: { code: string; details: { issues: Array<{ source: string; path: string }> } };
+    };
+    expect(body.error.code).toBe("validation_error");
+    expect(body.error.details.issues[0]?.source).toBe("query");
+    expect(body.error.details.issues[0]?.path).toBe("limit");
   });
 });

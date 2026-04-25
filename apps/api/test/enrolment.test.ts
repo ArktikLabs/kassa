@@ -232,14 +232,20 @@ describe("POST /v1/auth/enroll", () => {
     expect(code).toMatch(/^[A-HJ-NP-Z2-9]{8}$/);
   });
 
-  it("rejects malformed bodies with 400", async () => {
+  it("rejects malformed bodies with 422 validation_error", async () => {
     const res = await h.app.inject({
       method: "POST",
       url: "/v1/auth/enroll",
       payload: { code: "lower", deviceFingerprint: "x" },
     });
-    expect(res.statusCode).toBe(400);
-    expect((res.json() as { error: { code: string } }).error.code).toBe("bad_request");
+    expect(res.statusCode).toBe(422);
+    const body = res.json() as {
+      error: { code: string; details: { issues: Array<{ source: string; path: string }> } };
+    };
+    expect(body.error.code).toBe("validation_error");
+    const paths = body.error.details.issues.map((i) => i.path);
+    expect(paths).toContain("code");
+    expect(paths).toContain("deviceFingerprint");
   });
 });
 
