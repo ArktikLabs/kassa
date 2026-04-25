@@ -58,10 +58,26 @@ function toSaleRecord(sale: Sale): SaleRecord {
 function toEodTender(tender: SaleTender): EodSaleTender {
   switch (tender.method) {
     case "qris":
-      return { method: "qris_static", amountIdr: tender.amountIdr, reference: tender.reference };
+      // Wire-level QRIS without the dynamic/static signal lands as
+      // unverified static: dynamic is verified-on-webhook (KASA-63), static
+      // is verified-on-reconciliation (KASA-64). When the wire schema gains
+      // the dynamic/static distinction, this branch widens to two cases.
+      return {
+        method: "qris_static",
+        amountIdr: tender.amountIdr,
+        reference: tender.reference,
+        verified: false,
+      };
     case "cash":
     case "card":
     case "other":
-      return { method: tender.method, amountIdr: tender.amountIdr, reference: tender.reference };
+      return {
+        method: tender.method,
+        amountIdr: tender.amountIdr,
+        reference: tender.reference,
+        // Non-QRIS tenders are server-vouched at submit time (cash drawer
+        // count, card terminal approval); they have no unverified window.
+        verified: true,
+      };
   }
 }

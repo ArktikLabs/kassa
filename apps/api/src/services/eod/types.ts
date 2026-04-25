@@ -10,6 +10,13 @@ export interface SaleTender {
   method: SaleTenderMethod;
   amountIdr: number;
   reference: string | null;
+  /**
+   * `true` once the money is server-vouched: cash count-in, dynamic-QRIS
+   * webhook (KASA-63), or the static-QRIS reconciliation pass (KASA-64).
+   * For non-QRIS tenders this is always `true` — only static QRIS has an
+   * unverified window.
+   */
+  verified: boolean;
 }
 
 export interface SaleItem {
@@ -54,6 +61,13 @@ export interface EodRecordBreakdown {
   cashIdr: number;
   qrisDynamicIdr: number;
   qrisStaticIdr: number;
+  /**
+   * Subset of `qrisStaticIdr` whose tenders haven't been paired with a
+   * Midtrans settlement row yet. The clerk sees this on the close screen
+   * as the variance-risk number — real money the server cannot vouch for
+   * until the next reconciliation pass runs.
+   */
+  qrisStaticUnverifiedIdr: number;
   cardIdr: number;
   otherIdr: number;
   netIdr: number;

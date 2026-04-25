@@ -52,6 +52,11 @@ export type EodCloseRequest = z.infer<typeof eodCloseRequest>;
  * knows `qris` — so dynamic/static are flat-zero until the payments
  * reconciliation worker (KASA-74) is wired. For now the server places every
  * QRIS amount under `qrisStaticIdr` so the "unverified" line is truthful.
+ *
+ * `qrisStaticUnverifiedIdr` is a subset of `qrisStaticIdr` covering the
+ * tenders the EOD reconciliation pass (KASA-64) hasn't paired with a
+ * Midtrans settlement row yet. It is the variance-risk number the clerk
+ * sees at close time: real money the server cannot yet vouch for.
  */
 export const eodBreakdown = z
   .object({
@@ -60,6 +65,7 @@ export const eodBreakdown = z
     cashIdr: rupiahInteger,
     qrisDynamicIdr: rupiahInteger,
     qrisStaticIdr: rupiahInteger,
+    qrisStaticUnverifiedIdr: rupiahInteger,
     cardIdr: rupiahInteger,
     otherIdr: rupiahInteger,
     netIdr: rupiahInteger,

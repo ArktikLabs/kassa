@@ -81,6 +81,7 @@ describe("eodCloseResponse", () => {
         cashIdr: 120_000,
         qrisDynamicIdr: 0,
         qrisStaticIdr: 0,
+        qrisStaticUnverifiedIdr: 0,
         cardIdr: 0,
         otherIdr: 0,
         netIdr: 120_000,

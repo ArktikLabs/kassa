@@ -130,6 +130,7 @@ function computeBreakdown(sales: readonly SaleRecord[]): EodRecordBreakdown {
   let cashIdr = 0;
   let qrisDynamicIdr = 0;
   let qrisStaticIdr = 0;
+  let qrisStaticUnverifiedIdr = 0;
   let cardIdr = 0;
   let otherIdr = 0;
   let netIdr = 0;
@@ -154,6 +155,7 @@ function computeBreakdown(sales: readonly SaleRecord[]): EodRecordBreakdown {
           break;
         case "qris_static":
           qrisStaticIdr += tender.amountIdr;
+          if (!tender.verified) qrisStaticUnverifiedIdr += tender.amountIdr;
           break;
         case "card":
           cardIdr += tender.amountIdr;
@@ -170,6 +172,7 @@ function computeBreakdown(sales: readonly SaleRecord[]): EodRecordBreakdown {
     cashIdr,
     qrisDynamicIdr,
     qrisStaticIdr,
+    qrisStaticUnverifiedIdr,
     cardIdr,
     otherIdr,
     netIdr,
