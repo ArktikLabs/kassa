@@ -246,6 +246,22 @@ async function buildHarness(): Promise<{ url: string; close: () => Promise<void>
     eod: { service: eodService, resolveMerchantId: () => MERCHANT_ID },
   });
 
+  // Test-only CORS shim. The POS preview ships from `127.0.0.1:4174` and
+  // POSTs to this harness on `127.0.0.1:4127` — different ports, so Chromium
+  // sends a CORS preflight `OPTIONS`. Production keeps the API CORS-free
+  // (same-origin reverse-proxy per ARCHITECTURE.md §4); this shim is scoped
+  // to the harness only and retires with the harness binary.
+  app.addHook("onSend", async (req, reply, payload) => {
+    reply.header("access-control-allow-origin", req.headers.origin ?? "*");
+    reply.header(
+      "access-control-allow-headers",
+      "content-type,x-kassa-api-key,x-kassa-api-secret,x-kassa-local-sale-id",
+    );
+    reply.header("access-control-allow-methods", "GET,POST,OPTIONS");
+    return payload;
+  });
+  app.options("/*", async (_req, reply) => reply.code(204).send());
+
   // Test-only header translation. See file docstring.
   app.addHook("onRequest", async (req) => {
     const apiKey = pickHeader(req.headers["x-kassa-api-key"]);
