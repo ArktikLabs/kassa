@@ -27,6 +27,10 @@
     "./payments": {
       "types": "./dist/payments.d.ts",
       "import": "./dist/payments.js"
+    },
+    "./reconciliation": {
+      "types": "./dist/reconciliation.d.ts",
+      "import": "./dist/reconciliation.js"
     }
   },
   "files": [

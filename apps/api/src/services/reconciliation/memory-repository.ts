@@ -1,4 +1,8 @@
-import type { ReconciliationRepository } from "./repository.js";
+import type {
+  ManualMatchInput,
+  ManualMatchOutcome,
+  ReconciliationRepository,
+} from "./repository.js";
 import type { ReconciliationMatch, UnverifiedStaticQrisTender } from "./types.js";
 
 /**
@@ -9,6 +13,7 @@ import type { ReconciliationMatch, UnverifiedStaticQrisTender } from "./types.js
 export class InMemoryReconciliationRepository implements ReconciliationRepository {
   private readonly tenders = new Map<string, StoredTender>();
   private readonly verifiedTenderIds = new Set<string>();
+  private readonly manualMatchAudit: ManualMatchAuditEntry[] = [];
 
   seedTender(input: StoredTender): void {
     this.tenders.set(input.tenderId, { ...input });
@@ -16,6 +21,10 @@ export class InMemoryReconciliationRepository implements ReconciliationRepositor
 
   isVerified(tenderId: string): boolean {
     return this.verifiedTenderIds.has(tenderId);
+  }
+
+  manualMatchAuditFor(tenderId: string): readonly ManualMatchAuditEntry[] {
+    return this.manualMatchAudit.filter((entry) => entry.tenderId === tenderId);
   }
 
   async listUnverifiedStaticQrisTenders(input: {
@@ -51,6 +60,29 @@ export class InMemoryReconciliationRepository implements ReconciliationRepositor
     }
     return flipped;
   }
+
+  async manualMatch(input: ManualMatchInput): Promise<ManualMatchOutcome> {
+    const tender = this.tenders.get(input.tenderId);
+    if (!tender || tender.merchantId !== input.merchantId) return "not_found";
+    if (this.verifiedTenderIds.has(input.tenderId)) return "already_verified";
+    this.verifiedTenderIds.add(input.tenderId);
+    this.manualMatchAudit.push({
+      tenderId: input.tenderId,
+      providerTransactionId: input.providerTransactionId,
+      note: input.note,
+      staffUserId: input.staffUserId,
+      matchedAt: input.matchedAt,
+    });
+    return "flipped";
+  }
+}
+
+export interface ManualMatchAuditEntry {
+  tenderId: string;
+  providerTransactionId: string | null;
+  note: string;
+  staffUserId: string;
+  matchedAt: string;
 }
 
 export interface StoredTender {

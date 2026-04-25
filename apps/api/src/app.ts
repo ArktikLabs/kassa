@@ -19,6 +19,10 @@ import {
   SalesRepositorySalesReader,
 } from "./services/eod/index.js";
 import {
+  InMemoryReconciliationRepository,
+  ReconciliationService,
+} from "./services/reconciliation/index.js";
+import {
   InMemorySalesRepository,
   SalesService,
   type SalesRepository,
@@ -42,6 +46,10 @@ export interface BuildAppOptions {
   };
   catalog?: {
     items: ItemsService;
+    staffBootstrapToken?: string;
+  };
+  reconciliation?: {
+    service: ReconciliationService;
     staffBootstrapToken?: string;
   };
   sales?: {
@@ -107,6 +115,16 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   };
   const resolveEodMerchantId = eod.resolveMerchantId ?? (() => BOOTSTRAP_MERCHANT_ID);
 
+  // Reconciliation needs a PaymentProvider for settlement fetches; fall back
+  // to a no-rows stub when one is not configured so the admin routes still
+  // register and the manual-match path stays usable.
+  const reconciliation = options.reconciliation ?? {
+    service: new ReconciliationService({
+      repository: new InMemoryReconciliationRepository(),
+      provider: options.midtransProvider ?? makeNoSettlementProvider(),
+    }),
+  };
+
   const v1Deps: V1RouteDeps = {
     auth: {
       enrolment: enrolment.service,
@@ -132,6 +150,12 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       resolveMerchantId: resolveRequestMerchantId,
     },
     eod: { service: eod.service, resolveMerchantId: resolveEodMerchantId },
+    reconciliation: {
+      service: reconciliation.service,
+      ...(reconciliation.staffBootstrapToken !== undefined
+        ? { staffBootstrapToken: reconciliation.staffBootstrapToken }
+        : {}),
+    },
   };
 
   await app.register(healthRoutes);
@@ -150,4 +174,26 @@ function defaultMerchantResolver(req: { headers: Record<string, unknown> }): str
     return header[0];
   }
   return null;
+}
+
+// Stub provider used when no Midtrans provider is configured. Returns zero
+// settlements for every fetch so the reconciliation pass runs cleanly (zero
+// matches) instead of crashing — matters for the manual-match route which
+// the operator can still use independently of automated settlement fetches.
+function makeNoSettlementProvider(): PaymentProvider {
+  return {
+    name: "no-settlement-stub",
+    async createQris() {
+      throw new Error("payments provider not configured");
+    },
+    async getQrisStatus() {
+      throw new Error("payments provider not configured");
+    },
+    verifyWebhookSignature() {
+      throw new Error("payments provider not configured");
+    },
+    async fetchQrisSettlements() {
+      return [];
+    },
+  };
 }

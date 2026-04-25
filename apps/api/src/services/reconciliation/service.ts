@@ -1,6 +1,6 @@
 import type { PaymentProvider } from "@kassa/payments";
 import { reconcileStaticQrisTenders } from "./matcher.js";
-import type { ReconciliationRepository } from "./repository.js";
+import type { ManualMatchOutcome, ReconciliationRepository } from "./repository.js";
 import type { ReconciliationResult } from "./types.js";
 
 /*
@@ -29,6 +29,19 @@ export interface ReconciliationServiceDeps {
   provider: PaymentProvider;
   /** Override the default ±10-min match window, in ms. */
   windowMs?: number;
+  /**
+   * Wall-clock seam — used as the `matchedAt` timestamp on manual matches so
+   * tests can assert a deterministic ISO. Defaults to `() => new Date()`.
+   */
+  now?: () => Date;
+}
+
+export interface ManualMatchInput {
+  merchantId: string;
+  tenderId: string;
+  providerTransactionId: string | null;
+  note: string;
+  staffUserId: string;
 }
 
 export interface ReconcilePassInput {
@@ -50,11 +63,13 @@ export class ReconciliationService {
   private readonly repository: ReconciliationRepository;
   private readonly provider: PaymentProvider;
   private readonly windowMs: number | undefined;
+  private readonly now: () => Date;
 
   constructor(deps: ReconciliationServiceDeps) {
     this.repository = deps.repository;
     this.provider = deps.provider;
     this.windowMs = deps.windowMs;
+    this.now = deps.now ?? (() => new Date());
   }
 
   async reconcileBusinessDate(input: ReconcilePassInput): Promise<ReconcilePassReport> {
@@ -72,5 +87,22 @@ export class ReconciliationService {
       consideredTenderCount: tenders.length,
       settlementRowCount: settlements.length,
     };
+  }
+
+  /**
+   * Owner-driven escape hatch for stuck unverified tenders the automated
+   * pass could not pair. Persists the decision to the repository, including
+   * the operator's note + Midtrans `transaction_id` (when known) for audit.
+   * Returns the storage outcome so the caller can map to a 200/404/409.
+   */
+  async manualMatch(input: ManualMatchInput): Promise<ManualMatchOutcome> {
+    return this.repository.manualMatch({
+      merchantId: input.merchantId,
+      tenderId: input.tenderId,
+      providerTransactionId: input.providerTransactionId,
+      note: input.note,
+      staffUserId: input.staffUserId,
+      matchedAt: this.now().toISOString(),
+    });
   }
 }
