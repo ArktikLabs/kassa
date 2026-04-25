@@ -232,6 +232,15 @@ async function enrolDevice(page: Page, code: string): Promise<DeviceCreds> {
   await page.locator('button[type="submit"]').click();
   // Successful enrolment redirects to /catalog.
   await page.waitForURL(/\/catalog$/, { timeout: 30_000 });
+  // SyncProvider's mount effect only calls `runner.start()` if the device
+  // secret was persisted by the time it reads `deviceSecret.get()`. On the
+  // first session that wrote the secret, that read races the enrolment
+  // POST and only sometimes wins — meaning the catalog pull may never
+  // fire. A reload on /catalog re-mounts SyncProvider with the secret
+  // already in Dexie, making `runner.start()` deterministic. (App-side
+  // fix tracked separately; the harness pins the test to the boot path
+  // a real merchant would hit on the next launch after enrolment.)
+  await page.reload();
 
   const secret = await page.evaluate(async () => {
     const db = await new Promise<IDBDatabase>((resolve, reject) => {
