@@ -192,6 +192,40 @@ The workflow is inert until these three steps complete. This is intentional: it 
    # MIDTRANS_SERVER_KEY stays unset on staging until payments testing starts
    # (the /v1/payments/webhooks/midtrans handler will 503 by design).
    ```
+2a. **Provision the staging Redis instance** (once, before the first PR that
+    enqueues real work — see §3.10 for the decision rationale):
+
+   ```sh
+   # Creates an Upstash-managed Redis attached to the kassa-api-staging app
+   # in the same region (sin). Returns a `redis://default:<token>@<host>:6379`
+   # URL printed once on stdout; capture it.
+   #
+   # Plan choice: `3G` is the smallest fixed-price Upstash tier on Fly. We do
+   # NOT use `--plan free` (or any pay-as-you-go tier) for any Kassa Redis,
+   # even on staging — BullMQ's worker polls Redis on a 5s `BZPOPMIN` timer
+   # (~17.3k commands/day per queue) plus a 30s `stalledInterval` check
+   # (~2.9k/day). That ~20k/day floor is independent of business traffic and
+   # alone exhausts the 500K-commands/month free tier in roughly one day per
+   # month; Fly's own Upstash docs explicitly call this out
+   # (https://fly.io/docs/reference/redis/). Verify the current fixed-price
+   # tiers and dollar figures against `flyctl redis plans` at provisioning
+   # time — the cost rollup in §3.10 carries the rationale, not the live
+   # pricing.
+   flyctl redis create \
+     --org kassa \
+     --name kassa-redis-staging \
+     --region sin \
+     --no-replicas \
+     --plan 3G
+   # Bind the URL on the app so both the web and worker process groups read it.
+   flyctl secrets set --app kassa-api-staging \
+     REDIS_URL="redis://default:<token>@<host>:6379"
+   ```
+
+   The production `kassa-api` app gets its own separate Redis — see
+   [KASA-70](/KASA/issues/KASA-70). Staging and production must never share a
+   broker; queue state crossing tiers is the kind of bug that paginates EOD
+   reports against the wrong merchant.
 3. **Provision secrets in the GitHub `production` environment** (Settings → Environments → `production`):
    - `CLOUDFLARE_API_TOKEN` — a token with `Account.Cloudflare Pages: Edit` on the Kassa Cloudflare account (scope narrowly).
    - `CLOUDFLARE_ACCOUNT_ID` — the account id owning the two Pages projects.
@@ -258,7 +292,7 @@ If the failing deploy is the most recent merge and the fix is trivially "undo th
 
 Secrets never live in workflow YAML; the workflow references them via `${{ secrets.NAME }}` and GitHub injects them at runtime.
 
-App-side secrets for `kassa-api-staging` (what the runtime actually needs) live in Fly, not GitHub: `STAFF_BOOTSTRAP_TOKEN`, `MIDTRANS_SERVER_KEY` (optional on staging), `MIDTRANS_ENVIRONMENT`, `LOG_LEVEL`. Rotate with `flyctl secrets set` — no redeploy needed; Fly restarts machines automatically.
+App-side secrets for `kassa-api-staging` (what the runtime actually needs) live in Fly, not GitHub: `STAFF_BOOTSTRAP_TOKEN`, `MIDTRANS_SERVER_KEY` (optional on staging), `MIDTRANS_ENVIRONMENT`, `LOG_LEVEL`, `DATABASE_URL`, `REDIS_URL` (BullMQ broker — see §3.10). Rotate with `flyctl secrets set` — no redeploy needed; Fly restarts machines automatically.
 
 ### 3.7 API staging deploy path (`deploy-api-staging`)
 
@@ -277,7 +311,7 @@ The `deploy-api-staging` job lives in [`cd.yml`](../.github/workflows/cd.yml) an
 **Two processes from one image.** `fly.toml` declares:
 
 - `web = "node apps/api/dist/index.js"` — Fastify server, `[http_service]` fronted, `/health` checked.
-- `worker = "node apps/api/dist/workers/index.js"` — background process group, no HTTP. Currently a no-op loop pending BullMQ/Redis provisioning (follow-up). The process group exists now so the two-process topology is validated end-to-end before KASA-108 adds real work.
+- `worker = "node apps/api/dist/workers/index.js"` — background process group, no HTTP. Connects to `REDIS_URL` and runs a BullMQ worker over the `kassa.system.heartbeat` queue (a placeholder consumer until per-feature queues land — see §3.10 and [KASA-111](/KASA/issues/KASA-111)). When `REDIS_URL` is unset the process falls back to a logged idle loop so the topology is still exercised end-to-end without a broker.
 
 **Cost posture.** `auto_stop_machines = "stop"` + `min_machines_running = 0` on staging: machines stop when idle and wake on the next request. Expect a ~1 s cold-start on the first hit after idleness. Production (KASA-70) will flip `min_machines_running = 2` for HA.
 
@@ -362,6 +396,59 @@ The script exits 0 on success, 1 on any surface/version failure, 2 on bad usage.
 - This job does **not** exercise authenticated paths, mutate data, or run E2E flows — those belong in the Playwright workflow (deferred). It is deliberately a "did the deploy land and is the right code serving" gate, nothing deeper.
 - The script only checks the three surfaces `cd.yml` deploys. When production API (KASA-70) or per-PR preview environments (KASA-108) land, each adds its own invocation of the same script with different URLs rather than forking the checks.
 
+### 3.10 Redis broker for the worker process group ([KASA-111](/KASA/issues/KASA-111))
+
+The `worker` Fly process group consumes BullMQ jobs off Redis. [TECH-STACK.md §7](./TECH-STACK.md) commits to BullMQ on Redis 7 as the entire async layer; this section is the provisioning decision and the cost rollup that landed it.
+
+**Decision: Upstash Redis via `flyctl redis create`.**
+
+The candidates were:
+
+| Option                                     | Pro                                                                                          | Con                                                                                                              |
+|:-------------------------------------------|:---------------------------------------------------------------------------------------------|:-----------------------------------------------------------------------------------------------------------------|
+| **Upstash via `flyctl redis create`** (chosen) | One CLI, one bill, same Fly org as the app. Co-located in `sin` (sub-ms RTT to the worker). Persistent + replicated by default on paid plans. Free tier covers staging on day one. | Vendor-locked to Upstash's command-set caveats (no `MONITOR`/`DEBUG`/`SCRIPT` — not blockers for BullMQ).         |
+| Upstash direct (no Fly mediation)          | Same engine; slightly more flexibility in region/replica selection.                          | Second account, second bill, second IAM surface. No upside over the Fly-mediated path at v0 scale.                |
+| Self-hosted Redis on a Fly Machine         | Full Redis feature set, no per-command billing.                                              | We'd own backups, persistence config, failover, OOM tuning, version upgrades. Operational tax with no v0 benefit. |
+| AWS ElastiCache / GCP Memorystore          | Mature managed offerings.                                                                    | Cross-cloud network hop adds latency and a second cloud account; only sane if we already lived there.            |
+
+The Redis 7 surface BullMQ relies on (`XADD`/`XREAD` streams, `BRPOPLPUSH`-equivalent blocking ops, Lua scripts via `EVAL`) is fully supported on Upstash; the unsupported commands in the table above are operator/diagnostic tooling that we do not invoke from the worker.
+
+**BullMQ polling floor.** Before the cost table, two BullMQ behaviours need to be made explicit because they invalidate any "free tier" or "pay-as-you-go" framing for either tier:
+
+- The `Worker` polls Redis with `BZPOPMIN` on a 5-second `drainDelay` (BullMQ v5 default) — that is ~17,280 commands/day per queue, **per worker**, regardless of whether any jobs are produced.
+- The `stalledInterval` check fires every 30s, adding ~2,880 commands/day.
+
+The floor is therefore ~20,000 commands/day per worker process, **independent of business traffic**. Upstash's Fly free tier is 500,000 commands/month (~16,600/day on average) — the placeholder consumer alone exhausts it in ~24h, then either hard-fails or burns pay-as-you-go credit. Fly's own Upstash docs are explicit about this:
+
+> If you're using Sidekiq, BullMQ or similar software, consider switching your database to a fixed price plan to avoid running up your pay-as-you-go bill.
+> — <https://fly.io/docs/reference/redis/>
+
+So both Kassa Redis instances are provisioned on **fixed-price** Upstash plans, not Free or Pay-as-you-go. Staging is no exception: the failure mode "free tier exhausted → BullMQ poller hard-errors → worker process restart loop → Sentry noise" is worse than spending the fixed-tier dollars.
+
+**Cost rollup** (Upstash via Fly, two separate instances per the ACs; verify live dollars against `flyctl redis plans` at provisioning time):
+
+| Tier                              | Plan                                      | Workload model (v0)                                                                                                                                                                                                                                  | Monthly cost (verify with `flyctl redis plans`) |
+|:----------------------------------|:------------------------------------------|:------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|:------------------------------------------------|
+| `kassa-redis-staging` (KASA-111)  | Smallest fixed tier (`3G`)                | BullMQ polling floor (~20k commands/day) dominates; heartbeat queue + occasional CI replays add a rounding-error increment.                                                                                                                          | Fixed; sized to handle the polling floor.       |
+| `kassa-redis-prod` (KASA-70)      | Fixed tier sized to projected throughput  | BullMQ polling floor (~20k commands/day) plus per-merchant business volume: ~1k sales/day × ~10 BullMQ commands per sale lifecycle (enqueue + retry/ack + EOD/reconciliation jobs) ≈ ~10k commands/day on top of the floor → ~30k commands/day total. | Fixed; smallest tier that covers floor + headroom for queue growth and replicas if/when prod takes a real load. |
+
+The "appropriate fixed tier" for `kassa-redis-prod` is sized at provisioning time on KASA-70, against `flyctl redis plans`'s then-current command/storage caps and the merchant count in flight. Day-one single-merchant traffic fits inside `3G` with room to spare; we expect to step up at the first sustained sales spike that pushes the daily floor above ~80% of the tier cap.
+
+Conclusion: Redis is **not a meaningful line item** in the v0 infra budget at the corrected fixed-tier level either — both instances combined sit in the low double-digit dollars/month at v0 traffic. The decision was about operational simplicity (one Fly bill, `flyctl` everywhere) far more than dollars.
+
+**Provisioning** is one-time, by ops. Step 2a in §3.4 above is the staging command (`--plan 3G`); production gets its own equivalent in [KASA-70](/KASA/issues/KASA-70) using `--name kassa-redis-prod` and a fixed tier sized against `flyctl redis plans` at the time.
+
+**App-side wiring**:
+
+- `apps/api/src/config.ts` reads `REDIS_URL` (optional in dev/test; the worker logs and idles when unset). The first PR that lands a real consumer ([KASA-120](/KASA/issues/KASA-120) is the leading candidate) is expected to tighten the Zod refinement to required-in-production, in lock-step with both Fly apps having the secret bound.
+- `apps/api/src/workers/index.ts` is the BullMQ bootstrap: connects to `REDIS_URL`, registers the `kassa.system.heartbeat` placeholder consumer, propagates `error`/`failed` events to stdout, and drains in-flight jobs on `SIGTERM`/`SIGINT` via `Worker.close()` → `Queue.close()` → `connection.quit()`.
+- Staging and production must point at separate Redis instances. The two Fly secrets are separate by construction (each app has its own secret store), but the rule is documented here so it survives the `flyctl secrets list` audit.
+
+**What is *not* in scope here**:
+
+- Specific job implementations (nightly reconciliation, EOD rollup, sync-log purge, webhook replay, …) — each follow-up issue ships its own queue + processor in `apps/api/src/workers/<feature>.ts`.
+- Redis observability (queue-depth dashboards, Sentry alerts on stuck jobs) — folded into [KASA-71](/KASA/issues/KASA-71) once the first real consumer is producing real signal.
+
 ---
 
 ## 4. Pipeline health (v0 baselines)
@@ -403,7 +490,7 @@ These are out of scope for the initial CI + static-surface CD setup but are **pr
 4. ~~**API → Fly.io staging deploy**~~ — landed via [KASA-107](/KASA/issues/KASA-107) (this section §3.7–§3.8).
 5. **API → Fly.io production deploy** — tracked in [KASA-70](/KASA/issues/KASA-70) (M4). Production Fly app, Neon production branch, Midtrans prod keys, Sentry release tagging, manual promotion gate.
 6. **Preview-per-PR environments** — tracked in [KASA-108](/KASA/issues/KASA-108) (M0, unblocked by KASA-107). Cloudflare Pages preview deploys for both static surfaces, Fly.io staging redeploy for the API, Neon branch DB per PR, teardown on PR close.
-7. **Worker queue broker + real workers** — Redis/BullMQ provisioning, replace the `kassa-api-staging` `worker` process-group stub with a real consumer. Open when the first background job lands.
+7. ~~**Worker queue broker + real workers**~~ — broker provisioning + BullMQ bootstrap landed via [KASA-111](/KASA/issues/KASA-111) (this section §3.10). The first real consumer (nightly reconciliation) is tracked in [KASA-120](/KASA/issues/KASA-120); subsequent per-feature consumers fan out from there.
 8. **Production promotion gate** — `cd-prod.yml` with `workflow_dispatch` and environment protection rules (required reviewers) for the API cutover once staging/preview are live.
 9. **Playwright E2E workflow** — nightly + on-merge run, not on PR.
 10. **Turborepo remote cache** — named in [TECH-STACK.md §10.3](./TECH-STACK.md); wire it once CI is live and we have a signal on cold vs warm install time.

@@ -36,6 +36,17 @@ const envSchema = z
         z.enum(["true", "false"]).default("true"),
       )
       .transform((v) => v === "true"),
+    // `redis://…` (or `rediss://…` for TLS) — BullMQ broker for the worker
+    // process group. Optional today (KASA-111 ships only a placeholder queue;
+    // the worker logs and idles when REDIS_URL is unset). The first PR that
+    // wires a real consumer (KASA-120: nightly reconciliation) is expected to
+    // tighten this to required-in-production via the refinement block below,
+    // alongside the Fly secret being landed on `kassa-api-staging` and the
+    // production `kassa-api` app. See docs/CI-CD.md §3.4 for provisioning.
+    //
+    // Staging and production must point at separate Redis instances — no
+    // shared queue state across tiers.
+    REDIS_URL: optionalTrimmedString,
   })
   .superRefine((env, ctx) => {
     if (env.NODE_ENV === "production" && !env.DATABASE_URL) {
