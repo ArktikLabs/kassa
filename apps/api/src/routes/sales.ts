@@ -1,10 +1,14 @@
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import {
+  saleListQuery,
   saleRefundRequest,
   saleSubmitRequest,
   saleVoidRequest,
+  type SaleListQuery,
+  type SaleListResponse,
   type SaleRefundRequest,
   type SaleRefundResponse,
+  type SaleResponse,
   type SaleSubmitRequest,
   type SaleSubmitResponse,
   type SaleVoidRequest,
@@ -178,11 +182,95 @@ export function salesRoutes(deps: SalesRouteDeps) {
       },
     );
 
-    // Placeholder routes — the rest of the sale lifecycle lands with PR3
-    // (sale GET + list + stock ledger).
+    app.get<{ Querystring: SaleListQuery }>(
+      "/",
+      { preHandler: validate({ query: saleListQuery }) },
+      async (req, reply) => {
+        const merchantId = deps.resolveMerchantId(req);
+        if (!merchantId) {
+          sendError(reply, 401, "unauthorized", "Merchant context is required.");
+          return reply;
+        }
+        const sales = await deps.service.listSalesByBusinessDate(
+          merchantId,
+          req.query.outletId,
+          req.query.businessDate,
+        );
+        const body: SaleListResponse = { records: sales.map(toSaleWire) };
+        reply.code(200).send(body);
+        return reply;
+      },
+    );
+
+    app.get<{ Params: SaleIdParam }>(
+      "/:saleId",
+      { preHandler: validate({ params: saleIdParam }) },
+      async (req, reply) => {
+        const merchantId = deps.resolveMerchantId(req);
+        if (!merchantId) {
+          sendError(reply, 401, "unauthorized", "Merchant context is required.");
+          return reply;
+        }
+        const sale = await deps.service.getSale(merchantId, req.params.saleId);
+        if (!sale) {
+          sendError(reply, 404, "sale_not_found", `Sale ${req.params.saleId} not found.`);
+          return reply;
+        }
+        const body: SaleResponse = toSaleWire(sale);
+        reply.code(200).send(body);
+        return reply;
+      },
+    );
+
+    // Placeholder routes — `POST /sync` lands with the bulk sync push slice;
+    // `POST /` (a non-idempotent "create" alias for /submit) is still a stub.
     app.post("/", async (req, reply) => notImplemented(req, reply));
-    app.get("/:saleId", async (req, reply) => notImplemented(req, reply));
     app.post("/sync", async (req, reply) => notImplemented(req, reply));
+  };
+}
+
+function toSaleWire(sale: import("../services/sales/index.js").Sale): SaleResponse {
+  return {
+    saleId: sale.id,
+    name: sale.name,
+    localSaleId: sale.localSaleId,
+    outletId: sale.outletId,
+    clerkId: sale.clerkId,
+    businessDate: sale.businessDate,
+    subtotalIdr: sale.subtotalIdr,
+    discountIdr: sale.discountIdr,
+    totalIdr: sale.totalIdr,
+    items: sale.items.map((line) => ({
+      itemId: line.itemId,
+      bomId: line.bomId,
+      quantity: line.quantity,
+      uomId: line.uomId,
+      unitPriceIdr: line.unitPriceIdr,
+      lineTotalIdr: line.lineTotalIdr,
+    })),
+    tenders: sale.tenders.map((tender) => {
+      const wire: SaleResponse["tenders"][number] = {
+        method: tender.method,
+        amountIdr: tender.amountIdr,
+        reference: tender.reference,
+      };
+      if (tender.verified !== undefined) wire.verified = tender.verified;
+      if (tender.buyerRefLast4 !== undefined) wire.buyerRefLast4 = tender.buyerRefLast4;
+      return wire;
+    }),
+    createdAt: sale.createdAt,
+    voidedAt: sale.voidedAt,
+    voidBusinessDate: sale.voidBusinessDate,
+    voidReason: sale.voidReason,
+    refunds: sale.refunds.map((refund) => ({
+      id: refund.id,
+      clientRefundId: refund.clientRefundId,
+      refundedAt: refund.refundedAt,
+      refundBusinessDate: refund.refundBusinessDate,
+      amountIdr: refund.amountIdr,
+      reason: refund.reason,
+      lines: refund.lines.map((line) => ({ itemId: line.itemId, quantity: line.quantity })),
+    })),
   };
 }
 

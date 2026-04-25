@@ -429,6 +429,31 @@ export class SalesService {
   }
 
   /**
+   * Read-side accessor used by `GET /v1/sales/:saleId`. Returns null when the
+   * sale does not exist or belongs to another merchant — the route maps both
+   * to 404 without leaking cross-tenant existence.
+   */
+  async getSale(merchantId: string, saleId: string): Promise<Sale | null> {
+    return this.repository.findSaleById(merchantId, saleId);
+  }
+
+  /**
+   * Read-side accessor used by `GET /v1/sales?outletId=&businessDate=`. The
+   * acceptance suite uses this to assert "all 50 sales are present
+   * server-side with matching totals" after the offline outbox drains, and
+   * EOD breakdown rollups consume the same shape via `SalesReader`. Returns
+   * an empty array when the bucket is empty or the outlet belongs to another
+   * merchant — the repository scopes by `merchantId` already.
+   */
+  async listSalesByBusinessDate(
+    merchantId: string,
+    outletId: string,
+    businessDate: string,
+  ): Promise<readonly Sale[]> {
+    return this.repository.listSalesByBusinessDate(merchantId, outletId, businessDate);
+  }
+
+  /**
    * Resolve per-itemId moved totals for an entire sale (used by void). Mirrors
    * the explosion done at submit time: BOM lines fan out into components,
    * non-BOM stock-tracked lines move themselves, untracked finished goods do

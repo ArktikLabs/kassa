@@ -331,3 +331,66 @@ export const saleRefundResponse = z
   })
   .strict();
 export type SaleRefundResponse = z.infer<typeof saleRefundResponse>;
+
+/*
+ * `GET /v1/sales/:saleId` and `GET /v1/sales?outletId=&businessDate=` —
+ * KASA-122 PR3. The acceptance suite uses these to assert "all 50 sales are
+ * present server-side with matching totals" after the offline outbox drains.
+ * The response shape is the full Sale row — including void/refund state —
+ * so the suite can also assert lifecycle correctness without re-fetching.
+ */
+export const saleRefundRecord = z
+  .object({
+    id: uuidV7Typed,
+    clientRefundId: uuidV7Typed,
+    refundedAt: isoTimestamp,
+    refundBusinessDate: businessDate,
+    amountIdr: rupiahAmount,
+    reason: z.string().nullable(),
+    lines: z.array(saleRefundLine),
+  })
+  .strict();
+export type SaleRefundRecord = z.infer<typeof saleRefundRecord>;
+
+export const saleResponse = z
+  .object({
+    saleId: uuidV7Typed,
+    name: z.string().min(1),
+    localSaleId: uuidV7Typed,
+    outletId: uuidV7Typed,
+    clerkId: z.string().min(1),
+    businessDate,
+    subtotalIdr: rupiahAmount,
+    discountIdr: rupiahAmount,
+    totalIdr: rupiahAmount,
+    items: z.array(saleSubmitItem),
+    tenders: z.array(saleSubmitTender),
+    createdAt: isoTimestamp,
+    voidedAt: isoTimestamp.nullable(),
+    voidBusinessDate: businessDate.nullable(),
+    voidReason: z.string().nullable(),
+    refunds: z.array(saleRefundRecord),
+  })
+  .strict();
+export type SaleResponse = z.infer<typeof saleResponse>;
+
+export const saleListQuery = z
+  .object({
+    outletId: uuidV7Typed,
+    businessDate,
+  })
+  .strict();
+export type SaleListQuery = z.infer<typeof saleListQuery>;
+
+/**
+ * No pagination on the list endpoint: the bucket key (merchant, outlet,
+ * businessDate) caps cardinality at one outlet's daily sale volume — the
+ * acceptance suite tops out at 50 sales/day/outlet. If real-world merchants
+ * later breach that, add `pageToken` here without breaking the wire.
+ */
+export const saleListResponse = z
+  .object({
+    records: z.array(saleResponse),
+  })
+  .strict();
+export type SaleListResponse = z.infer<typeof saleListResponse>;
