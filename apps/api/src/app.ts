@@ -206,6 +206,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     },
     stock: {
       repository: salesRepository,
+      service: salesService,
       resolveMerchantId: resolveRequestMerchantId,
     },
     eod: { service: eod.service, resolveMerchantId: resolveEodMerchantId },

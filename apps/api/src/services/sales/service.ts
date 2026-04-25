@@ -1,5 +1,6 @@
+import { InvalidPageTokenError, decodePageToken } from "../../lib/page-token.js";
 import { uuidv7 } from "../../lib/uuid.js";
-import type { SalesRepository } from "./repository.js";
+import type { ListLedgerResult, SalesRepository } from "./repository.js";
 import type {
   Item,
   RefundSaleInput,
@@ -41,13 +42,25 @@ export class SalesError extends Error {
       | "refund_line_not_in_sale"
       | "refund_quantity_exceeds_remaining"
       | "refund_amount_exceeds_remaining"
-      | "refund_idempotency_conflict",
+      | "refund_idempotency_conflict"
+      | "invalid_page_token",
     message: string,
     readonly details?: unknown,
   ) {
     super(message);
     this.name = "SalesError";
   }
+}
+
+export const DEFAULT_LEDGER_PAGE_LIMIT = 100;
+export const MAX_LEDGER_PAGE_LIMIT = 500;
+
+export interface ListLedgerCommand {
+  merchantId: string;
+  outletId: string;
+  updatedAfter?: Date | undefined;
+  pageToken?: string | undefined;
+  limit?: number | undefined;
 }
 
 export interface SubmitSaleOk {
@@ -451,6 +464,45 @@ export class SalesService {
     businessDate: string,
   ): Promise<readonly Sale[]> {
     return this.repository.listSalesByBusinessDate(merchantId, outletId, businessDate);
+  }
+
+  /**
+   * Read-side accessor used by `GET /v1/stock/ledger`. Delta-pulls the
+   * append-only stock ledger for one (merchant, outlet) bucket so the
+   * acceptance suite can assert "correct BOM deductions in Stock Ledger"
+   * after the offline outbox drains. Pagination uses the shared opaque
+   * page-token shape; an outlet that belongs to another merchant is
+   * indistinguishable from an empty bucket.
+   */
+  async listLedger(cmd: ListLedgerCommand): Promise<ListLedgerResult> {
+    const rawLimit = cmd.limit ?? DEFAULT_LEDGER_PAGE_LIMIT;
+    const limit = Math.max(1, Math.min(MAX_LEDGER_PAGE_LIMIT, rawLimit));
+
+    let updatedAfter: Date | undefined;
+    let pageToken: string | null = null;
+    if (cmd.pageToken) {
+      // Eagerly validate the token shape so a tampered token surfaces as a
+      // 400 from the route, not a 500 buried in the repository's filter.
+      try {
+        decodePageToken(cmd.pageToken);
+        pageToken = cmd.pageToken;
+      } catch (err) {
+        if (err instanceof InvalidPageTokenError) {
+          throw new SalesError("invalid_page_token", err.message);
+        }
+        throw err;
+      }
+    } else if (cmd.updatedAfter) {
+      updatedAfter = cmd.updatedAfter;
+    }
+
+    return this.repository.listLedger({
+      merchantId: cmd.merchantId,
+      outletId: cmd.outletId,
+      ...(updatedAfter !== undefined ? { updatedAfter } : {}),
+      pageToken,
+      limit,
+    });
   }
 
   /**

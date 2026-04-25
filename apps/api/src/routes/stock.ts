@@ -1,16 +1,28 @@
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { z } from "zod";
 import {
+  stockLedgerPullQuery,
   stockPullResponse,
+  type StockLedgerEntry as WireStockLedgerEntry,
+  type StockLedgerPullQuery,
+  type StockLedgerPullResponse,
   type StockPullResponse,
   type StockSnapshotRecord,
 } from "@kassa/schemas";
-import { notImplemented, sendError } from "../lib/errors.js";
+import { sendError } from "../lib/errors.js";
 import { validate } from "../lib/validate.js";
+import { SalesError, type SalesService } from "../services/sales/index.js";
 import type { SalesRepository } from "../services/sales/index.js";
 
 export interface StockRouteDeps {
   repository: SalesRepository;
+  /**
+   * Sales service exposes `listLedger` for the read-side stock ledger
+   * endpoint. The route shares the SalesService that owns ledger writes so
+   * a single backing in-memory store serves both writes (sale submit /
+   * void / refund) and reads.
+   */
+  service: SalesService;
   resolveMerchantId: (req: FastifyRequest) => string | null;
   now?: () => Date;
 }
@@ -57,6 +69,55 @@ export function stockRoutes(deps: StockRouteDeps) {
         return reply;
       },
     );
-    app.get("/ledger", async (req, reply) => notImplemented(req, reply));
+
+    // GET /v1/stock/ledger?outletId=&updatedAfter=&pageToken=&limit=
+    // Append-only ledger projection — the acceptance suite (KASA-68) reads
+    // this after the offline outbox drains to assert correct BOM deductions.
+    app.get<{ Querystring: StockLedgerPullQuery }>(
+      "/ledger",
+      { preHandler: validate({ query: stockLedgerPullQuery }) },
+      async (req, reply) => {
+        const merchantId = deps.resolveMerchantId(req);
+        if (!merchantId) {
+          sendError(reply, 401, "unauthorized", "Merchant context is required.");
+          return reply;
+        }
+        try {
+          const result = await deps.service.listLedger({
+            merchantId,
+            outletId: req.query.outletId,
+            ...(req.query.updatedAfter !== undefined
+              ? { updatedAfter: new Date(req.query.updatedAfter) }
+              : {}),
+            ...(req.query.pageToken !== undefined ? { pageToken: req.query.pageToken } : {}),
+            ...(req.query.limit !== undefined ? { limit: req.query.limit } : {}),
+          });
+          const body: StockLedgerPullResponse = {
+            records: result.records.map(
+              (entry): WireStockLedgerEntry => ({
+                id: entry.id,
+                outletId: entry.outletId,
+                itemId: entry.itemId,
+                delta: entry.delta,
+                reason: entry.reason,
+                refType: entry.refType,
+                refId: entry.refId,
+                occurredAt: entry.occurredAt,
+              }),
+            ),
+            nextCursor: result.nextCursor ? result.nextCursor.toISOString() : null,
+            nextPageToken: result.nextPageToken,
+          };
+          reply.code(200).send(body);
+          return reply;
+        } catch (err) {
+          if (err instanceof SalesError && err.code === "invalid_page_token") {
+            sendError(reply, 400, "invalid_page_token", err.message);
+            return reply;
+          }
+          throw err;
+        }
+      },
+    );
   };
 }

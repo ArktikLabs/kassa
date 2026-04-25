@@ -20,6 +20,22 @@ export interface LedgerAppendInput {
   occurredAt: string;
 }
 
+export interface ListLedgerInput {
+  merchantId: string;
+  outletId: string;
+  updatedAfter?: Date;
+  pageToken?: string | null;
+  limit: number;
+}
+
+export interface ListLedgerResult {
+  records: StockLedgerEntry[];
+  /** Last entry's `occurredAt` when the page is the final window. */
+  nextCursor: Date | null;
+  /** Opaque within-window page key when more rows remain at this cursor. */
+  nextPageToken: string | null;
+}
+
 export interface SalesRepository {
   findItemsByIds(merchantId: string, itemIds: readonly string[]): Promise<Item[]>;
   findBomById(bomId: string): Promise<Bom | null>;
@@ -55,6 +71,15 @@ export interface SalesRepository {
    * without leaking cross-tenant existence.
    */
   findSaleById(merchantId: string, saleId: string): Promise<Sale | null>;
+  /**
+   * Delta-pull the append-only stock ledger for one (merchant, outlet)
+   * bucket. Ordering is `(occurredAt ASC, id ASC)`; pagination uses the
+   * shared opaque page-token shape (`{a: occurredAt, i: id}`). Used by the
+   * acceptance suite to assert post-drain BOM deductions; an outlet that
+   * does not belong to the merchant returns an empty bucket so cross-tenant
+   * existence does not leak.
+   */
+  listLedger(input: ListLedgerInput): Promise<ListLedgerResult>;
   /**
    * Atomically stamp the void on the sale row and append the balancing
    * ledger entries. If the sale is already voided the implementation must
