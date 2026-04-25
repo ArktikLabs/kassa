@@ -38,22 +38,45 @@ describe("api scaffold", () => {
       const body = res.json() as { error: { code: string } };
       expect(body.error.code).toBe("not_found");
     });
+
+    it("surfaces KASSA_API_VERSION when set (deploy-time commit SHA)", async () => {
+      const prev = process.env.KASSA_API_VERSION;
+      process.env.KASSA_API_VERSION = "staging-0123456789ab";
+      try {
+        const scoped = await buildApp();
+        await scoped.ready();
+        try {
+          const res = await scoped.inject({ method: "GET", url: "/health" });
+          expect(res.statusCode).toBe(200);
+          const body = res.json() as { version: string };
+          expect(body.version).toBe("staging-0123456789ab");
+        } finally {
+          await scoped.close();
+        }
+      } finally {
+        if (prev === undefined) {
+          delete process.env.KASSA_API_VERSION;
+        } else {
+          process.env.KASSA_API_VERSION = prev;
+        }
+      }
+    });
   });
 
   describe("placeholder endpoints return 501", () => {
     const placeholders: ReadonlyArray<{ method: "GET" | "POST"; url: string }> = [
       // /v1/auth/enroll and /v1/auth/enrolment-codes are now live; see enrolment.test.ts.
       // /v1/sales/submit and /v1/eod/close are now live; see eod.test.ts.
+      // /v1/catalog/items CRUD is now live; see catalog-items.test.ts.
       { method: "POST", url: "/v1/auth/heartbeat" },
       { method: "POST", url: "/v1/auth/session/login" },
-      { method: "GET", url: "/v1/catalog/items" },
       { method: "GET", url: "/v1/catalog/boms" },
       { method: "GET", url: "/v1/catalog/uoms" },
       { method: "GET", url: "/v1/outlets" },
       { method: "GET", url: "/v1/stock/snapshot" },
       { method: "POST", url: "/v1/sales" },
       { method: "POST", url: "/v1/sales/sync" },
-      { method: "POST", url: "/v1/payments/qris" },
+      // /v1/payments/qris and /v1/payments/qris/:orderId/status are now live; see payments-qris.test.ts.
       { method: "GET", url: "/v1/eod/report" },
     ];
 

@@ -13,6 +13,7 @@ import { createDomainEventBus, type DomainEventBus } from "./lib/events.js";
 import { createInMemoryDedupeStore, type WebhookDedupeStore } from "./lib/webhook-dedupe.js";
 import { EnrolmentService, InMemoryEnrolmentRepository } from "./services/enrolment/index.js";
 import { EodService, InMemoryEodDataPlane } from "./services/eod/index.js";
+import { InMemoryItemsRepository, ItemsService } from "./services/catalog/index.js";
 
 const BOOTSTRAP_MERCHANT_ID = "01890abc-1234-7def-8000-00000000a001";
 
@@ -29,6 +30,10 @@ export interface BuildAppOptions {
   eod?: {
     service: EodService;
     resolveMerchantId?: () => string;
+  };
+  catalog?: {
+    items: ItemsService;
+    staffBootstrapToken?: string;
   };
 }
 
@@ -72,6 +77,10 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   };
   const resolveMerchantId = eod.resolveMerchantId ?? (() => BOOTSTRAP_MERCHANT_ID);
 
+  const catalog = options.catalog ?? {
+    items: new ItemsService({ repository: new InMemoryItemsRepository() }),
+  };
+
   const v1Deps: V1RouteDeps = {
     auth: {
       enrolment: enrolment.service,
@@ -84,6 +93,12 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     },
     sales: { eodService: eod.service, resolveMerchantId },
     eod: { service: eod.service, resolveMerchantId },
+    catalog: {
+      items: catalog.items,
+      ...(catalog.staffBootstrapToken !== undefined
+        ? { staffBootstrapToken: catalog.staffBootstrapToken }
+        : {}),
+    },
   };
 
   await app.register(healthRoutes);
