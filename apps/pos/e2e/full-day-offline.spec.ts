@@ -68,6 +68,11 @@ const UI_SALES_PER_DEVICE = 2;
 // the void/refund block in the test body.
 const SALES_AT_A = TOTAL_SALES / 2;
 
+// Mirrors `uuidV7Regex` in packages/schemas/src/sync.ts. Re-declared here so
+// the seeded `localSaleId` shape can be asserted at construction time —
+// otherwise a regression collapses into a 4-minute drain timeout.
+const UUID_V7_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
 test.describe.configure({ mode: "serial" });
 
 test("KASA-68: full-day offline acceptance gate", async ({ browser, request }) => {
@@ -113,6 +118,9 @@ test("KASA-68: full-day offline acceptance gate", async ({ browser, request }) =
     const submittedA = [...aSalesUi, ...aSalesSeed];
     const submittedB = [...bSalesUi, ...bSalesSeed];
     expect(submittedA.length + submittedB.length).toBe(TOTAL_SALES);
+    for (const s of [...submittedA, ...submittedB]) {
+      expect(s.localSaleId, "seeded localSaleId must match uuidV7").toMatch(UUID_V7_REGEX);
+    }
 
     // Step 5/6: come back online and wait for the outbox to drain.
     await ctxA.setOffline(false);
@@ -149,7 +157,11 @@ test("KASA-68: full-day offline acceptance gate", async ({ browser, request }) =
     // sales so cash variance stays clean for the EOD assertion.
     const qrisSalesA = serverA.filter((s) => s.tenders.some((t) => t.method === "qris_static"));
     const qrisSalesB = serverB.filter((s) => s.tenders.some((t) => t.method === "qris_static"));
-    expect(qrisSalesA.length, "need 2+ QRIS sales at A for voids").toBeGreaterThanOrEqual(2);
+    // Outlet A consumes indices 0..3 below: 2 voids + 2 refunds.
+    expect(
+      qrisSalesA.length,
+      "need 4+ QRIS sales at A for 2 voids + 2 refunds",
+    ).toBeGreaterThanOrEqual(4);
     expect(qrisSalesB.length, "need 1+ QRIS sales at B for void").toBeGreaterThanOrEqual(1);
 
     // 3 voids: 2 at A, 1 at B.
@@ -361,9 +373,14 @@ async function seedOutbox(
       for (let i = 0; i < payload.length; i += 1) {
         const s = payload[i]!;
         // Synthesize a UUIDv7-shaped local id deterministic to (label, i).
-        const idHex = `0190${dev === "A" ? "a" : "b"}000${i.toString(16).padStart(12, "0")}`;
+        // idHex must be 32 chars so the 8-4-4-4-12 slices below all land —
+        // anything shorter silently produces a malformed id that fails the
+        // server-side uuidV7Regex on submit (KASA-68 review feedback).
+        const idHex = `0190${dev === "A" ? "a" : "b"}000${i.toString(16).padStart(24, "0")}`;
         const localSaleId = `${idHex.slice(0, 8)}-${idHex.slice(8, 12)}-7${idHex.slice(13, 16)}-8${idHex.slice(17, 20)}-${idHex.slice(20, 32)}`;
-        const createdAt = new Date(2026, 3, 24, 8, 0, i).toISOString();
+        // Date.UTC keeps the synthesized createdAt anchored to FIXTURE_BUSINESS_DATE
+        // regardless of the runner's local timezone.
+        const createdAt = new Date(Date.UTC(2026, 3, 24, 8, 0, i)).toISOString();
         const tender = s.isCash
           ? { method: "cash", amountIdr: s.totalIdr, reference: null }
           : {
