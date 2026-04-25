@@ -20,6 +20,14 @@ export function roleCanManage(role: StaffRole): boolean {
   return MANAGER_ROLES.includes(role);
 }
 
+/* Owner-only predicate for sensitive actions like the manual
+ * static-QRIS reconciliation match (KASA-64 §static-QRIS, KASA-119).
+ * Manager can read these surfaces but cannot flip a tender to
+ * verified — only the outlet owner can. */
+export function roleIsOwner(role: StaffRole): boolean {
+  return role === "owner";
+}
+
 export type Session = {
   email: string;
   displayName: string;

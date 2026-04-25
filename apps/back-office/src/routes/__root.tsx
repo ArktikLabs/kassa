@@ -1,6 +1,6 @@
 import { Link, Outlet, useRouter } from "@tanstack/react-router";
 import { FormattedMessage } from "react-intl";
-import { clearSession, loadSession } from "../lib/session";
+import { clearSession, loadSession, roleIsOwner } from "../lib/session";
 
 /*
  * Back-office shell layout — DESIGN-SYSTEM §8 back-office laptop
@@ -9,14 +9,17 @@ import { clearSession, loadSession } from "../lib/session";
  * primary CRUD surfaces plus reconciliation.
  */
 
-const NAV = [
+type NavItem = { to: string; labelId: string; ownerOnly?: boolean };
+
+const NAV: readonly NavItem[] = [
   { to: "/outlets", labelId: "nav.outlets" },
   { to: "/catalog", labelId: "nav.catalog" },
   { to: "/catalog/boms", labelId: "nav.boms" },
   { to: "/staff", labelId: "nav.staff" },
   { to: "/devices", labelId: "nav.devices" },
   { to: "/reports/reconciliation", labelId: "nav.reconciliation" },
-] as const;
+  { to: "/admin/reconciliation", labelId: "nav.admin_reconciliation", ownerOnly: true },
+];
 
 export function RootLayout() {
   const session = loadSession();
@@ -52,19 +55,21 @@ export function RootLayout() {
       <div className="flex">
         <aside className="hidden w-56 border-r border-neutral-200 bg-white laptop:block">
           <nav className="flex flex-col gap-1 p-4">
-            {NAV.map((item) => (
-              <Link
-                key={item.to}
-                to={item.to}
-                className="rounded-md px-3 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-100"
-                activeProps={{
-                  className:
-                    "rounded-md px-3 py-2 text-sm font-semibold text-primary-700 bg-primary-50",
-                }}
-              >
-                <FormattedMessage id={item.labelId} />
-              </Link>
-            ))}
+            {NAV.filter((item) => !item.ownerOnly || (session && roleIsOwner(session.role))).map(
+              (item) => (
+                <Link
+                  key={item.to}
+                  to={item.to}
+                  className="rounded-md px-3 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-100"
+                  activeProps={{
+                    className:
+                      "rounded-md px-3 py-2 text-sm font-semibold text-primary-700 bg-primary-50",
+                  }}
+                >
+                  <FormattedMessage id={item.labelId} />
+                </Link>
+              ),
+            )}
           </nav>
         </aside>
         <main className="flex-1 px-6 py-10">
