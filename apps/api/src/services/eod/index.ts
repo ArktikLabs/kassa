@@ -1,14 +1,8 @@
 export { EodError, EodService } from "./service.js";
 export type { CloseInput, EodServiceDeps } from "./service.js";
-export { InMemoryEodDataPlane } from "./memory-repository.js";
-export type {
-  EodDataPlane,
-  EodRepository,
-  SalesReader,
-  SalesWriter,
-  UpsertSaleInput,
-  UpsertSaleOutcome,
-} from "./repository.js";
+export { InMemoryEodRepository } from "./memory-repository.js";
+export type { EodRepository, SalesReader } from "./repository.js";
+export { SalesRepositorySalesReader } from "./sales-reader.js";
 export type {
   EodRecord,
   EodRecordBreakdown,

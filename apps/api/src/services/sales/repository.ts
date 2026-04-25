@@ -39,4 +39,14 @@ export interface SalesRepository {
     ledger: readonly Omit<StockLedgerEntry, "id">[];
     idGenerator: () => string;
   }): Promise<{ sale: Sale; ledger: StockLedgerEntry[] }>;
+  /**
+   * Every sale bucketed to (merchant, outlet, businessDate). Stable ordering
+   * by `createdAt` so EOD breakdown rollups are deterministic. Consumed by
+   * the EOD service via the `SalesReader` port; no other caller today.
+   */
+  listSalesByBusinessDate(
+    merchantId: string,
+    outletId: string,
+    businessDate: string,
+  ): Promise<readonly Sale[]>;
 }

@@ -1,9 +1,5 @@
-import type { EodDataPlane, UpsertSaleInput, UpsertSaleOutcome } from "./repository.js";
-import type { EodRecord, SaleRecord } from "./types.js";
-
-function saleKey(merchantId: string, localSaleId: string): string {
-  return `${merchantId}::${localSaleId}`;
-}
+import type { EodRepository } from "./repository.js";
+import type { EodRecord } from "./types.js";
 
 function eodKey(merchantId: string, outletId: string, businessDate: string): string {
   return `${merchantId}::${outletId}::${businessDate}`;
@@ -11,41 +7,10 @@ function eodKey(merchantId: string, outletId: string, businessDate: string): str
 
 /**
  * Process-local, unsynchronised. Fine for single-instance dev + tests; every
- * production deployment will swap this for the Drizzle-backed plane in
- * KASA-21.
+ * production deployment will swap this for the Drizzle-backed impl in KASA-21.
  */
-export class InMemoryEodDataPlane implements EodDataPlane {
-  private readonly salesByKey = new Map<string, SaleRecord>();
+export class InMemoryEodRepository implements EodRepository {
   private readonly eodsByKey = new Map<string, EodRecord>();
-
-  async upsertSale(input: UpsertSaleInput): Promise<UpsertSaleOutcome> {
-    const key = saleKey(input.record.merchantId, input.record.localSaleId);
-    const existing = this.salesByKey.get(key);
-    if (existing) {
-      return { status: "duplicate", existing };
-    }
-    this.salesByKey.set(key, input.record);
-    return { status: "created", record: input.record };
-  }
-
-  async listForClose(input: {
-    merchantId: string;
-    outletId: string;
-    businessDate: string;
-  }): Promise<readonly SaleRecord[]> {
-    const matches: SaleRecord[] = [];
-    for (const sale of this.salesByKey.values()) {
-      if (
-        sale.merchantId === input.merchantId &&
-        sale.outletId === input.outletId &&
-        sale.businessDate === input.businessDate
-      ) {
-        matches.push(sale);
-      }
-    }
-    // Stable order by createdAt for deterministic breakdown rollups.
-    return matches.sort((a, b) => (a.createdAt < b.createdAt ? -1 : 1));
-  }
 
   async findExisting(input: {
     merchantId: string;
@@ -64,10 +29,5 @@ export class InMemoryEodDataPlane implements EodDataPlane {
     }
     this.eodsByKey.set(key, record);
     return record;
-  }
-
-  // Test helper — not part of the data-plane contract.
-  _seedSale(record: SaleRecord): void {
-    this.salesByKey.set(saleKey(record.merchantId, record.localSaleId), record);
   }
 }

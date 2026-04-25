@@ -1,6 +1,6 @@
 import type { EodMissingSalesDetails } from "@kassa/schemas/eod";
 import { uuidv7 } from "../../lib/uuid.js";
-import type { EodDataPlane, SalesReader, SalesWriter, UpsertSaleOutcome } from "./repository.js";
+import type { EodRepository, SalesReader } from "./repository.js";
 import type { EodRecord, EodRecordBreakdown, SaleRecord, SaleTender } from "./types.js";
 
 /*
@@ -13,12 +13,12 @@ import type { EodRecord, EodRecordBreakdown, SaleRecord, SaleTender } from "./ty
  *     any mismatch surfaces as `eod_sale_mismatch` with the missing list
  *   - variance = counted − expected; non-zero variance requires a reason
  *
- * Money classification: `PendingSale.tenders.method` on the client only
- * knows `qris`; the server-side ledger additionally distinguishes
- * `qris_dynamic` (webhook-verified) from `qris_static` (unverified). The
- * breakdown maps every tender to its bucket directly, so the moment the
- * payments reconciliation worker (KASA-74) starts rewriting qris → qris_dynamic
- * the EOD numbers follow with no code change here.
+ * Sales are owned by `services/sales` (KASA-66). EOD reads them through
+ * the `SalesReader` port, which wraps `SalesRepository.listSalesByBusinessDate`.
+ * The EOD-domain `SaleRecord` widens the wire `qris` enum into
+ * `qris_dynamic` / `qris_static`; when KASA-74 (payments reconciliation)
+ * starts marking sales as webhook-verified, the EOD numbers follow with
+ * no code change here.
  */
 
 export class EodError extends Error {
@@ -33,7 +33,8 @@ export class EodError extends Error {
 }
 
 export interface EodServiceDeps {
-  dataPlane: EodDataPlane;
+  salesReader: SalesReader;
+  eodRepository: EodRepository;
   now?: () => Date;
   generateEodId?: () => string;
 }
@@ -48,26 +49,20 @@ export interface CloseInput {
 }
 
 export class EodService {
-  private readonly dataPlane: EodDataPlane;
+  private readonly salesReader: SalesReader;
+  private readonly eodRepository: EodRepository;
   private readonly now: () => Date;
   private readonly generateEodId: () => string;
 
   constructor(deps: EodServiceDeps) {
-    this.dataPlane = deps.dataPlane;
+    this.salesReader = deps.salesReader;
+    this.eodRepository = deps.eodRepository;
     this.now = deps.now ?? (() => new Date());
     this.generateEodId = deps.generateEodId ?? uuidv7;
   }
 
-  get sales(): SalesReader & SalesWriter {
-    return this.dataPlane;
-  }
-
-  async upsertSale(record: SaleRecord): Promise<UpsertSaleOutcome> {
-    return this.dataPlane.upsertSale({ record });
-  }
-
   async close(input: CloseInput): Promise<EodRecord> {
-    const existing = await this.dataPlane.findExisting({
+    const existing = await this.eodRepository.findExisting({
       merchantId: input.merchantId,
       outletId: input.outletId,
       businessDate: input.businessDate,
@@ -79,7 +74,7 @@ export class EodService {
       );
     }
 
-    const serverSales = await this.dataPlane.listForClose({
+    const serverSales = await this.salesReader.listSalesByBusinessDate({
       merchantId: input.merchantId,
       outletId: input.outletId,
       businessDate: input.businessDate,
@@ -127,7 +122,7 @@ export class EodService {
       clientSaleIds: [...input.clientSaleIds],
     };
 
-    return this.dataPlane.insert(record);
+    return this.eodRepository.insert(record);
   }
 }
 
