@@ -133,9 +133,7 @@ export class SalesService {
 
     // 1. Build exploded component list keyed by itemId, summing across lines.
     const componentTotals = new Map<string, number>();
-    const bomByLine = new Map<number, string | null>();
-    for (let i = 0; i < input.items.length; i += 1) {
-      const line = input.items[i] as SaleLine;
+    for (const line of input.items) {
       const item = saleItemById.get(line.itemId) as Item;
       if (item.bomId) {
         const bom = bomById.get(item.bomId);
@@ -145,7 +143,6 @@ export class SalesService {
             `BOM ${item.bomId} is not registered for item ${item.code}.`,
           );
         }
-        bomByLine.set(i, bom.id);
         for (const component of bom.components) {
           componentTotals.set(
             component.componentItemId,
@@ -154,10 +151,7 @@ export class SalesService {
           );
         }
       } else if (item.isStockTracked) {
-        bomByLine.set(i, null);
         componentTotals.set(item.id, (componentTotals.get(item.id) ?? 0) + line.quantity);
-      } else {
-        bomByLine.set(i, null);
       }
     }
 
@@ -212,30 +206,6 @@ export class SalesService {
     sale.name = this.generateSaleName(sale);
 
     const ledgerInputs: Omit<StockLedgerEntry, "id">[] = [];
-    // For BOM-backed moves, record the bomId against the ledger row for audit.
-    // Because we summed across lines, a component that came from both a BOM
-    // explosion and a direct non-BOM sale (rare, but possible) prefers the
-    // bomId of the first contributor. This is fine for traceability — the
-    // sale/bom pair is also visible on the sales row.
-    const firstBomByComponent = new Map<string, string | null>();
-    for (let i = 0; i < input.items.length; i += 1) {
-      const line = input.items[i] as SaleLine;
-      const bomId = bomByLine.get(i) ?? null;
-      const item = saleItemById.get(line.itemId) as Item;
-      if (item.bomId && bomId) {
-        const bom = bomById.get(bomId);
-        if (!bom) continue;
-        for (const component of bom.components) {
-          if (!firstBomByComponent.has(component.componentItemId)) {
-            firstBomByComponent.set(component.componentItemId, bomId);
-          }
-        }
-      } else if (item.isStockTracked) {
-        if (!firstBomByComponent.has(item.id)) {
-          firstBomByComponent.set(item.id, null);
-        }
-      }
-    }
     for (const [itemId, moved] of componentTotals) {
       ledgerInputs.push({
         outletId: input.outletId,
@@ -247,12 +217,6 @@ export class SalesService {
         occurredAt,
       });
     }
-    // `firstBomByComponent` is kept for potential future enrichment of the
-    // ledger row (e.g. denormalising the BOM version into `ref_type`). The
-    // canonical stock ledger shape (src/db/schema/stock.ts) stores a single
-    // `(ref_type, ref_id)` back-link — the sale id is enough to fetch the BOM
-    // id off the sale_items row.
-    void firstBomByComponent;
 
     const persisted = await this.repository.recordSale({
       sale,

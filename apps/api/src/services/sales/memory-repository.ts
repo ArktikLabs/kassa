@@ -108,6 +108,11 @@ export class InMemorySalesRepository implements SalesRepository {
       // Should not happen: the service checks idempotency before calling. If
       // two concurrent submits race here, whichever lost plays back as the
       // existing sale — consistent with (merchantId, localSaleId) being unique.
+      // TODO(KASA-21): the Postgres impl must translate the (merchant_id,
+      // local_sale_id) unique-violation into a SubmitSaleConflict so the
+      // route returns 409, not 201. Returning empty ledger as 201 here is
+      // unreachable on the single-threaded JS loop but would be wrong on
+      // a real DB.
       const existing = this.sales.get(this.saleIdByLocal.get(key) as string);
       if (existing) {
         return { sale: existing, ledger: [] };
