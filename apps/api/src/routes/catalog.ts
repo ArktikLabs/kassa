@@ -7,13 +7,26 @@ import {
   type ItemListQuery,
   type ItemUpdateRequest,
 } from "@kassa/schemas/catalog";
+import { referencePullQuery, type ReferencePullQuery } from "@kassa/schemas";
 import { notImplemented, sendError } from "../lib/errors.js";
 import { validate } from "../lib/validate.js";
 import { makeMerchantScopedStaffPreHandler } from "../auth/staff-bootstrap.js";
-import { ItemError, type ItemsService, toItemResponse } from "../services/catalog/index.js";
+import {
+  BomError,
+  type BomsService,
+  ItemError,
+  type ItemsService,
+  UomError,
+  type UomsService,
+  toBomResponse,
+  toItemResponse,
+  toUomResponse,
+} from "../services/catalog/index.js";
 
 export interface CatalogRouteDeps {
   items: ItemsService;
+  boms: BomsService;
+  uoms: UomsService;
   /**
    * Bootstrap window only. KASA-25 replaces this with the real staff session
    * preHandler; until then the CRUD write paths require a staff bootstrap
@@ -240,9 +253,70 @@ export function catalogRoutes(deps: CatalogRouteDeps) {
       },
     );
 
-    // Other catalog placeholders remain 501 until their issues land.
-    app.get("/boms", async (req, reply) => notImplemented(req, reply));
-    app.get("/uoms", async (req, reply) => notImplemented(req, reply));
+    // GET /v1/catalog/boms — merchant-scoped delta pull (KASA-122).
+    app.get<{ Querystring: ReferencePullQuery }>(
+      "/boms",
+      { preHandler: [gatedPreHandler, validate({ query: referencePullQuery })] },
+      async (req, reply) => {
+        const principal = requireStaffPrincipal(req, reply);
+        if (!principal) return reply;
+        try {
+          const result = await deps.boms.list({
+            merchantId: principal.merchantId,
+            ...(req.query.updatedAfter !== undefined
+              ? { updatedAfter: new Date(req.query.updatedAfter) }
+              : {}),
+            ...(req.query.pageToken !== undefined ? { pageToken: req.query.pageToken } : {}),
+            ...(req.query.limit !== undefined ? { limit: req.query.limit } : {}),
+          });
+          reply.code(200).send({
+            records: result.records.map(toBomResponse),
+            nextCursor: result.nextCursor ? result.nextCursor.toISOString() : null,
+            nextPageToken: result.nextPageToken,
+          });
+          return reply;
+        } catch (err) {
+          if (err instanceof BomError && err.code === "invalid_page_token") {
+            sendError(reply, 400, "invalid_page_token", err.message);
+            return reply;
+          }
+          throw err;
+        }
+      },
+    );
+
+    // GET /v1/catalog/uoms — merchant-scoped delta pull (KASA-122).
+    app.get<{ Querystring: ReferencePullQuery }>(
+      "/uoms",
+      { preHandler: [gatedPreHandler, validate({ query: referencePullQuery })] },
+      async (req, reply) => {
+        const principal = requireStaffPrincipal(req, reply);
+        if (!principal) return reply;
+        try {
+          const result = await deps.uoms.list({
+            merchantId: principal.merchantId,
+            ...(req.query.updatedAfter !== undefined
+              ? { updatedAfter: new Date(req.query.updatedAfter) }
+              : {}),
+            ...(req.query.pageToken !== undefined ? { pageToken: req.query.pageToken } : {}),
+            ...(req.query.limit !== undefined ? { limit: req.query.limit } : {}),
+          });
+          reply.code(200).send({
+            records: result.records.map(toUomResponse),
+            nextCursor: result.nextCursor ? result.nextCursor.toISOString() : null,
+            nextPageToken: result.nextPageToken,
+          });
+          return reply;
+        } catch (err) {
+          if (err instanceof UomError && err.code === "invalid_page_token") {
+            sendError(reply, 400, "invalid_page_token", err.message);
+            return reply;
+          }
+          throw err;
+        }
+      },
+    );
+
     app.get("/modifiers", async (req, reply) => notImplemented(req, reply));
   };
 }
