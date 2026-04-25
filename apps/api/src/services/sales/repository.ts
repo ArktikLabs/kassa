@@ -1,4 +1,4 @@
-import type { Bom, Item, Outlet, Sale, StockLedgerEntry } from "./types.js";
+import type { Bom, Item, Outlet, Sale, SaleRefund, StockLedgerEntry } from "./types.js";
 
 /*
  * Storage contract. Every method is async so a Postgres implementation (KASA-21)
@@ -49,4 +49,48 @@ export interface SalesRepository {
     outletId: string,
     businessDate: string,
   ): Promise<readonly Sale[]>;
+  /**
+   * Lookup by server saleId. Returns null if the sale does not exist or
+   * belongs to a different merchant — the route handler maps that to 404
+   * without leaking cross-tenant existence.
+   */
+  findSaleById(merchantId: string, saleId: string): Promise<Sale | null>;
+  /**
+   * Atomically stamp the void on the sale row and append the balancing
+   * ledger entries. If the sale is already voided the implementation must
+   * return `{ kind: "already_voided", sale }` so the route can answer 200
+   * idempotently — never re-write the ledger.
+   */
+  voidSale(input: {
+    merchantId: string;
+    saleId: string;
+    voidedAt: string;
+    voidBusinessDate: string;
+    reason: string | null;
+    ledger: readonly Omit<StockLedgerEntry, "id">[];
+    idGenerator: () => string;
+  }): Promise<
+    { kind: "ok"; sale: Sale; ledger: StockLedgerEntry[] } | { kind: "already_voided"; sale: Sale }
+  >;
+  /**
+   * Atomically append the refund row + balancing ledger writes. If
+   * `clientRefundId` is already present on the sale the implementation must
+   * return `{ kind: "already_refunded", sale, refund }` so the route can
+   * answer 200 idempotently.
+   */
+  recordRefund(input: {
+    merchantId: string;
+    saleId: string;
+    clientRefundId: string;
+    refundedAt: string;
+    refundBusinessDate: string;
+    amountIdr: number;
+    reason: string | null;
+    lines: readonly { itemId: string; quantity: number }[];
+    ledger: readonly Omit<StockLedgerEntry, "id">[];
+    idGenerator: () => string;
+  }): Promise<
+    | { kind: "ok"; sale: Sale; refund: SaleRefund; ledger: StockLedgerEntry[] }
+    | { kind: "already_refunded"; sale: Sale; refund: SaleRefund }
+  >;
 }

@@ -2,12 +2,16 @@ import { uuidv7 } from "../../lib/uuid.js";
 import type { SalesRepository } from "./repository.js";
 import type {
   Item,
+  RefundSaleInput,
+  RefundSaleResult,
   Sale,
   SaleLine,
   SaleTender,
   StockLedgerEntry,
   SubmitSaleInput,
   SubmitSaleResult,
+  VoidSaleInput,
+  VoidSaleResult,
 } from "./types.js";
 
 /*
@@ -30,7 +34,14 @@ export class SalesError extends Error {
       | "item_inactive"
       | "bom_not_found"
       | "insufficient_stock"
-      | "idempotency_conflict",
+      | "idempotency_conflict"
+      | "sale_not_found"
+      | "sale_voided"
+      | "sale_has_refunds"
+      | "refund_line_not_in_sale"
+      | "refund_quantity_exceeds_remaining"
+      | "refund_amount_exceeds_remaining"
+      | "refund_idempotency_conflict",
     message: string,
     readonly details?: unknown,
   ) {
@@ -187,6 +198,13 @@ export class SalesService {
     // 3. Build the sale row + ledger entries. One entry per moved item,
     // summed across cart lines so a two-cup Kopi Susu order writes a single
     // `-30 beans` row rather than two `-15 beans` rows.
+    //
+    // `submit` stamps `occurredAt` from `this.now()` because the server is
+    // authoritative for sale write time. `void` / `refund` deliberately use
+    // the client-supplied `voidedAt` / `refundedAt` instead — those endpoints
+    // are the offline-first lifecycle hooks where the merchant's POS clock is
+    // the source of truth, so a sale voided at 09:00 stays at 09:00 even if
+    // it drains hours later.
     const saleId = this.generateId();
     const occurredAt = this.now().toISOString();
     const sale: Sale = {
@@ -203,6 +221,10 @@ export class SalesService {
       items: input.items.map((line) => ({ ...line })),
       tenders: input.tenders.map(normalizeTender),
       createdAt: input.createdAt,
+      voidedAt: null,
+      voidBusinessDate: null,
+      voidReason: null,
+      refunds: [],
     };
     sale.name = this.generateSaleName(sale);
 
@@ -229,6 +251,250 @@ export class SalesService {
       created: true,
       result: { sale: persisted.sale, ledger: persisted.ledger },
     };
+  }
+
+  /**
+   * Cancel an entire sale. Writes balancing positive ledger rows mirroring
+   * the original sale's negative deltas (`reason="sale_void"`). Idempotent on
+   * `saleId` — replaying after a successful void returns the originally
+   * stamped `voidedAt` with empty ledger.
+   */
+  async void(input: VoidSaleInput): Promise<{ created: boolean; result: VoidSaleResult }> {
+    const sale = await this.repository.findSaleById(input.merchantId, input.saleId);
+    if (!sale) {
+      throw new SalesError("sale_not_found", `Sale ${input.saleId} not found.`);
+    }
+    if (sale.voidedAt) {
+      // Idempotent — surface the original void without rewriting ledger.
+      return { created: false, result: { sale, ledger: [] } };
+    }
+    if (sale.refunds.length > 0) {
+      throw new SalesError(
+        "sale_has_refunds",
+        "Cannot void a sale that already has booked refunds.",
+        {
+          saleId: sale.id,
+          refundCount: sale.refunds.length,
+        },
+      );
+    }
+
+    // Mirror the original sale's stock movements with positive deltas. We
+    // rebuild the moved-item list from `sale.items` × server-resolved BOMs so
+    // the void is internally consistent even if the client's view of the BOM
+    // version drifted between submit and void.
+    const componentTotals = await this.explodeSaleComponents(sale);
+
+    const ledgerInputs: Omit<StockLedgerEntry, "id">[] = [];
+    for (const [itemId, moved] of componentTotals) {
+      ledgerInputs.push({
+        outletId: sale.outletId,
+        itemId,
+        delta: moved,
+        reason: "sale_void",
+        refType: "sale",
+        refId: sale.id,
+        occurredAt: input.voidedAt,
+      });
+    }
+
+    const persisted = await this.repository.voidSale({
+      merchantId: input.merchantId,
+      saleId: input.saleId,
+      voidedAt: input.voidedAt,
+      voidBusinessDate: input.voidBusinessDate,
+      reason: input.reason,
+      ledger: ledgerInputs,
+      idGenerator: this.generateId,
+    });
+    if (persisted.kind === "already_voided") {
+      return { created: false, result: { sale: persisted.sale, ledger: [] } };
+    }
+    return { created: true, result: { sale: persisted.sale, ledger: persisted.ledger } };
+  }
+
+  /**
+   * Book a (full or partial) refund. Writes positive ledger rows for each
+   * refunded line (`reason="refund"`). Idempotent on `clientRefundId` — a
+   * replay returns the originally booked refund row with empty ledger.
+   */
+  async refund(input: RefundSaleInput): Promise<{ created: boolean; result: RefundSaleResult }> {
+    const sale = await this.repository.findSaleById(input.merchantId, input.saleId);
+    if (!sale) {
+      throw new SalesError("sale_not_found", `Sale ${input.saleId} not found.`);
+    }
+    if (sale.voidedAt) {
+      throw new SalesError("sale_voided", "Cannot refund a voided sale.", {
+        saleId: sale.id,
+        voidedAt: sale.voidedAt,
+      });
+    }
+
+    // Idempotency — replay returns the originally booked refund.
+    const replay = sale.refunds.find((row) => row.clientRefundId === input.clientRefundId);
+    if (replay) {
+      // Detect a client-side state drift: same clientRefundId, different shape.
+      // Surface as 409 so the operator notices, rather than silently 200ing.
+      if (replay.amountIdr !== input.amountIdr || !linesAgree(replay.lines, input.lines)) {
+        throw new SalesError(
+          "refund_idempotency_conflict",
+          "A refund with this clientRefundId already exists with different lines or amount.",
+          { saleId: sale.id, clientRefundId: input.clientRefundId },
+        );
+      }
+      return { created: false, result: { sale, refund: replay, ledger: [] } };
+    }
+
+    // Validate refund line shape against original sale lines and remaining
+    // refundable quantities. Coalesce duplicate `itemId` entries first: the
+    // ledger explosion sums them anyway, so the cap must check the aggregate
+    // — otherwise `[{X,1},{X,1}]` against a 1-cup-remaining sale slips past
+    // the per-line check and writes 2× components back into stock.
+    const remainingByItem = remainingRefundableByItem(sale);
+    const requestedByItem = new Map<string, number>();
+    for (const line of input.lines) {
+      requestedByItem.set(line.itemId, (requestedByItem.get(line.itemId) ?? 0) + line.quantity);
+    }
+    for (const [itemId, requested] of requestedByItem) {
+      const remaining = remainingByItem.get(itemId);
+      if (remaining === undefined) {
+        throw new SalesError(
+          "refund_line_not_in_sale",
+          `Refund line ${itemId} is not part of sale ${sale.id}.`,
+          { saleId: sale.id, itemId },
+        );
+      }
+      if (requested > remaining) {
+        throw new SalesError(
+          "refund_quantity_exceeds_remaining",
+          `Refund quantity for ${itemId} exceeds remaining (${remaining}).`,
+          { saleId: sale.id, itemId, requested, remaining },
+        );
+      }
+    }
+
+    const refundedAmountToDate = sale.refunds.reduce((sum, r) => sum + r.amountIdr, 0);
+    if (refundedAmountToDate + input.amountIdr > sale.totalIdr) {
+      throw new SalesError(
+        "refund_amount_exceeds_remaining",
+        "Refund amount exceeds the remaining refundable total.",
+        {
+          saleId: sale.id,
+          requested: input.amountIdr,
+          remaining: sale.totalIdr - refundedAmountToDate,
+        },
+      );
+    }
+
+    // Build balancing ledger rows: one per refunded line, exploded against
+    // BOMs the same way the sale was. This yields per-component positive
+    // deltas that mirror the original sale's negative entries.
+    const componentTotals = await this.explodeRefundLines(sale, input.lines);
+
+    const ledgerInputs: Omit<StockLedgerEntry, "id">[] = [];
+    for (const [itemId, moved] of componentTotals) {
+      ledgerInputs.push({
+        outletId: sale.outletId,
+        itemId,
+        delta: moved,
+        reason: "refund",
+        refType: "sale",
+        refId: sale.id,
+        occurredAt: input.refundedAt,
+      });
+    }
+
+    const persisted = await this.repository.recordRefund({
+      merchantId: input.merchantId,
+      saleId: input.saleId,
+      clientRefundId: input.clientRefundId,
+      refundedAt: input.refundedAt,
+      refundBusinessDate: input.refundBusinessDate,
+      amountIdr: input.amountIdr,
+      reason: input.reason,
+      lines: input.lines,
+      ledger: ledgerInputs,
+      idGenerator: this.generateId,
+    });
+    if (persisted.kind === "already_refunded") {
+      return {
+        created: false,
+        result: { sale: persisted.sale, refund: persisted.refund, ledger: [] },
+      };
+    }
+    return {
+      created: true,
+      result: { sale: persisted.sale, refund: persisted.refund, ledger: persisted.ledger },
+    };
+  }
+
+  /**
+   * Resolve per-itemId moved totals for an entire sale (used by void). Mirrors
+   * the explosion done at submit time: BOM lines fan out into components,
+   * non-BOM stock-tracked lines move themselves, untracked finished goods do
+   * not move.
+   *
+   * Caveat: BOMs are resolved by the *current* `item.bomId` at void/refund
+   * time, not snapshotted at submit. If a server-side BOM edit lands between
+   * submit and void/refund, the balancing ledger writes use the new
+   * components — so void/refund won't perfectly mirror the original sale's
+   * negative entries even though `(refType, refId) = ("sale", saleId)` keys
+   * them together. Acceptable for v0 (BOMs don't change mid-day) but should
+   * snapshot components on `Sale` once the schema is in Postgres.
+   */
+  private async explodeSaleComponents(sale: Sale): Promise<Map<string, number>> {
+    return this.explodeLines(
+      sale.merchantId,
+      sale.items.map((line) => ({ itemId: line.itemId, quantity: line.quantity })),
+    );
+  }
+
+  private async explodeRefundLines(
+    sale: Sale,
+    lines: readonly { itemId: string; quantity: number }[],
+  ): Promise<Map<string, number>> {
+    return this.explodeLines(sale.merchantId, lines);
+  }
+
+  private async explodeLines(
+    merchantId: string,
+    lines: readonly { itemId: string; quantity: number }[],
+  ): Promise<Map<string, number>> {
+    const items = await this.repository.findItemsByIds(
+      merchantId,
+      lines.map((line) => line.itemId),
+    );
+    const itemById = new Map(items.map((row) => [row.id, row]));
+
+    const bomIds = new Set<string>();
+    for (const line of lines) {
+      const item = itemById.get(line.itemId);
+      if (item?.bomId) bomIds.add(item.bomId);
+    }
+    const bomById = new Map(
+      await Promise.all(
+        [...bomIds].map(async (id) => [id, await this.repository.findBomById(id)] as const),
+      ),
+    );
+
+    const totals = new Map<string, number>();
+    for (const line of lines) {
+      const item = itemById.get(line.itemId);
+      if (!item) continue;
+      if (item.bomId) {
+        const bom = bomById.get(item.bomId);
+        if (!bom) continue;
+        for (const component of bom.components) {
+          totals.set(
+            component.componentItemId,
+            (totals.get(component.componentItemId) ?? 0) + component.quantity * line.quantity,
+          );
+        }
+      } else if (item.isStockTracked) {
+        totals.set(item.id, (totals.get(item.id) ?? 0) + line.quantity);
+      }
+    }
+    return totals;
   }
 }
 
@@ -265,4 +531,39 @@ function salesAgreeOnShape(existing: Sale, input: SubmitSaleInput): boolean {
     if (a.lineTotalIdr !== b.lineTotalIdr) return false;
   }
   return true;
+}
+
+function linesAgree(
+  a: readonly { itemId: string; quantity: number }[],
+  b: readonly { itemId: string; quantity: number }[],
+): boolean {
+  if (a.length !== b.length) return false;
+  const sortKey = (line: { itemId: string; quantity: number }) => `${line.itemId}|${line.quantity}`;
+  const sortedA = [...a].map(sortKey).sort();
+  const sortedB = [...b].map(sortKey).sort();
+  for (let i = 0; i < sortedA.length; i += 1) {
+    if (sortedA[i] !== sortedB[i]) return false;
+  }
+  return true;
+}
+
+/**
+ * Per-itemId remaining refundable quantity = original sale-line quantity
+ * minus the sum of already-refunded quantity for that itemId. The map only
+ * contains itemIds that appeared in `sale.items`.
+ */
+function remainingRefundableByItem(sale: Sale): Map<string, number> {
+  const remaining = new Map<string, number>();
+  for (const line of sale.items) {
+    remaining.set(line.itemId, (remaining.get(line.itemId) ?? 0) + line.quantity);
+  }
+  for (const refund of sale.refunds) {
+    for (const line of refund.lines) {
+      const current = remaining.get(line.itemId);
+      if (current !== undefined) {
+        remaining.set(line.itemId, current - line.quantity);
+      }
+    }
+  }
+  return remaining;
 }

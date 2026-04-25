@@ -257,3 +257,77 @@ export const saleSubmitResponse = z
   })
   .strict();
 export type SaleSubmitResponse = z.infer<typeof saleSubmitResponse>;
+
+/*
+ * `POST /v1/sales/:saleId/void` — KASA-122 PR2. Cancels an entire sale:
+ * the server writes per-component balancing ledger rows with `reason="sale_void"`
+ * and stamps `voidedAt` on the sale row so EOD variance owns the cancellation
+ * on `voidBusinessDate`. Idempotent on `saleId` — a second void returns 200
+ * with the originally recorded `voidedAt`/empty ledger.
+ */
+const voidReason = z.string().min(1).max(256).optional();
+
+export const saleVoidRequest = z
+  .object({
+    voidedAt: isoTimestamp,
+    voidBusinessDate: businessDate,
+    reason: voidReason,
+  })
+  .strict();
+export type SaleVoidRequest = z.infer<typeof saleVoidRequest>;
+
+export const saleVoidResponse = z
+  .object({
+    saleId: uuidV7Typed,
+    voidedAt: isoTimestamp,
+    voidBusinessDate: businessDate,
+    reason: z.string().nullable(),
+    /**
+     * Balancing ledger writes (positive deltas mirroring the original sale's
+     * negative entries). Empty on idempotent replay since the rows were
+     * written by the first void.
+     */
+    ledger: z.array(stockLedgerEntry),
+  })
+  .strict();
+export type SaleVoidResponse = z.infer<typeof saleVoidResponse>;
+
+/*
+ * `POST /v1/sales/:saleId/refund` — KASA-122 PR2. Books a refund (full or
+ * partial). The client supplies `clientRefundId` (uuidv7) for idempotency;
+ * a replay returns the original refund body with empty ledger. Each refunded
+ * line writes a balancing positive ledger row with `reason="refund"`.
+ */
+export const saleRefundLine = z
+  .object({
+    itemId: uuidV7Typed,
+    quantity: z.number().positive(),
+  })
+  .strict();
+export type SaleRefundLine = z.infer<typeof saleRefundLine>;
+
+export const saleRefundRequest = z
+  .object({
+    clientRefundId: uuidV7Typed,
+    refundedAt: isoTimestamp,
+    refundBusinessDate: businessDate,
+    amountIdr: rupiahAmount,
+    lines: z.array(saleRefundLine).min(1),
+    reason: voidReason,
+  })
+  .strict();
+export type SaleRefundRequest = z.infer<typeof saleRefundRequest>;
+
+export const saleRefundResponse = z
+  .object({
+    saleId: uuidV7Typed,
+    refundId: uuidV7Typed,
+    clientRefundId: uuidV7Typed,
+    refundedAt: isoTimestamp,
+    refundBusinessDate: businessDate,
+    amountIdr: rupiahAmount,
+    reason: z.string().nullable(),
+    ledger: z.array(stockLedgerEntry),
+  })
+  .strict();
+export type SaleRefundResponse = z.infer<typeof saleRefundResponse>;

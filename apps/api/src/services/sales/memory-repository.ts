@@ -1,5 +1,5 @@
 import type { LedgerAppendInput, SalesRepository } from "./repository.js";
-import type { Bom, Item, Outlet, Sale, StockLedgerEntry } from "./types.js";
+import type { Bom, Item, Outlet, Sale, SaleRefund, StockLedgerEntry } from "./types.js";
 
 export class InMemorySalesRepository implements SalesRepository {
   private readonly items = new Map<string, Item>();
@@ -136,8 +136,15 @@ export class InMemorySalesRepository implements SalesRepository {
         return { sale: existing, ledger: [] };
       }
     }
-    this.sales.set(input.sale.id, input.sale);
-    this.saleIdByLocal.set(key, input.sale.id);
+    const stored: Sale = {
+      ...input.sale,
+      voidedAt: input.sale.voidedAt ?? null,
+      voidBusinessDate: input.sale.voidBusinessDate ?? null,
+      voidReason: input.sale.voidReason ?? null,
+      refunds: input.sale.refunds ?? [],
+    };
+    this.sales.set(stored.id, stored);
+    this.saleIdByLocal.set(key, stored.id);
     const written: StockLedgerEntry[] = input.ledger.map((entry) => ({
       id: input.idGenerator(),
       outletId: entry.outletId,
@@ -149,6 +156,103 @@ export class InMemorySalesRepository implements SalesRepository {
       occurredAt: entry.occurredAt,
     }));
     for (const row of written) this.ledger.push(row);
-    return { sale: input.sale, ledger: written };
+    return { sale: stored, ledger: written };
+  }
+
+  async findSaleById(merchantId: string, saleId: string): Promise<Sale | null> {
+    const sale = this.sales.get(saleId);
+    if (!sale || sale.merchantId !== merchantId) return null;
+    return sale;
+  }
+
+  async voidSale(input: {
+    merchantId: string;
+    saleId: string;
+    voidedAt: string;
+    voidBusinessDate: string;
+    reason: string | null;
+    ledger: readonly Omit<StockLedgerEntry, "id">[];
+    idGenerator: () => string;
+  }): Promise<
+    { kind: "ok"; sale: Sale; ledger: StockLedgerEntry[] } | { kind: "already_voided"; sale: Sale }
+  > {
+    const sale = this.sales.get(input.saleId);
+    if (!sale || sale.merchantId !== input.merchantId) {
+      // Service guards before this; defensive — should not happen.
+      throw new Error(`voidSale: sale ${input.saleId} not visible to merchant.`);
+    }
+    if (sale.voidedAt) {
+      return { kind: "already_voided", sale };
+    }
+    const updated: Sale = {
+      ...sale,
+      voidedAt: input.voidedAt,
+      voidBusinessDate: input.voidBusinessDate,
+      voidReason: input.reason,
+    };
+    this.sales.set(sale.id, updated);
+    const written: StockLedgerEntry[] = input.ledger.map((entry) => ({
+      id: input.idGenerator(),
+      outletId: entry.outletId,
+      itemId: entry.itemId,
+      delta: entry.delta,
+      reason: entry.reason,
+      refType: entry.refType,
+      refId: entry.refId,
+      occurredAt: entry.occurredAt,
+    }));
+    for (const row of written) this.ledger.push(row);
+    return { kind: "ok", sale: updated, ledger: written };
+  }
+
+  async recordRefund(input: {
+    merchantId: string;
+    saleId: string;
+    clientRefundId: string;
+    refundedAt: string;
+    refundBusinessDate: string;
+    amountIdr: number;
+    reason: string | null;
+    lines: readonly { itemId: string; quantity: number }[];
+    ledger: readonly Omit<StockLedgerEntry, "id">[];
+    idGenerator: () => string;
+  }): Promise<
+    | { kind: "ok"; sale: Sale; refund: SaleRefund; ledger: StockLedgerEntry[] }
+    | { kind: "already_refunded"; sale: Sale; refund: SaleRefund }
+  > {
+    const sale = this.sales.get(input.saleId);
+    if (!sale || sale.merchantId !== input.merchantId) {
+      throw new Error(`recordRefund: sale ${input.saleId} not visible to merchant.`);
+    }
+    const existing = sale.refunds.find((row) => row.clientRefundId === input.clientRefundId);
+    if (existing) {
+      return { kind: "already_refunded", sale, refund: existing };
+    }
+    const refund: SaleRefund = {
+      id: input.idGenerator(),
+      clientRefundId: input.clientRefundId,
+      refundedAt: input.refundedAt,
+      refundBusinessDate: input.refundBusinessDate,
+      amountIdr: input.amountIdr,
+      reason: input.reason,
+      lines: input.lines.map((line) => ({ itemId: line.itemId, quantity: line.quantity })),
+    };
+    const updated: Sale = {
+      ...sale,
+      refunds: [...sale.refunds, refund],
+    };
+    this.sales.set(sale.id, updated);
+    const written: StockLedgerEntry[] = input.ledger.map((entry) => ({
+      id: input.idGenerator(),
+      outletId: entry.outletId,
+      itemId: entry.itemId,
+      delta: entry.delta,
+      reason: entry.reason,
+      refType: entry.refType,
+      refId: entry.refId,
+      occurredAt: entry.occurredAt,
+    }));
+    for (const row of written) this.ledger.push(row);
+    return { kind: "ok", sale: updated, refund, ledger: written };
   }
 }
