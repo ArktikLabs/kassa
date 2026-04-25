@@ -453,6 +453,83 @@ describe("POST /v1/sales/submit", () => {
     expect(bad.json()).toMatchObject({ error: { code: "idempotency_conflict" } });
   });
 
+  it("accepts a qris_static tender and persists it as unverified with buyerRefLast4", async () => {
+    const payload = {
+      ...kopi(1, "01929b2d-1e10-7f00-80aa-000000000010"),
+      tenders: [
+        {
+          method: "qris_static" as const,
+          amountIdr: 25_000,
+          reference: null,
+          buyerRefLast4: "1234",
+        },
+      ],
+    };
+    const res = await fixture.app.inject({
+      method: "POST",
+      url: "/v1/sales/submit",
+      headers: { "x-kassa-merchant-id": MERCHANT, "content-type": "application/json" },
+      payload,
+    });
+    expect(res.statusCode).toBe(201);
+
+    const sales = fixture.repository._peekSales();
+    expect(sales).toHaveLength(1);
+    expect(sales[0]?.tenders).toEqual([
+      {
+        method: "qris_static",
+        amountIdr: 25_000,
+        reference: null,
+        verified: false,
+        buyerRefLast4: "1234",
+      },
+    ]);
+  });
+
+  it("rejects a qris_static tender missing buyerRefLast4 with 400", async () => {
+    const payload = {
+      ...kopi(1, "01929b2d-1e11-7f00-80aa-000000000011"),
+      tenders: [
+        {
+          method: "qris_static" as const,
+          amountIdr: 25_000,
+          reference: null,
+        },
+      ],
+    };
+    const res = await fixture.app.inject({
+      method: "POST",
+      url: "/v1/sales/submit",
+      headers: { "x-kassa-merchant-id": MERCHANT, "content-type": "application/json" },
+      payload,
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json()).toMatchObject({ error: { code: "bad_request" } });
+  });
+
+  it("rejects a qris_static tender that arrives already verified with 400", async () => {
+    const payload = {
+      ...kopi(1, "01929b2d-1e12-7f00-80aa-000000000012"),
+      tenders: [
+        {
+          method: "qris_static" as const,
+          amountIdr: 25_000,
+          reference: null,
+          buyerRefLast4: "5678",
+          verified: true,
+        },
+      ],
+    };
+    const res = await fixture.app.inject({
+      method: "POST",
+      url: "/v1/sales/submit",
+      headers: { "x-kassa-merchant-id": MERCHANT, "content-type": "application/json" },
+      payload,
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json()).toMatchObject({ error: { code: "bad_request" } });
+  });
+
   afterAll(async () => {
     await fixture.app.close();
   });

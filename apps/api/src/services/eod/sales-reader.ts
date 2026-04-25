@@ -58,15 +58,25 @@ function toSaleRecord(sale: Sale): SaleRecord {
 function toEodTender(tender: SaleTender): EodSaleTender {
   switch (tender.method) {
     case "qris":
-      // Wire-level QRIS without the dynamic/static signal lands as
-      // unverified static: dynamic is verified-on-webhook (KASA-63), static
-      // is verified-on-reconciliation (KASA-64). When the wire schema gains
-      // the dynamic/static distinction, this branch widens to two cases.
+      // Legacy wire-level QRIS without the dynamic/static distinction
+      // (pre-KASA-121 outbox rows). Conservatively recorded as unverified
+      // static so the variance report does not undercount the unverified
+      // bucket. New POS clients emit the explicit `qris_static` case below.
       return {
         method: "qris_static",
         amountIdr: tender.amountIdr,
         reference: tender.reference,
         verified: false,
+      };
+    case "qris_static":
+      return {
+        method: "qris_static",
+        amountIdr: tender.amountIdr,
+        reference: tender.reference,
+        // `qris_static` is unverified at write time; reconciliation flips
+        // the persisted row server-side. The persisted `verified` value
+        // wins if present so this reader stays correct after reconciliation.
+        verified: tender.verified ?? false,
       };
     case "cash":
     case "card":

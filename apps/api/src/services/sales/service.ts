@@ -4,6 +4,7 @@ import type {
   Item,
   Sale,
   SaleLine,
+  SaleTender,
   StockLedgerEntry,
   SubmitSaleInput,
   SubmitSaleResult,
@@ -200,7 +201,7 @@ export class SalesService {
       discountIdr: input.discountIdr,
       totalIdr: input.totalIdr,
       items: input.items.map((line) => ({ ...line })),
-      tenders: input.tenders.map((tender) => ({ ...tender })),
+      tenders: input.tenders.map(normalizeTender),
       createdAt: input.createdAt,
     };
     sale.name = this.generateSaleName(sale);
@@ -233,6 +234,23 @@ export class SalesService {
 
 function defaultSaleName(sale: Sale): string {
   return `SALE-${sale.businessDate.replaceAll("-", "")}-${sale.id.slice(0, 8)}`;
+}
+
+function normalizeTender(tender: SaleTender): SaleTender {
+  if (tender.method === "qris_static") {
+    // Always store qris_static as unverified at write time; reconciliation
+    // (KASA-64) flips the persisted row when the Midtrans settlement
+    // matches. The wire schema already rejects `verified === true` here,
+    // so this is belt-and-braces against any future caller paths.
+    return {
+      method: tender.method,
+      amountIdr: tender.amountIdr,
+      reference: tender.reference,
+      verified: false,
+      buyerRefLast4: tender.buyerRefLast4 ?? null,
+    };
+  }
+  return { ...tender };
 }
 
 function salesAgreeOnShape(existing: Sale, input: SubmitSaleInput): boolean {

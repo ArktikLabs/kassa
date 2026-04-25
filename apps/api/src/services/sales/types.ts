@@ -65,10 +65,25 @@ export interface SaleLine {
   lineTotalIdr: number;
 }
 
+export type SaleTenderMethod = "cash" | "qris" | "qris_static" | "card" | "other";
+
 export interface SaleTender {
-  method: "cash" | "qris" | "card" | "other";
+  method: SaleTenderMethod;
   amountIdr: number;
   reference: string | null;
+  /**
+   * Server-confirmed against an upstream settlement record. Always `false`
+   * for `qris_static` at write time; reconciliation flips it on the
+   * server. Absent on every other method on the wire — `undefined` rather
+   * than missing so the Zod-inferred parse output assigns cleanly under
+   * `exactOptionalPropertyTypes`.
+   */
+  verified?: boolean | undefined;
+  /**
+   * Last 4 digits of the buyer's QRIS reference (KASA-118). Required for
+   * `qris_static`; absent for every other method.
+   */
+  buyerRefLast4?: string | null | undefined;
 }
 
 export interface Sale {
