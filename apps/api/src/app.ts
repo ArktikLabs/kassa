@@ -12,6 +12,7 @@ import { sendError } from "./lib/errors.js";
 import { createDomainEventBus, type DomainEventBus } from "./lib/events.js";
 import { createInMemoryDedupeStore, type WebhookDedupeStore } from "./lib/webhook-dedupe.js";
 import { EnrolmentService, InMemoryEnrolmentRepository } from "./services/enrolment/index.js";
+import { InMemoryItemsRepository, ItemsService } from "./services/catalog/index.js";
 
 export interface BuildAppOptions {
   logger?: FastifyServerOptions["logger"];
@@ -22,6 +23,10 @@ export interface BuildAppOptions {
     service: EnrolmentService;
     staffBootstrapToken?: string;
     enrollRateLimitPerMinute?: number;
+  };
+  catalog?: {
+    items: ItemsService;
+    staffBootstrapToken?: string;
   };
 }
 
@@ -60,6 +65,10 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     service: new EnrolmentService({ repository: new InMemoryEnrolmentRepository() }),
   };
 
+  const catalog = options.catalog ?? {
+    items: new ItemsService({ repository: new InMemoryItemsRepository() }),
+  };
+
   const v1Deps: V1RouteDeps = {
     auth: {
       enrolment: enrolment.service,
@@ -68,6 +77,12 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
         : {}),
       ...(enrolment.enrollRateLimitPerMinute !== undefined
         ? { enrollRateLimitPerMinute: enrolment.enrollRateLimitPerMinute }
+        : {}),
+    },
+    catalog: {
+      items: catalog.items,
+      ...(catalog.staffBootstrapToken !== undefined
+        ? { staffBootstrapToken: catalog.staffBootstrapToken }
         : {}),
     },
   };

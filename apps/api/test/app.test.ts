@@ -43,9 +43,9 @@ describe("api scaffold", () => {
   describe("placeholder endpoints return 501", () => {
     const placeholders: ReadonlyArray<{ method: "GET" | "POST"; url: string }> = [
       // /v1/auth/enroll and /v1/auth/enrolment-codes are now live; see enrolment.test.ts.
+      // /v1/catalog/items CRUD is now live; see catalog-items.test.ts.
       { method: "POST", url: "/v1/auth/heartbeat" },
       { method: "POST", url: "/v1/auth/session/login" },
-      { method: "GET", url: "/v1/catalog/items" },
       { method: "GET", url: "/v1/catalog/boms" },
       { method: "GET", url: "/v1/catalog/uoms" },
       { method: "GET", url: "/v1/outlets" },
