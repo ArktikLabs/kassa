@@ -486,7 +486,7 @@ describe("POST /v1/sales/submit", () => {
     ]);
   });
 
-  it("rejects a qris_static tender missing buyerRefLast4 with 400", async () => {
+  it("rejects a qris_static tender missing buyerRefLast4 with 422 validation_error", async () => {
     const payload = {
       ...kopi(1, "01929b2d-1e11-7f00-80aa-000000000011"),
       tenders: [
@@ -503,11 +503,11 @@ describe("POST /v1/sales/submit", () => {
       headers: { "x-kassa-merchant-id": MERCHANT, "content-type": "application/json" },
       payload,
     });
-    expect(res.statusCode).toBe(400);
-    expect(res.json()).toMatchObject({ error: { code: "bad_request" } });
+    expect(res.statusCode).toBe(422);
+    expect(res.json()).toMatchObject({ error: { code: "validation_error" } });
   });
 
-  it("rejects a qris_static tender that arrives already verified with 400", async () => {
+  it("rejects a qris_static tender that arrives already verified with 422 validation_error", async () => {
     const payload = {
       ...kopi(1, "01929b2d-1e12-7f00-80aa-000000000012"),
       tenders: [
@@ -526,8 +526,8 @@ describe("POST /v1/sales/submit", () => {
       headers: { "x-kassa-merchant-id": MERCHANT, "content-type": "application/json" },
       payload,
     });
-    expect(res.statusCode).toBe(400);
-    expect(res.json()).toMatchObject({ error: { code: "bad_request" } });
+    expect(res.statusCode).toBe(422);
+    expect(res.json()).toMatchObject({ error: { code: "validation_error" } });
   });
 
   afterAll(async () => {
