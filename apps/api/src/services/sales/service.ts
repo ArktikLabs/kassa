@@ -37,6 +37,7 @@ export class SalesError extends Error {
       | "idempotency_conflict"
       | "sale_not_found"
       | "sale_voided"
+      | "sale_has_refunds"
       | "refund_line_not_in_sale"
       | "refund_quantity_exceeds_remaining"
       | "refund_amount_exceeds_remaining"
@@ -197,6 +198,13 @@ export class SalesService {
     // 3. Build the sale row + ledger entries. One entry per moved item,
     // summed across cart lines so a two-cup Kopi Susu order writes a single
     // `-30 beans` row rather than two `-15 beans` rows.
+    //
+    // `submit` stamps `occurredAt` from `this.now()` because the server is
+    // authoritative for sale write time. `void` / `refund` deliberately use
+    // the client-supplied `voidedAt` / `refundedAt` instead — those endpoints
+    // are the offline-first lifecycle hooks where the merchant's POS clock is
+    // the source of truth, so a sale voided at 09:00 stays at 09:00 even if
+    // it drains hours later.
     const saleId = this.generateId();
     const occurredAt = this.now().toISOString();
     const sale: Sale = {
@@ -261,10 +269,14 @@ export class SalesService {
       return { created: false, result: { sale, ledger: [] } };
     }
     if (sale.refunds.length > 0) {
-      throw new SalesError("sale_voided", "Cannot void a sale that already has booked refunds.", {
-        saleId: sale.id,
-        refundCount: sale.refunds.length,
-      });
+      throw new SalesError(
+        "sale_has_refunds",
+        "Cannot void a sale that already has booked refunds.",
+        {
+          saleId: sale.id,
+          refundCount: sale.refunds.length,
+        },
+      );
     }
 
     // Mirror the original sale's stock movements with positive deltas. We
@@ -334,22 +346,29 @@ export class SalesService {
     }
 
     // Validate refund line shape against original sale lines and remaining
-    // refundable quantities.
+    // refundable quantities. Coalesce duplicate `itemId` entries first: the
+    // ledger explosion sums them anyway, so the cap must check the aggregate
+    // — otherwise `[{X,1},{X,1}]` against a 1-cup-remaining sale slips past
+    // the per-line check and writes 2× components back into stock.
     const remainingByItem = remainingRefundableByItem(sale);
+    const requestedByItem = new Map<string, number>();
     for (const line of input.lines) {
-      const remaining = remainingByItem.get(line.itemId);
+      requestedByItem.set(line.itemId, (requestedByItem.get(line.itemId) ?? 0) + line.quantity);
+    }
+    for (const [itemId, requested] of requestedByItem) {
+      const remaining = remainingByItem.get(itemId);
       if (remaining === undefined) {
         throw new SalesError(
           "refund_line_not_in_sale",
-          `Refund line ${line.itemId} is not part of sale ${sale.id}.`,
-          { saleId: sale.id, itemId: line.itemId },
+          `Refund line ${itemId} is not part of sale ${sale.id}.`,
+          { saleId: sale.id, itemId },
         );
       }
-      if (line.quantity > remaining) {
+      if (requested > remaining) {
         throw new SalesError(
           "refund_quantity_exceeds_remaining",
-          `Refund quantity for ${line.itemId} exceeds remaining (${remaining}).`,
-          { saleId: sale.id, itemId: line.itemId, requested: line.quantity, remaining },
+          `Refund quantity for ${itemId} exceeds remaining (${remaining}).`,
+          { saleId: sale.id, itemId, requested, remaining },
         );
       }
     }
@@ -414,6 +433,14 @@ export class SalesService {
    * the explosion done at submit time: BOM lines fan out into components,
    * non-BOM stock-tracked lines move themselves, untracked finished goods do
    * not move.
+   *
+   * Caveat: BOMs are resolved by the *current* `item.bomId` at void/refund
+   * time, not snapshotted at submit. If a server-side BOM edit lands between
+   * submit and void/refund, the balancing ledger writes use the new
+   * components — so void/refund won't perfectly mirror the original sale's
+   * negative entries even though `(refType, refId) = ("sale", saleId)` keys
+   * them together. Acceptable for v0 (BOMs don't change mid-day) but should
+   * snapshot components on `Sale` once the schema is in Postgres.
    */
   private async explodeSaleComponents(sale: Sale): Promise<Map<string, number>> {
     return this.explodeLines(

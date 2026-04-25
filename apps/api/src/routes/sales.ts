@@ -216,6 +216,7 @@ function mapSalesError(err: unknown, reply: import("fastify").FastifyReply) {
     }
     if (
       err.code === "sale_voided" ||
+      err.code === "sale_has_refunds" ||
       err.code === "refund_line_not_in_sale" ||
       err.code === "refund_quantity_exceeds_remaining" ||
       err.code === "refund_amount_exceeds_remaining"

@@ -499,6 +499,48 @@ describe("POST /v1/sales/:saleId/refund", () => {
     expect(res.json()).toMatchObject({ error: { code: "refund_quantity_exceeds_remaining" } });
   });
 
+  it("returns 422 refund_quantity_exceeds_remaining when duplicate lines aggregate above remaining", async () => {
+    // First book a 1-cup refund so only 1 cup remains refundable on the
+    // 2-cup sale. Then attempt a refund with two duplicate lines for the
+    // same itemId (each at qty 1) — the aggregate (2) must exceed the
+    // remaining (1) and be rejected, even though each individual line
+    // looks fine on its own.
+    const firstRefund = await fixture.app.inject({
+      method: "POST",
+      url: `/v1/sales/${fixture.saleId}/refund`,
+      headers: { "x-kassa-merchant-id": MERCHANT, "content-type": "application/json" },
+      payload: baseRefund({
+        clientRefundId: "01929c00-0001-7000-8000-0000000000aa",
+      }),
+    });
+    expect(firstRefund.statusCode).toBe(201);
+
+    const res = await fixture.app.inject({
+      method: "POST",
+      url: `/v1/sales/${fixture.saleId}/refund`,
+      headers: { "x-kassa-merchant-id": MERCHANT, "content-type": "application/json" },
+      payload: baseRefund({
+        clientRefundId: "01929c00-0001-7000-8000-0000000000bb",
+        amountIdr: 25_000,
+        lines: [
+          { itemId: ITEM_COFFEE, quantity: 1 },
+          { itemId: ITEM_COFFEE, quantity: 1 },
+        ],
+      }),
+    });
+    expect(res.statusCode).toBe(422);
+    const body = res.json() as { error: { code: string; details?: { requested?: number } } };
+    expect(body.error.code).toBe("refund_quantity_exceeds_remaining");
+    expect(body.error.details?.requested).toBe(2);
+
+    // Belt-and-braces: no second refund row, no extra ledger writes.
+    const ledger = fixture.repository._peekLedger();
+    const refundEntries = ledger.filter((row) => row.reason === "refund");
+    // First refund wrote 3 component rows (beans/milk/water); the rejected
+    // duplicate-line refund must not have added more.
+    expect(refundEntries).toHaveLength(3);
+  });
+
   it("returns 422 refund_amount_exceeds_remaining when refunds would exceed the sale total", async () => {
     const res = await fixture.app.inject({
       method: "POST",
@@ -541,7 +583,7 @@ describe("POST /v1/sales/:saleId/void after refunds", () => {
     await fixture.app.close();
   });
 
-  it("returns 422 sale_voided when refunds already exist on the sale", async () => {
+  it("returns 422 sale_has_refunds when refunds already exist on the sale", async () => {
     // Book one refund first.
     const refundRes = await fixture.app.inject({
       method: "POST",
@@ -564,6 +606,6 @@ describe("POST /v1/sales/:saleId/void after refunds", () => {
       payload: { voidedAt: "2026-04-24T10:00:00+07:00", voidBusinessDate: "2026-04-24" },
     });
     expect(voidRes.statusCode).toBe(422);
-    expect(voidRes.json()).toMatchObject({ error: { code: "sale_voided" } });
+    expect(voidRes.json()).toMatchObject({ error: { code: "sale_has_refunds" } });
   });
 });
