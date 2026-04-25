@@ -199,12 +199,24 @@ The workflow is inert until these three steps complete. This is intentional: it 
    # Creates an Upstash-managed Redis attached to the kassa-api-staging app
    # in the same region (sin). Returns a `redis://default:<token>@<host>:6379`
    # URL printed once on stdout; capture it.
+   #
+   # Plan choice: `3G` is the smallest fixed-price Upstash tier on Fly. We do
+   # NOT use `--plan free` (or any pay-as-you-go tier) for any Kassa Redis,
+   # even on staging — BullMQ's worker polls Redis on a 5s `BZPOPMIN` timer
+   # (~17.3k commands/day per queue) plus a 30s `stalledInterval` check
+   # (~2.9k/day). That ~20k/day floor is independent of business traffic and
+   # alone exhausts the 500K-commands/month free tier in roughly one day per
+   # month; Fly's own Upstash docs explicitly call this out
+   # (https://fly.io/docs/reference/redis/). Verify the current fixed-price
+   # tiers and dollar figures against `flyctl redis plans` at provisioning
+   # time — the cost rollup in §3.10 carries the rationale, not the live
+   # pricing.
    flyctl redis create \
      --org kassa \
      --name kassa-redis-staging \
      --region sin \
      --no-replicas \
-     --plan free
+     --plan 3G
    # Bind the URL on the app so both the web and worker process groups read it.
    flyctl secrets set --app kassa-api-staging \
      REDIS_URL="redis://default:<token>@<host>:6379"
@@ -401,17 +413,30 @@ The candidates were:
 
 The Redis 7 surface BullMQ relies on (`XADD`/`XREAD` streams, `BRPOPLPUSH`-equivalent blocking ops, Lua scripts via `EVAL`) is fully supported on Upstash; the unsupported commands in the table above are operator/diagnostic tooling that we do not invoke from the worker.
 
-**Cost rollup** (Upstash via Fly, Apr 2026 pricing, two separate instances per the ACs):
+**BullMQ polling floor.** Before the cost table, two BullMQ behaviours need to be made explicit because they invalidate any "free tier" or "pay-as-you-go" framing for either tier:
 
-| Tier                              | Plan       | Storage / commands cap         | Workload model (v0)                                | Monthly cost |
-|:----------------------------------|:-----------|:-------------------------------|:---------------------------------------------------|:-------------|
-| `kassa-redis-staging` (KASA-111)  | Free       | 100 MB / 10K commands per day  | Heartbeat queue + occasional CI replays            | **$0**       |
-| `kassa-redis-prod` (KASA-70)      | Pay-as-you-go | $0.20 / 100K commands; $0.25 / GB-month | Per merchant: ~1k sales/day × ~10 BullMQ commands per sale lifecycle (enqueue + retry/ack + EOD/reconciliation jobs) ≈ ~10k commands/day. Likely under the free-tier daily cap on day one; sustained $0–10/mo at single-merchant volumes. | **$0–10**    |
-| Upper bound (sanity check)        | Pay-as-you-go | n/a                            | 1 M commands/day, sustained                        | ~$60         |
+- The `Worker` polls Redis with `BZPOPMIN` on a 5-second `drainDelay` (BullMQ v5 default) — that is ~17,280 commands/day per queue, **per worker**, regardless of whether any jobs are produced.
+- The `stalledInterval` check fires every 30s, adding ~2,880 commands/day.
 
-Conclusion: Redis is **not a meaningful line item** in the v0 infra budget. The decision was about operational simplicity (one Fly bill, `flyctl` everywhere) far more than dollars.
+The floor is therefore ~20,000 commands/day per worker process, **independent of business traffic**. Upstash's Fly free tier is 500,000 commands/month (~16,600/day on average) — the placeholder consumer alone exhausts it in ~24h, then either hard-fails or burns pay-as-you-go credit. Fly's own Upstash docs are explicit about this:
 
-**Provisioning** is one-time, by ops. Step 2a in §3.4 above is the staging command; production gets its own equivalent in [KASA-70](/KASA/issues/KASA-70) using `--name kassa-redis-prod` and the appropriate paid plan.
+> If you're using Sidekiq, BullMQ or similar software, consider switching your database to a fixed price plan to avoid running up your pay-as-you-go bill.
+> — <https://fly.io/docs/reference/redis/>
+
+So both Kassa Redis instances are provisioned on **fixed-price** Upstash plans, not Free or Pay-as-you-go. Staging is no exception: the failure mode "free tier exhausted → BullMQ poller hard-errors → worker process restart loop → Sentry noise" is worse than spending the fixed-tier dollars.
+
+**Cost rollup** (Upstash via Fly, two separate instances per the ACs; verify live dollars against `flyctl redis plans` at provisioning time):
+
+| Tier                              | Plan                                      | Workload model (v0)                                                                                                                                                                                                                                  | Monthly cost (verify with `flyctl redis plans`) |
+|:----------------------------------|:------------------------------------------|:------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|:------------------------------------------------|
+| `kassa-redis-staging` (KASA-111)  | Smallest fixed tier (`3G`)                | BullMQ polling floor (~20k commands/day) dominates; heartbeat queue + occasional CI replays add a rounding-error increment.                                                                                                                          | Fixed; sized to handle the polling floor.       |
+| `kassa-redis-prod` (KASA-70)      | Fixed tier sized to projected throughput  | BullMQ polling floor (~20k commands/day) plus per-merchant business volume: ~1k sales/day × ~10 BullMQ commands per sale lifecycle (enqueue + retry/ack + EOD/reconciliation jobs) ≈ ~10k commands/day on top of the floor → ~30k commands/day total. | Fixed; smallest tier that covers floor + headroom for queue growth and replicas if/when prod takes a real load. |
+
+The "appropriate fixed tier" for `kassa-redis-prod` is sized at provisioning time on KASA-70, against `flyctl redis plans`'s then-current command/storage caps and the merchant count in flight. Day-one single-merchant traffic fits inside `3G` with room to spare; we expect to step up at the first sustained sales spike that pushes the daily floor above ~80% of the tier cap.
+
+Conclusion: Redis is **not a meaningful line item** in the v0 infra budget at the corrected fixed-tier level either — both instances combined sit in the low double-digit dollars/month at v0 traffic. The decision was about operational simplicity (one Fly bill, `flyctl` everywhere) far more than dollars.
+
+**Provisioning** is one-time, by ops. Step 2a in §3.4 above is the staging command (`--plan 3G`); production gets its own equivalent in [KASA-70](/KASA/issues/KASA-70) using `--name kassa-redis-prod` and a fixed tier sized against `flyctl redis plans` at the time.
 
 **App-side wiring**:
 
