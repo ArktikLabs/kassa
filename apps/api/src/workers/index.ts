@@ -1,32 +1,35 @@
-import { Queue, Worker, type Processor } from "bullmq";
+import type { PaymentProvider, SettlementReportFilter } from "@kassa/payments";
 import { Redis, type RedisOptions } from "ioredis";
 
 import { loadEnv } from "../config.js";
+import {
+  InMemoryReconciliationRepository,
+  ReconciliationService,
+} from "../services/reconciliation/index.js";
+import {
+  bootReconciliationQueue,
+  type LogHook,
+  type RunningReconciliationQueue,
+} from "./reconciliation-job.js";
 
-// BullMQ worker entrypoint for the `worker` Fly process group (TECH-STACK.md
-// §5.2 + §7). One image, two process commands; this one runs no HTTP and
-// consumes jobs off Redis.
-//
-// KASA-111 lands the broker + bootstrap. The actual job code (nightly
-// reconciliation, EOD rollups, sync replays, …) lands per-feature in the
-// follow-up issues that mention this one. Until then, the bootstrap registers
-// a single `kassa.system.heartbeat` queue with a no-op processor so the BullMQ
-// connection lifecycle, error reporting, and graceful-shutdown hooks are
-// exercised end-to-end on every staging deploy.
-//
-// Behaviour matrix:
-//
-//   REDIS_URL set     → connect to Redis, register the heartbeat consumer,
-//                       block on SIGTERM/SIGINT, drain in-flight jobs cleanly.
-//   REDIS_URL unset   → idle loop only. Logs a warning so the operator knows
-//                       no broker is bound; intended for the dev/test path
-//                       and for the brief window after this PR ships and
-//                       before ops finishes setting the Fly secret. Once
-//                       KASA-120 (or any real consumer) lands, the gate in
-//                       config.ts should flip to required-in-production and
-//                       this branch becomes a startup error in prod.
-
-const PLACEHOLDER_QUEUE = "kassa.system.heartbeat";
+/*
+ * BullMQ worker entrypoint for the `worker` Fly process group (TECH-STACK.md
+ * §5.2 + §7). One image, two process commands; this one runs no HTTP and
+ * consumes jobs off Redis.
+ *
+ * Behaviour matrix:
+ *
+ *   REDIS_URL set     → connect to Redis, register the nightly reconciliation
+ *                       queue + cron scheduler (KASA-120), block on
+ *                       SIGTERM/SIGINT, drain in-flight jobs cleanly.
+ *   REDIS_URL unset   → idle loop only. Logs a warning so the operator knows
+ *                       no broker is bound; intended for the dev/test path
+ *                       and for the brief window after this PR ships and
+ *                       before ops sets the Fly secret. Once the production
+ *                       Redis is wired permanently, the gate in config.ts
+ *                       should flip to required-in-production and this branch
+ *                       becomes a startup error in prod.
+ */
 
 type LogLevel = "debug" | "info" | "warn" | "error";
 
@@ -34,6 +37,10 @@ function emit(level: LogLevel, msg: string, extra: Record<string, unknown> = {})
   // biome-ignore lint/suspicious/noConsole: stdout is the worker's log channel until pino lands here.
   console.log(JSON.stringify({ level, msg, pid: process.pid, ...extra }));
 }
+
+const reconciliationLog: LogHook = (level, message, fields) => {
+  emit(level, message, { component: "reconciliation", ...(fields ?? {}) });
+};
 
 // Connection options BullMQ needs for a long-running worker. `maxRetriesPerRequest:
 // null` is BullMQ's required setting — without it, ioredis aborts blocking
@@ -45,12 +52,33 @@ const REDIS_CONNECTION_OPTIONS: RedisOptions = {
   enableReadyCheck: false,
 };
 
-const heartbeatProcessor: Processor = async (job) => {
-  emit("debug", "heartbeat job processed", { jobId: job.id, name: job.name });
-};
-
 interface RunningWorker {
   shutdown: (signal: NodeJS.Signals) => Promise<void>;
+}
+
+/**
+ * Stub PaymentProvider used until the worker process is wired to the real
+ * Midtrans server key (the API process owns that wiring today). Returns an
+ * empty settlement set so the reconciliation pass exits cleanly with zero
+ * matches; the production secrets land before the outlet enumerator does, so
+ * by the time real outlets are enumerated this stub will have been replaced.
+ */
+function makeNoSettlementProvider(): PaymentProvider {
+  return {
+    name: "no-settlement-stub",
+    async createQris() {
+      throw new Error("payments provider not configured in worker");
+    },
+    async getQrisStatus() {
+      throw new Error("payments provider not configured in worker");
+    },
+    verifyWebhookSignature() {
+      throw new Error("payments provider not configured in worker");
+    },
+    async fetchQrisSettlements(_filter: SettlementReportFilter) {
+      return [];
+    },
+  };
 }
 
 async function startBullMqWorker(redisUrl: string): Promise<RunningWorker> {
@@ -60,26 +88,28 @@ async function startBullMqWorker(redisUrl: string): Promise<RunningWorker> {
     emit("error", "redis connection error", { err: String(err) });
   });
 
-  // Holding a `Queue` reference (not just the `Worker`) keeps the producer-side
-  // surface available to the rest of the process — future enqueues from the
-  // web tier will reach for queues that mirror this shape. Closing both on
-  // shutdown is what releases the underlying ioredis sockets.
-  const queue = new Queue(PLACEHOLDER_QUEUE, { connection });
+  // The reconciliation service in the worker uses the same in-memory
+  // repository the API uses today (KASA-64 wiring). When the Postgres-backed
+  // repository lands, swap both sites in the same PR so they continue to
+  // share state.
+  const reconciliation = new ReconciliationService({
+    repository: new InMemoryReconciliationRepository(),
+    provider: makeNoSettlementProvider(),
+  });
 
-  const worker = new Worker(PLACEHOLDER_QUEUE, heartbeatProcessor, {
+  const queue: RunningReconciliationQueue = await bootReconciliationQueue({
     connection,
-    // Concurrency 1 is fine for a placeholder; KASA-120's processor will set
-    // its own number based on the job's I/O profile.
-    concurrency: 1,
+    service: reconciliation,
+    log: reconciliationLog,
   });
 
-  worker.on("ready", () => {
-    emit("info", "bullmq worker ready", { queue: PLACEHOLDER_QUEUE });
+  queue.worker.on("ready", () => {
+    emit("info", "bullmq worker ready", { queue: queue.queue.name });
   });
-  worker.on("error", (err) => {
+  queue.worker.on("error", (err) => {
     emit("error", "bullmq worker error", { err: String(err) });
   });
-  worker.on("failed", (job, err) => {
+  queue.worker.on("failed", (job, err) => {
     emit("error", "bullmq job failed", {
       jobId: job?.id,
       name: job?.name,
@@ -94,14 +124,9 @@ async function startBullMqWorker(redisUrl: string): Promise<RunningWorker> {
       // timeout 30s) before resolving. Queue.close() then quits the producer
       // connection. Order matters: drain consumers first.
       try {
-        await worker.close();
+        await queue.shutdown();
       } catch (err) {
-        emit("error", "worker close failed", { err: String(err) });
-      }
-      try {
-        await queue.close();
-      } catch (err) {
-        emit("error", "queue close failed", { err: String(err) });
+        emit("error", "queue shutdown failed", { err: String(err) });
       }
       try {
         await connection.quit();
