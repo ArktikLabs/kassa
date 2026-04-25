@@ -99,11 +99,21 @@ function toWirePayload(row: PendingSale): Record<string, unknown> {
       unitPriceIdr: it.unitPriceIdr as unknown as number,
       lineTotalIdr: it.lineTotalIdr as unknown as number,
     })),
-    tenders: row.tenders.map((t) => ({
-      method: t.method,
-      amountIdr: t.amountIdr as unknown as number,
-      reference: t.reference,
-    })),
+    tenders: row.tenders.map((t) => {
+      const wire: Record<string, unknown> = {
+        method: t.method,
+        amountIdr: t.amountIdr as unknown as number,
+        reference: t.reference,
+      };
+      // `verified` and `buyerRefLast4` only travel on `qris_static`; sending
+      // them on other methods would trip the strict() schema. The local row
+      // type allows both as optional, so the absence test is what gates them.
+      if (t.method === "qris_static") {
+        if (t.buyerRefLast4 !== undefined) wire.buyerRefLast4 = t.buyerRefLast4;
+        if (t.verified !== undefined) wire.verified = t.verified;
+      }
+      return wire;
+    }),
   };
 }
 

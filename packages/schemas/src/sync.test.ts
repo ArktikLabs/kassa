@@ -3,6 +3,7 @@ import {
   bomPullResponse,
   itemPullResponse,
   outletPullResponse,
+  saleSubmitTender,
   stockPullResponse,
   uomPullResponse,
 } from "./sync.js";
@@ -88,5 +89,61 @@ describe("sync wire schemas", () => {
       nextPageToken: null,
     });
     expect(parsed.records).toEqual([]);
+  });
+});
+
+describe("saleSubmitTender", () => {
+  it("accepts a qris_static tender with buyerRefLast4 and verified=false", () => {
+    const parsed = saleSubmitTender.parse({
+      method: "qris_static",
+      amountIdr: 25_000,
+      reference: null,
+      verified: false,
+      buyerRefLast4: "1234",
+    });
+    expect(parsed.method).toBe("qris_static");
+    expect(parsed.buyerRefLast4).toBe("1234");
+  });
+
+  it("rejects a qris_static tender missing buyerRefLast4", () => {
+    expect(() =>
+      saleSubmitTender.parse({
+        method: "qris_static",
+        amountIdr: 25_000,
+        reference: null,
+      }),
+    ).toThrow();
+  });
+
+  it("rejects a qris_static tender with verified=true", () => {
+    expect(() =>
+      saleSubmitTender.parse({
+        method: "qris_static",
+        amountIdr: 25_000,
+        reference: null,
+        verified: true,
+        buyerRefLast4: "1234",
+      }),
+    ).toThrow();
+  });
+
+  it("rejects a buyerRefLast4 that is not exactly 4 digits", () => {
+    expect(() =>
+      saleSubmitTender.parse({
+        method: "qris_static",
+        amountIdr: 25_000,
+        reference: null,
+        buyerRefLast4: "12",
+      }),
+    ).toThrow();
+  });
+
+  it("accepts a cash tender without verified or buyerRefLast4", () => {
+    const parsed = saleSubmitTender.parse({
+      method: "cash",
+      amountIdr: 25_000,
+      reference: null,
+    });
+    expect(parsed.method).toBe("cash");
   });
 });

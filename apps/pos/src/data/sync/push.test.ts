@@ -342,6 +342,92 @@ describe("pushOutbox", () => {
     });
   });
 
+  it("qris_static row — forwards verified + buyerRefLast4 on the wire and lands synced", async () => {
+    await database.repos.pendingSales.enqueue(
+      makeSale({
+        localSaleId: "01940000-0000-7000-8000-0000000000a1",
+        tenders: [
+          {
+            method: "qris_static",
+            amountIdr: toRupiah(50_000),
+            reference: null,
+            verified: false,
+            buyerRefLast4: "4321",
+          },
+        ],
+      }),
+    );
+    const fetchImpl = vi.fn(async () =>
+      jsonResponse({ name: "SALE-QRSTATIC" }, 201),
+    ) as unknown as typeof fetch;
+
+    const result = await pushOutbox(database, {
+      baseUrl: "https://api.kassa.test",
+      fetchImpl,
+    });
+
+    expect(result).toMatchObject({
+      attempted: 1,
+      synced: 1,
+      needsAttention: 0,
+      errored: 0,
+      stoppedBy: "completed",
+    });
+    const fetchMock = fetchImpl as unknown as { mock: { calls: unknown[][] } };
+    const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    const body = JSON.parse(init.body as string) as {
+      tenders: { method: string; verified?: boolean; buyerRefLast4?: string | null }[];
+    };
+    expect(body.tenders).toEqual([
+      {
+        method: "qris_static",
+        amountIdr: 50_000,
+        reference: null,
+        verified: false,
+        buyerRefLast4: "4321",
+      },
+    ]);
+    const row = await database.repos.pendingSales.getById("01940000-0000-7000-8000-0000000000a1");
+    expect(row?.status).toBe("synced");
+    expect(row?.serverSaleName).toBe("SALE-QRSTATIC");
+  });
+
+  it("non-qris_static row — does not forward verified or buyerRefLast4", async () => {
+    await database.repos.pendingSales.enqueue(
+      makeSale({
+        localSaleId: "01940000-0000-7000-8000-0000000000c1",
+        tenders: [
+          {
+            method: "cash",
+            amountIdr: toRupiah(50_000),
+            reference: null,
+          },
+        ],
+      }),
+    );
+    const fetchImpl = vi.fn(async () =>
+      jsonResponse({ name: "SALE-CASH" }, 201),
+    ) as unknown as typeof fetch;
+
+    await pushOutbox(database, {
+      baseUrl: "https://api.kassa.test",
+      fetchImpl,
+    });
+
+    const fetchMock = fetchImpl as unknown as { mock: { calls: unknown[][] } };
+    const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    const body = JSON.parse(init.body as string) as {
+      tenders: Record<string, unknown>[];
+    };
+    expect(body.tenders[0]).toEqual({
+      method: "cash",
+      amountIdr: 50_000,
+      reference: null,
+    });
+    expect(body.tenders[0]).not.toHaveProperty("verified");
+    expect(body.tenders[0]).not.toHaveProperty("buyerRefLast4");
+  });
+
   it("empty outbox — returns completed without calling fetch", async () => {
     const fetchImpl = vi.fn() as unknown as typeof fetch;
     const result = await pushOutbox(database, {
