@@ -51,6 +51,7 @@ All configuration is via environment variables, validated by Zod on boot. Missin
 | `MIDTRANS_ENVIRONMENT` | `sandbox` | `sandbox` \| `production`. Switches the Midtrans base URL. Sandbox (`api.sandbox.midtrans.com`) for all non-production boots; production (`api.midtrans.com`) only on the `prd` Fly app. |
 | `DATABASE_URL` | _unset_ | `postgres://user:pass@host:5432/db`. Optional in `development`/`test` so the enrolment in-memory path still boots; **required** in `production` (boot fails loudly otherwise). Repo swap + migration runner use it; the Fly `release_command` calls `pnpm --filter @kassa/api db:migrate` against it before the new image serves traffic. |
 | `DATABASE_SSL` | `true` | Request TLS to Postgres. Neon + Fly Postgres require `true`; flip to `false` for a local loopback test instance. |
+| `REDIS_URL` | _unset_ | `redis://default:<token>@<host>:6379` (or `rediss://…` for TLS). BullMQ broker for the `worker` Fly process group. Optional today — the worker logs and idles when unset. The first PR that lands a real consumer (KASA-120 nightly reconciliation) will tighten the Zod refinement to required-in-production. Provisioned per-environment via `flyctl redis create`; staging and production point at separate Redis instances. See [docs/CI-CD.md §3.10](../../docs/CI-CD.md). |
 
 ## Route map
 
