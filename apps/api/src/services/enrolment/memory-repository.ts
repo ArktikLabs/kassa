@@ -1,3 +1,4 @@
+import type { DeviceAuthRecord, DeviceAuthRepository } from "../../auth/device-auth.js";
 import type { Device } from "../../db/schema/devices.js";
 import type { EnrolmentCode } from "../../db/schema/enrolment-codes.js";
 import type {
@@ -8,7 +9,7 @@ import type {
   OutletWithMerchant,
 } from "./repository.js";
 
-export class InMemoryEnrolmentRepository implements EnrolmentRepository {
+export class InMemoryEnrolmentRepository implements EnrolmentRepository, DeviceAuthRepository {
   private readonly outlets = new Map<string, OutletWithMerchant>();
   private readonly codes = new Map<string, EnrolmentCode>();
   private readonly devices = new Map<string, Device>();
@@ -66,6 +67,30 @@ export class InMemoryEnrolmentRepository implements EnrolmentRepository {
     };
     this.devices.set(input.id, row);
     return row;
+  }
+
+  async findDevice(deviceId: string): Promise<DeviceAuthRecord | null> {
+    const row = this.devices.get(deviceId);
+    if (!row) return null;
+    return {
+      id: row.id,
+      merchantId: row.merchantId,
+      outletId: row.outletId,
+      apiKeyHash: row.apiKeyHash,
+      status: row.status,
+    };
+  }
+
+  async touchDevice(deviceId: string, seenAt: Date): Promise<void> {
+    const row = this.devices.get(deviceId);
+    if (!row) return;
+    this.devices.set(deviceId, { ...row, lastSeenAt: seenAt });
+  }
+
+  setDeviceStatus(deviceId: string, status: Device["status"]): void {
+    const row = this.devices.get(deviceId);
+    if (!row) return;
+    this.devices.set(deviceId, { ...row, status });
   }
 
   // Test helpers — not part of the EnrolmentRepository contract.

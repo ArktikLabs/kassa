@@ -78,12 +78,26 @@ All configuration is via environment variables, validated by Zod on boot. Missin
 | POST | `/v1/sales/:saleId/void` | 501 |
 | POST | `/v1/sales/:saleId/refund` | 501 |
 | POST | `/v1/sales/sync` | 501 |
-| POST | `/v1/payments/qris` | 501 |
-| GET | `/v1/payments/qris/:orderId/status` | 501 |
+| POST | `/v1/payments/qris` | Live — device-authenticated. Creates a Midtrans QRIS order keyed on the POS `localSaleId`. |
+| GET | `/v1/payments/qris/:orderId/status` | Live — device-authenticated. Polls Midtrans for the current order status. |
 | POST | `/v1/payments/webhooks/midtrans` | Live — HMAC-SHA512 signature-verified; dedupes by `(orderId, normalized status)` so Midtrans's `capture + settlement` collapses to a single `tender.paid`. 503 `payments_unavailable` when `MIDTRANS_SERVER_KEY` is unset. |
 | POST | `/v1/eod/close` | 501 |
 | GET | `/v1/eod/report` | 501 |
 | GET | `/v1/eod/:eodId` | 501 |
+
+## Device authentication
+
+Routes that the POS device calls authenticate with HTTP Basic against the credentials minted by `POST /v1/auth/enroll` ([KASA-25](/KASA/issues/KASA-25)):
+
+```
+Authorization: Basic base64(<apiKey>:<apiSecret>)
+```
+
+The `apiKey` is the public, lookup-friendly `kk_dev_<base64url>` form of the device row id. The `apiSecret` is matched against `argon2id(api_secret)` stored in `devices.api_key_hash` — the plaintext secret was returned exactly once at enrol time and is not recoverable from the server.
+
+On success the gate populates `req.devicePrincipal = { deviceId, merchantId, outletId }` for downstream handlers. On any failure (missing header, malformed Basic blob, unknown device, wrong secret, revoked status) the response is `401 { error: { code: "unauthorized" } }` — the specific failure reason is logged but never leaked to the caller, so probes can't distinguish "unknown device" from "wrong secret".
+
+The current rollout gates `/v1/payments/qris` and `/v1/payments/qris/:orderId/status`. The Midtrans webhook (`POST /v1/payments/webhooks/midtrans`) authenticates via HMAC signature on the body and stays outside the gate. Sales/stock/EOD endpoints still read `x-kassa-merchant-id` for the bootstrap window; they will move behind this gate in a follow-up alongside KASA-26 RBAC.
 
 ## Payments (Midtrans)
 

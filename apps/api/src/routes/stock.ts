@@ -1,4 +1,4 @@
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyRequest } from "fastify";
 import { z } from "zod";
 import {
   stockPullResponse,
@@ -11,7 +11,7 @@ import type { SalesRepository } from "../services/sales/index.js";
 
 export interface StockRouteDeps {
   repository: SalesRepository;
-  resolveMerchantId: (req: { headers: Record<string, unknown> }) => string | null;
+  resolveMerchantId: (req: FastifyRequest) => string | null;
   now?: () => Date;
 }
 
