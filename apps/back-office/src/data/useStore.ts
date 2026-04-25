@@ -36,3 +36,7 @@ export function useDevices() {
 export function useReconciliation() {
   return useSyncExternalStore(subscribe, () => getSnapshot().reconciliation);
 }
+
+export function useUnmatchedStaticTenders() {
+  return useSyncExternalStore(subscribe, () => getSnapshot().unmatchedStaticTenders);
+}

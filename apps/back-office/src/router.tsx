@@ -7,8 +7,9 @@ import { BomsScreen } from "./routes/catalog.boms";
 import { StaffScreen } from "./routes/staff";
 import { DevicesScreen } from "./routes/devices";
 import { ReconciliationScreen } from "./routes/reports.reconciliation";
+import { AdminReconciliationScreen } from "./routes/admin.reconciliation";
 import { Forbidden } from "./components/Forbidden";
-import { loadSession, roleCanManage } from "./lib/session";
+import { loadSession, roleCanManage, roleIsOwner } from "./lib/session";
 
 /*
  * Route guards.
@@ -106,6 +107,17 @@ const reconciliationRoute = createRoute({
     ),
 });
 
+const adminReconciliationRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: "admin/reconciliation",
+  component: () =>
+    loadSession()?.role && roleIsOwner(loadSession()!.role) ? (
+      <AdminReconciliationScreen />
+    ) : (
+      <Forbidden />
+    ),
+});
+
 const routeTree = rootRoute.addChildren([
   indexRoute,
   loginRoute,
@@ -116,6 +128,7 @@ const routeTree = rootRoute.addChildren([
     staffRoute,
     devicesRoute,
     reconciliationRoute,
+    adminReconciliationRoute,
   ]),
 ]);
 
