@@ -254,9 +254,16 @@ describe("EOD/Sales integration (KASA-65 ↔ KASA-66)", () => {
     });
     expect(res.statusCode).toBe(201);
     const body = res.json() as {
-      breakdown: { qrisStaticIdr: number; qrisDynamicIdr: number };
+      breakdown: {
+        qrisStaticIdr: number;
+        qrisStaticUnverifiedIdr: number;
+        qrisDynamicIdr: number;
+      };
     };
     expect(body.breakdown.qrisStaticIdr).toBe(50_000);
+    // Until reconciliation runs, every wire `qris` lands as unverified —
+    // the variance report must surface that as the at-risk number.
+    expect(body.breakdown.qrisStaticUnverifiedIdr).toBe(50_000);
     expect(body.breakdown.qrisDynamicIdr).toBe(0);
   });
 });
@@ -442,14 +449,14 @@ describe("EodService — directly", () => {
       discountIdr: 0,
       totalIdr: 40_000,
       items: [],
-      tenders: [{ method: "cash", amountIdr: 40_000, reference: null }],
+      tenders: [{ method: "cash", amountIdr: 40_000, reference: null, verified: true }],
       voidedAt: null,
     };
     const voided: SaleRecord = {
       ...active,
       localSaleId: "01890abc-1234-7def-8000-000000000702",
       totalIdr: 15_000,
-      tenders: [{ method: "cash", amountIdr: 15_000, reference: null }],
+      tenders: [{ method: "cash", amountIdr: 15_000, reference: null, verified: true }],
       voidedAt: "2026-04-23T05:00:00.000Z",
     };
     const salesReader: SalesReader = {

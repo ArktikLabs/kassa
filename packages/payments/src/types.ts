@@ -24,6 +24,44 @@ export interface QrisStatusResult {
   rawResponse: unknown;
 }
 
+/**
+ * Filter for `PaymentProvider.fetchQrisSettlements` (KASA-64).
+ *
+ * `businessDate` is the merchant's local calendar date (YYYY-MM-DD,
+ * Asia/Jakarta) the EOD reconciliation pass is closing. The provider
+ * adapter is responsible for translating that into whatever date filter
+ * the upstream expects.
+ *
+ * `merchantId` is optional because Midtrans's settlement endpoint is
+ * implicitly scoped to the API key's merchant; we still pass it through
+ * for providers that require an explicit query parameter (DOKU, Xendit
+ * v2 settlement APIs).
+ */
+export interface SettlementReportFilter {
+  businessDate: string;
+  merchantId?: string;
+}
+
+/**
+ * One row of a payment provider's QRIS-static settlement report. The
+ * EOD reconciliation matcher (apps/api/src/services/reconciliation) pairs
+ * these against unverified `qris_static` tenders by `(outletId, last4,
+ * grossAmountIdr)` inside a ±10-min window around `settledAt`.
+ *
+ * `last4` is the *last 4 digits* of the buyer's transfer reference. The
+ * provider adapter extracts that from whatever upstream field exposes the
+ * full reference (Midtrans: `va_numbers[].number` for VA-style refs, or
+ * the QRIS-buyer-ref field for native QRIS rows).
+ */
+export interface SettlementReportRow {
+  providerTransactionId: string;
+  grossAmountIdr: number;
+  last4: string;
+  /** ISO-8601 with explicit offset (KASA-93 contract). */
+  settledAt: string;
+  outletId: string;
+}
+
 export interface NormalizedWebhookEvent {
   providerOrderId: string;
   status: QrisOrderStatus;

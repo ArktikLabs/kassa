@@ -17,6 +17,12 @@ export type TenderStatus = (typeof tenderStatusValues)[number];
  * `verified` is the server's confirmation that the money actually moved —
  * `true` only after cash count-in, the Midtrans webhook for dynamic QRIS, or
  * the EOD reconciliation pass for static QRIS.
+ *
+ * `buyer_ref_last4` is the static-QRIS clerk-entered last-4-digits of the
+ * buyer's transfer reference. EOD reconciliation (KASA-64) uses it together
+ * with `amount_idr`, the sale's outlet, and a ±10-min window around the
+ * Midtrans `settlement_time` to match unverified static-QRIS tenders against
+ * the settlement report. NULL on cash and dynamic-QRIS tenders.
  */
 export const tenders = pgTable(
   "tenders",
@@ -29,6 +35,7 @@ export const tenders = pgTable(
     status: text("status", { enum: tenderStatusValues }).notNull().default("pending"),
     amountIdr: rupiah("amount_idr").notNull(),
     orderRef: text("order_ref"),
+    buyerRefLast4: text("buyer_ref_last4"),
     verified: boolean("verified").notNull().default(false),
     paidAt: timestamp("paid_at", { withTimezone: true }),
     createdAt: createdAtCol(),
@@ -41,6 +48,12 @@ export const tenders = pgTable(
     orderRefUniq: uniqueIndex("tenders_order_ref_uniq")
       .on(table.orderRef)
       .where(sql`order_ref IS NOT NULL`),
+    // Reconciliation lookup: pull every unverified static-QRIS tender for an
+    // outlet on a business date. Partial so the index doesn't carry the
+    // verified rows we never replay.
+    staticQrisUnverifiedIdx: index("tenders_static_qris_unverified_idx")
+      .on(table.method, table.verified, table.amountIdr)
+      .where(sql`method = 'qris_static' AND verified = false`),
   }),
 );
 

@@ -8,6 +8,8 @@ import {
   type QrisOrderResult,
   type QrisOrderStatus,
   type QrisStatusResult,
+  type SettlementReportFilter,
+  type SettlementReportRow,
   type WebhookHeaders,
 } from "../types.js";
 
@@ -226,12 +228,128 @@ export function createMidtransProvider(config: MidtransConfig): PaymentProvider 
     };
   }
 
+  async function fetchQrisSettlements(
+    filter: SettlementReportFilter,
+  ): Promise<readonly SettlementReportRow[]> {
+    if (!BUSINESS_DATE_RE.test(filter.businessDate)) {
+      throw new PaymentProviderError(
+        "invalid_business_date",
+        `businessDate must be YYYY-MM-DD; got ${JSON.stringify(filter.businessDate)}.`,
+      );
+    }
+
+    // Midtrans Iris/Settlement reporting endpoint. Filtering by `from`/`to`
+    // on the same business date pulls every row that posted on that local
+    // calendar day; pagination uses `page`/`count`. We page until the
+    // response returns fewer than `PAGE_SIZE` rows.
+    const rows: SettlementReportRow[] = [];
+    let page = 1;
+    while (page <= MAX_SETTLEMENT_PAGES) {
+      const url = new URL(`${baseUrl}/v1/payouts/settlement`);
+      url.searchParams.set("from", filter.businessDate);
+      url.searchParams.set("to", filter.businessDate);
+      url.searchParams.set("payment_type", "qris");
+      url.searchParams.set("page", String(page));
+      url.searchParams.set("count", String(PAGE_SIZE));
+      if (filter.merchantId !== undefined) {
+        url.searchParams.set("merchant_id", filter.merchantId);
+      }
+
+      const response = await withTimeout(url.toString(), {
+        method: "GET",
+        headers: {
+          Accept: "application/json",
+          Authorization: authHeader,
+        },
+      });
+
+      const json = (await safeJson(response)) as Record<string, unknown>;
+      if (!response.ok) {
+        throw new PaymentProviderError(
+          "midtrans_settlement_failed",
+          typeof json.status_message === "string"
+            ? (json.status_message as string)
+            : `Midtrans settlement query failed with status ${response.status}.`,
+          response.status,
+        );
+      }
+
+      const data = Array.isArray(json.data) ? json.data : [];
+      for (const raw of data) {
+        const parsed = parseSettlementRow(raw);
+        if (parsed !== null) rows.push(parsed);
+      }
+      if (data.length < PAGE_SIZE) break;
+      page += 1;
+    }
+    return rows;
+  }
+
   return {
     name: "midtrans",
     createQris: chargeQris,
     getQrisStatus: getStatus,
     verifyWebhookSignature,
+    fetchQrisSettlements,
   };
+}
+
+const BUSINESS_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const PAGE_SIZE = 200;
+// Hard cap so a misbehaving upstream that never decrements row count can't
+// drive the worker into an infinite loop. 50 pages × 200 rows = 10k QRIS
+// settlements per merchant per day, far past any plausible v0 volume.
+const MAX_SETTLEMENT_PAGES = 50;
+
+function parseSettlementRow(raw: unknown): SettlementReportRow | null {
+  if (!raw || typeof raw !== "object") return null;
+  const row = raw as Record<string, unknown>;
+  const providerTransactionId = stringField(row, "transaction_id");
+  if (providerTransactionId === undefined) return null;
+  const grossAmountIdr = parseAmount(stringField(row, "gross_amount"));
+  const settledAtRaw = stringField(row, "settlement_time") ?? stringField(row, "transaction_time");
+  if (settledAtRaw === undefined) return null;
+  const settledAt = jakartaTimestampToIsoOffset(settledAtRaw) ?? settledAtRaw;
+  const last4 = extractLast4(row);
+  if (last4 === null) return null;
+  const outletId = stringField(row, "custom_field1");
+  if (outletId === undefined) return null;
+  return {
+    providerTransactionId,
+    grossAmountIdr,
+    last4,
+    settledAt,
+    outletId,
+  };
+}
+
+// Midtrans's QRIS settlement row exposes the buyer's reference under
+// `transaction_reference` (preferred), `reference_id`, or — for VA-shaped
+// flows that ride on top of QRIS — the trailing digits of `va_numbers[0].number`.
+// We pick the first of these that exists and last-4 it.
+function extractLast4(row: Record<string, unknown>): string | null {
+  const fromTxnRef = lastFour(stringField(row, "transaction_reference"));
+  if (fromTxnRef !== null) return fromTxnRef;
+  const fromRefId = lastFour(stringField(row, "reference_id"));
+  if (fromRefId !== null) return fromRefId;
+  const vaNumbers = row.va_numbers;
+  if (Array.isArray(vaNumbers) && vaNumbers.length > 0) {
+    const first = vaNumbers[0];
+    if (first && typeof first === "object") {
+      const number =
+        (first as Record<string, unknown>).va_number ?? (first as Record<string, unknown>).number;
+      const fromVa = lastFour(typeof number === "string" ? number : undefined);
+      if (fromVa !== null) return fromVa;
+    }
+  }
+  return null;
+}
+
+function lastFour(raw: string | undefined): string | null {
+  if (!raw) return null;
+  const digitsOnly = raw.replace(/\D/g, "");
+  if (digitsOnly.length < 4) return null;
+  return digitsOnly.slice(-4);
 }
 
 export function computeMidtransSignature(

@@ -5,6 +5,8 @@ export type {
   QrisOrderResult,
   QrisOrderStatus,
   QrisStatusResult,
+  SettlementReportFilter,
+  SettlementReportRow,
   WebhookHeaders,
 } from "./types.js";
 export { PaymentProviderError, WebhookSignatureError } from "./types.js";

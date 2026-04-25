@@ -43,6 +43,7 @@ describe("closeEod", () => {
                 cashIdr: 0,
                 qrisDynamicIdr: 0,
                 qrisStaticIdr: 0,
+                qrisStaticUnverifiedIdr: 0,
                 cardIdr: 0,
                 otherIdr: 0,
                 netIdr: 0,
