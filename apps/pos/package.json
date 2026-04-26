@@ -10,7 +10,7 @@
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "typecheck": "tsc -b --noEmit",
-    "test": "vitest run",
+    "test": "NODE_ENV=test vitest run",
     "test:e2e": "playwright test",
     "test:e2e:full-day-offline": "playwright test --config=playwright.full-day-offline.config.ts"
   },
