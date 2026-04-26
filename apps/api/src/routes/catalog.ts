@@ -89,19 +89,18 @@ export function catalogRoutes(deps: CatalogRouteDeps) {
         })
       : null;
 
-    const makeGate =
-      (handler: typeof requireStaffRead) => async (req: FastifyRequest, reply: FastifyReply) => {
-        if (!handler) {
-          sendError(
-            reply,
-            503,
-            "staff_bootstrap_disabled",
-            "Set STAFF_BOOTSTRAP_TOKEN to enable catalog CRUD until KASA-25 ships staff sessions.",
-          );
-          return reply;
-        }
-        return handler(req, reply);
+    const makeGate = (handler: typeof requireStaffRead) => {
+      if (handler) return handler;
+      return async (_req: FastifyRequest, reply: FastifyReply) => {
+        sendError(
+          reply,
+          503,
+          "staff_bootstrap_disabled",
+          "Set STAFF_BOOTSTRAP_TOKEN to enable catalog CRUD until KASA-25 ships staff sessions.",
+        );
+        return reply;
       };
+    };
     const gatedPreHandler = makeGate(requireStaffRead);
     const gatedWritePreHandler = makeGate(requireStaffWrite);
 
