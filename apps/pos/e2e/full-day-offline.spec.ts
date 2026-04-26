@@ -519,37 +519,51 @@ async function triggerPushAndWait(page: Page): Promise<void> {
     null,
     { timeout: 120_000, polling: 500 },
   );
-  // Phase 2: assert no row landed in `needs_attention`. push.ts parks every
-  // terminal 4xx there (push.ts:310-315) and listDrainable() does not retry
-  // it (pending-sales.ts:60-65). Without this guard, a batch where every
-  // row was 4xx-rejected would satisfy phase 1 immediately while producing
-  // zero server-side state — the misleading `serverA = []` 4-second pass on
-  // PR #47. Surface lastError so a regression names the actual HTTP code.
-  const stuck = await page.evaluate(async () => {
+  // Phase 2: assert every row is `synced`. push.ts moves rows out of
+  // `queued`/`sending`/`error` into either `synced` (200/201/409) or
+  // `needs_attention` (terminal 4xx — push.ts:310-315), and listDrainable()
+  // ignores `needs_attention` (pending-sales.ts:60-65). Without this guard,
+  // a batch where every row was 4xx-rejected — or one where the runner
+  // never picked up the rows at all — would satisfy phase 1 immediately
+  // while producing zero server-side state. That was the misleading
+  // `serverA = []` 4-second pass on PR #47.
+  //
+  // Surface a status histogram + sample lastError so a regression names the
+  // actual failure mode (terminal 4xx vs runner-never-pushed) instead of
+  // collapsing into an empty-array compare downstream.
+  const audit = await page.evaluate(async () => {
     const db = await new Promise<IDBDatabase>((resolve, reject) => {
       const req = indexedDB.open("kassa-pos");
       req.onsuccess = () => resolve(req.result);
       req.onerror = () => reject(req.error);
     });
     const tx = db.transaction("pending_sales", "readonly");
-    const rows = await new Promise<unknown[]>((resolve, reject) => {
-      const req = tx
-        .objectStore("pending_sales")
-        .index("status")
-        .getAll(IDBKeyRange.only("needs_attention"));
+    const all = await new Promise<unknown[]>((resolve, reject) => {
+      const req = tx.objectStore("pending_sales").getAll();
       req.onsuccess = () => resolve(req.result as unknown[]);
       req.onerror = () => reject(req.error);
     });
     db.close();
-    return rows as { localSaleId: string; outletId: string; lastError: string | null }[];
+    return all as {
+      localSaleId: string;
+      outletId: string;
+      status: string;
+      lastError: string | null;
+    }[];
   });
-  if (stuck.length > 0) {
-    const sample = stuck
+  const histogram: Record<string, number> = {};
+  for (const r of audit) histogram[r.status] = (histogram[r.status] ?? 0) + 1;
+  const nonSynced = audit.filter((r) => r.status !== "synced");
+  if (audit.length === 0 || nonSynced.length > 0) {
+    const sample = nonSynced
       .slice(0, 5)
-      .map((r) => `  ${r.localSaleId} (${r.outletId}): ${r.lastError ?? "(no error captured)"}`)
+      .map(
+        (r) =>
+          `  [${r.status}] ${r.localSaleId} (${r.outletId}): ${r.lastError ?? "(no error captured)"}`,
+      )
       .join("\n");
     throw new Error(
-      `${stuck.length} pending_sales row(s) parked in \`needs_attention\` (terminal 4xx). Sample:\n${sample}`,
+      `pending_sales drain incomplete — total=${audit.length} status=${JSON.stringify(histogram)}. Non-synced sample:\n${sample || "  (none)"}`,
     );
   }
 }
