@@ -14,7 +14,8 @@ Subsequent issues wire real behaviour in:
 - [KASA-23](/KASA/issues/KASA-23) — CRUD endpoints using shared Zod schemas.
 - [KASA-24](/KASA/issues/KASA-24) — Validation preHandler wiring.
 - [KASA-25](/KASA/issues/KASA-25), [KASA-26](/KASA/issues/KASA-26) — Staff session + RBAC (replaces the `STAFF_BOOTSTRAP_TOKEN` shim).
-- [KASA-27](/KASA/issues/KASA-27) — OpenAPI-from-Zod.
+
+OpenAPI-from-Zod ([KASA-27](/KASA/issues/KASA-27)) is wired: every route registers a Zod schema (request body/params and response shapes) which `fastify-type-provider-zod` both validates at runtime and emits as the OpenAPI 3.1 spec served at `/docs/json`. As we replace `notImplemented` placeholders with real handlers the docs update automatically — there is no second copy of the contract to keep in sync.
 
 ## Local development
 
@@ -35,6 +36,23 @@ pnpm --filter @kassa/api typecheck
 ```
 
 The server listens on `http://$HOST:$PORT` (defaults: `0.0.0.0:3000`). `GET /health` is mounted at the root for monitor stability; all domain routes live under the `/v1` prefix.
+
+## API documentation
+
+The OpenAPI 3.1 spec is generated from the Zod schemas attached to every route at boot, and Swagger UI is mounted alongside it:
+
+| Path | Returns |
+|------|---------|
+| `GET /docs` | Rendered Swagger UI (HTML). |
+| `GET /docs/json` | OpenAPI 3.1 spec (JSON). |
+| `GET /docs/yaml` | OpenAPI 3.1 spec (YAML). |
+
+The spec is the source of truth for the API surface — anything not in `/docs/json` is not part of the contract. To export it to disk:
+
+```bash
+pnpm --filter @kassa/api dev &
+curl -s http://localhost:3000/docs/json > openapi.json
+```
 
 ## Configuration
 

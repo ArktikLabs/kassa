@@ -1,23 +1,46 @@
 import type { FastifyInstance } from "fastify";
+import { z } from "zod";
 
-export interface HealthResponse {
-  status: "ok";
-  service: "kassa-api";
-  version: string;
-  uptimeSeconds: number;
-  timestamp: string;
-}
+const healthResponseSchema = z
+  .object({
+    status: z.literal("ok"),
+    service: z.literal("kassa-api"),
+    version: z.string(),
+    uptimeSeconds: z.number().int().nonnegative(),
+    timestamp: z.string().datetime({ offset: true }),
+  })
+  .strict()
+  .describe(
+    "Liveness payload for uptime monitors. Intentionally unversioned so " +
+      "monitors do not need to track API versions.",
+  );
+
+export type HealthResponse = z.infer<typeof healthResponseSchema>;
 
 export async function healthRoutes(app: FastifyInstance): Promise<void> {
   const version = process.env.npm_package_version ?? "0.0.0";
 
-  app.get("/health", async (): Promise<HealthResponse> => {
-    return {
-      status: "ok",
-      service: "kassa-api",
-      version,
-      uptimeSeconds: Math.floor(process.uptime()),
-      timestamp: new Date().toISOString(),
-    };
-  });
+  app.get(
+    "/health",
+    {
+      schema: {
+        tags: ["health"],
+        summary: "Liveness probe",
+        description:
+          "Always returns 200 when the process can serve requests. Mounted at " +
+          "the root (not under `/v1`) so external monitors do not have to " +
+          "track API versions.",
+        response: { 200: healthResponseSchema },
+      },
+    },
+    async (): Promise<HealthResponse> => {
+      return {
+        status: "ok",
+        service: "kassa-api",
+        version,
+        uptimeSeconds: Math.floor(process.uptime()),
+        timestamp: new Date().toISOString(),
+      };
+    },
+  );
 }

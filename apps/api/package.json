@@ -16,11 +16,14 @@
   },
   "dependencies": {
     "@fastify/rate-limit": "^10.3.0",
+    "@fastify/swagger": "^9.7.0",
+    "@fastify/swagger-ui": "^5.2.6",
     "@kassa/payments": "workspace:*",
     "@kassa/schemas": "workspace:*",
     "argon2": "^0.41.1",
     "drizzle-orm": "^0.36.4",
     "fastify": "^5.1.0",
+    "fastify-type-provider-zod": "^4.0.2",
     "zod": "^3.23.8"
   },
   "devDependencies": {
