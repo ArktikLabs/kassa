@@ -312,6 +312,7 @@ The route map is authoritatively documented in [apps/api/README.md](../apps/api/
 | `GET /v1/catalog/items`, `/items/:id`, `/boms`, `/uoms` | ✓ | ✓ | ✓ | ✓ |
 | `POST` / `PATCH` / `DELETE /v1/catalog/items[/:id]` | ✓ | ✓ | — | — |
 | `GET /v1/outlets`, `/outlets/:id` | ✓ | ✓ | ✓ | ✓ |
+| `POST /v1/auth/enrolment-codes` | ✓ | ✓ | — | — |
 | `POST /v1/admin/reconciliation/run`, `/match` | ✓ | — | — | — |
 
 Notes:
@@ -541,3 +542,4 @@ Each milestone produces a deployable increment; no milestone ends with a non-wor
 | 2026-04-22 | Refresh to match current tech stack — Fastify + Node 22 + Postgres + Drizzle + Fly.io; drop residual Frappe/ERPNext references; align route map with shipped `@kassa/api` scaffold. | Engineer ([KASA-51](/KASA/issues/KASA-51)) |
 | 2026-04-22 | Review fixup: health endpoint is `/health` (unversioned) per [KASA-22](/KASA/issues/KASA-22) — corrected §2.2, §4.1, §5.4, §5.5, §8. Routes layout is `src/routes/*` with `/v1` applied by `routes/index.ts`. `transaction_event` → `transaction_events` aligned with [TECH-STACK.md](./TECH-STACK.md) §6.3. | Engineer ([KASA-51](/KASA/issues/KASA-51)) |
 | 2026-04-26 | Document RBAC role matrix and `allowedRoles` enforcement under §4.1; catalog write paths gated to `owner`/`manager`. | Engineer ([KASA-26](/KASA/issues/KASA-26)) |
+| 2026-04-26 | Gate `POST /v1/auth/enrolment-codes` to `owner`/`manager` via `allowedRoles`; cashier/read_only callers are rejected with 403. RBAC matrix updated. | Engineer ([KASA-123](/KASA/issues/KASA-123)) |

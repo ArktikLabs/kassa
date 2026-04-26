@@ -14,7 +14,10 @@ import { sendError, notImplemented } from "../lib/errors.js";
 import { errorBodySchema, notImplementedResponses } from "../lib/openapi.js";
 import { validate } from "../lib/validate.js";
 import { EnrolmentError, type EnrolmentService } from "../services/enrolment/index.js";
-import { makeStaffBootstrapPreHandler } from "../auth/staff-bootstrap.js";
+import { makeMerchantScopedStaffPreHandler } from "../auth/staff-bootstrap.js";
+import type { StaffRole } from "../db/schema/staff.js";
+
+const ENROLMENT_CODE_ISSUE_ROLES: readonly StaffRole[] = ["owner", "manager"];
 
 export interface AuthRouteDeps {
   enrolment: EnrolmentService;
@@ -26,7 +29,9 @@ export interface AuthRouteDeps {
 export function authRoutes(deps: AuthRouteDeps) {
   return async function register(app: FastifyInstance): Promise<void> {
     const requireStaff = deps.staffBootstrapToken
-      ? makeStaffBootstrapPreHandler(deps.staffBootstrapToken)
+      ? makeMerchantScopedStaffPreHandler(deps.staffBootstrapToken, {
+          allowedRoles: ENROLMENT_CODE_ISSUE_ROLES,
+        })
       : null;
 
     // In-memory limiter; devops will swap the store to the Redis chosen for
@@ -45,14 +50,18 @@ export function authRoutes(deps: AuthRouteDeps) {
           tags: ["auth"],
           summary: "Issue an enrolment code",
           description:
-            "Staff-only. Mints an 8-character single-use code (10-minute TTL by " +
-            "default) bound to an outlet. Until KASA-25 ships staff sessions, " +
-            "the caller must present `Authorization: Bearer <STAFF_BOOTSTRAP_TOKEN>` " +
-            "and `X-Staff-User-Id: <uuid>` headers; when the bootstrap token is " +
-            "unset the endpoint returns 503.",
+            "Owner/manager-only. Mints an 8-character single-use code (10-minute " +
+            "TTL by default) bound to an outlet. Until KASA-25 ships staff " +
+            "sessions, the caller must present `Authorization: Bearer " +
+            "<STAFF_BOOTSTRAP_TOKEN>` plus `X-Staff-User-Id`, " +
+            "`X-Staff-Merchant-Id`, and `X-Staff-Role` headers; the role must be " +
+            "`owner` or `manager` (cashiers and read-only staff get 403). When " +
+            "the bootstrap token is unset the endpoint returns 503.",
           response: {
             201: enrolmentCodeIssueResponse,
+            400: errorBodySchema,
             401: errorBodySchema,
+            403: errorBodySchema,
             404: errorBodySchema,
             422: errorBodySchema,
             503: errorBodySchema,
