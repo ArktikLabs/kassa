@@ -30,10 +30,19 @@ export interface CatalogRouteDeps {
   /**
    * Bootstrap window only. KASA-25 replaces this with the real staff session
    * preHandler; until then the CRUD write paths require a staff bootstrap
-   * token + `X-Staff-Merchant-Id`.
+   * token + `X-Staff-Merchant-Id`. Reads accept any staff role; writes are
+   * restricted to `owner`/`manager` per the RBAC matrix in
+   * ARCHITECTURE.md §4 (KASA-26).
    */
   staffBootstrapToken?: string;
 }
+
+/**
+ * Roles allowed to mutate the catalog. `cashier` and `read_only` get a 403
+ * from the staff-bootstrap preHandler so a counter-staff session that
+ * leaks the bootstrap token can't change prices or item availability.
+ */
+const CATALOG_WRITE_ROLES = ["owner", "manager"] as const;
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -71,22 +80,30 @@ function handleItemError(reply: FastifyReply, err: ItemError): void {
 
 export function catalogRoutes(deps: CatalogRouteDeps) {
   return async function register(app: FastifyInstance): Promise<void> {
-    const requireStaff = deps.staffBootstrapToken
+    const requireStaffRead = deps.staffBootstrapToken
       ? makeMerchantScopedStaffPreHandler(deps.staffBootstrapToken)
       : null;
+    const requireStaffWrite = deps.staffBootstrapToken
+      ? makeMerchantScopedStaffPreHandler(deps.staffBootstrapToken, {
+          allowedRoles: CATALOG_WRITE_ROLES,
+        })
+      : null;
 
-    const gatedPreHandler = async (req: FastifyRequest, reply: FastifyReply) => {
-      if (!requireStaff) {
-        sendError(
-          reply,
-          503,
-          "staff_bootstrap_disabled",
-          "Set STAFF_BOOTSTRAP_TOKEN to enable catalog CRUD until KASA-25 ships staff sessions.",
-        );
-        return reply;
-      }
-      return requireStaff(req, reply);
-    };
+    const makeGate =
+      (handler: typeof requireStaffRead) => async (req: FastifyRequest, reply: FastifyReply) => {
+        if (!handler) {
+          sendError(
+            reply,
+            503,
+            "staff_bootstrap_disabled",
+            "Set STAFF_BOOTSTRAP_TOKEN to enable catalog CRUD until KASA-25 ships staff sessions.",
+          );
+          return reply;
+        }
+        return handler(req, reply);
+      };
+    const gatedPreHandler = makeGate(requireStaffRead);
+    const gatedWritePreHandler = makeGate(requireStaffWrite);
 
     // GET /v1/catalog/items — merchant-scoped delta pull.
     app.get<{ Querystring: ItemListQuery }>(
@@ -148,10 +165,10 @@ export function catalogRoutes(deps: CatalogRouteDeps) {
       },
     );
 
-    // POST /v1/catalog/items
+    // POST /v1/catalog/items — owner/manager only (KASA-26).
     app.post<{ Body: ItemCreateRequest }>(
       "/items",
-      { preHandler: [gatedPreHandler, validate({ body: itemCreateRequest })] },
+      { preHandler: [gatedWritePreHandler, validate({ body: itemCreateRequest })] },
       async (req, reply) => {
         const principal = requireStaffPrincipal(req, reply);
         if (!principal) return reply;
@@ -180,10 +197,10 @@ export function catalogRoutes(deps: CatalogRouteDeps) {
       },
     );
 
-    // PATCH /v1/catalog/items/:itemId
+    // PATCH /v1/catalog/items/:itemId — owner/manager only (KASA-26).
     app.patch<{ Params: { itemId: string }; Body: ItemUpdateRequest }>(
       "/items/:itemId",
-      { preHandler: [gatedPreHandler, validate({ body: itemUpdateRequest })] },
+      { preHandler: [gatedWritePreHandler, validate({ body: itemUpdateRequest })] },
       async (req, reply) => {
         const principal = requireStaffPrincipal(req, reply);
         if (!principal) return reply;
@@ -225,10 +242,11 @@ export function catalogRoutes(deps: CatalogRouteDeps) {
       },
     );
 
-    // DELETE /v1/catalog/items/:itemId — soft delete via is_active=false
+    // DELETE /v1/catalog/items/:itemId — soft delete via is_active=false.
+    // Owner/manager only (KASA-26).
     app.delete<{ Params: { itemId: string } }>(
       "/items/:itemId",
-      { preHandler: gatedPreHandler },
+      { preHandler: gatedWritePreHandler },
       async (req, reply) => {
         const principal = requireStaffPrincipal(req, reply);
         if (!principal) return reply;
