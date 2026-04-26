@@ -477,12 +477,10 @@ async function seedOutbox(
 
 async function triggerPushAndWait(page: Page): Promise<void> {
   // The sync runner re-arms automatically on the `online` window event when
-  // the context flips back online, but we trigger a push explicitly via the
-  // module exposed on `window` so the wait is deterministic.
-  await page.evaluate(async () => {
-    // Sync runner is bound to the SyncProvider — manually flush any pending
-    // outbox rows by walking Dexie + invoking the API directly is overkill;
-    // instead we wait for the runner's automatic drain after the online event.
+  // the context flips back online; redundantly dispatch one to cover the
+  // (rare) case where Playwright's setOffline(false) raced the runner's
+  // listener registration.
+  await page.evaluate(() => {
     window.dispatchEvent(new Event("online"));
   });
   // Phase 1: wait for every retriable / in-flight row to settle. `synced`
@@ -490,19 +488,26 @@ async function triggerPushAndWait(page: Page): Promise<void> {
   // `queued`/`sending`/`error` into one of those, so this condition holds
   // the moment classification finishes — even if every row was 4xx-rejected.
   //
-  // Requires rows.length > 0 — empty pending_sales would satisfy
-  // `every()` vacuously and silently fast-pass before seedOutbox writes
-  // are visible to a fresh IDB connection. In this suite at least one
-  // sale is always enqueued before this wait runs, so the lower bound is
-  // safe and catches any "wait raced ahead of the writes" regression.
-  //
-  // Earlier attempts that used three sequential `idx.count(only(...))` reads
-  // inside one readonly transaction also fast-passed: IDB auto-commits a tx
-  // between awaits when it sees no pending requests, so the second/third
-  // counts landed on an inactive transaction and Chromium silently produced
-  // zeroed counts. Single `getAll()` + filter-in-JS sidesteps that race.
-  await page.waitForFunction(
-    async () => {
+  // We poll explicitly on the test side instead of `page.waitForFunction`.
+  // Two prior attempts inside `waitForFunction` fast-passed for distinct
+  // reasons:
+  //  - First, the predicate used three sequential `idx.count(only(...))`
+  //    reads inside one readonly tx; IDB auto-commits between awaits when
+  //    no pending requests are queued, so the second/third counts landed
+  //    on an inactive transaction and silently returned zero.
+  //  - Then, with a single `getAll()` predicate, the trace showed the
+  //    function ran exactly once before the wait returned (single console
+  //    event for 25 queued rows) — an `every() === false` result that
+  //    should have re-polled was instead treated as "satisfied", and the
+  //    audit ran ~7ms later before the runner had drained anything.
+  // Test-side polling sidesteps both modes: each iteration is its own
+  // `page.evaluate` (single-shot tx, no auto-commit window), and the loop
+  // only exits when the count check actually holds.
+  const deadline = Date.now() + 120_000;
+  let lastSnapshot = "";
+  let snap: { total: number; counts: Record<string, number> } = { total: 0, counts: {} };
+  while (Date.now() < deadline) {
+    snap = await page.evaluate(async () => {
       const db = await new Promise<IDBDatabase>((resolve, reject) => {
         const req = indexedDB.open("kassa-pos");
         req.onsuccess = () => resolve(req.result);
@@ -515,22 +520,32 @@ async function triggerPushAndWait(page: Page): Promise<void> {
           req.onsuccess = () => resolve(req.result as { status: string }[]);
           req.onerror = () => reject(req.error);
         });
-        // Log every poll so a regression in wait/seed timing is greppable
-        // in the trace's console events instead of being a silent 4-sec pass.
         const counts: Record<string, number> = {};
         for (const r of rows) counts[r.status] = (counts[r.status] ?? 0) + 1;
-        console.log(`[KASA-68 wait] total=${rows.length} ${JSON.stringify(counts)}`);
-        if (rows.length === 0) return false;
-        return rows.every(
-          (r) => r.status !== "queued" && r.status !== "sending" && r.status !== "error",
-        );
+        return { total: rows.length, counts };
       } finally {
         db.close();
       }
-    },
-    null,
-    { timeout: 120_000, polling: 500 },
-  );
+    });
+    const snapStr = JSON.stringify(snap);
+    if (snapStr !== lastSnapshot) {
+      // Log only on transitions so the trace stays readable; greppable
+      // as `[KASA-68 wait]` in the CI log if a future regression stalls.
+      console.log(`[KASA-68 wait] ${snapStr}`);
+      lastSnapshot = snapStr;
+    }
+    if (snap.total > 0) {
+      const pending =
+        (snap.counts.queued ?? 0) + (snap.counts.sending ?? 0) + (snap.counts.error ?? 0);
+      if (pending === 0) break;
+    }
+    await new Promise((r) => setTimeout(r, 500));
+  }
+  if (Date.now() >= deadline) {
+    throw new Error(
+      `triggerPushAndWait phase 1 timed out after 120s — last counts: ${JSON.stringify(snap)}`,
+    );
+  }
   // Phase 2: assert every row is `synced`. push.ts moves rows out of
   // `queued`/`sending`/`error` into either `synced` (200/201/409) or
   // `needs_attention` (terminal 4xx — push.ts:310-315), and listDrainable()
