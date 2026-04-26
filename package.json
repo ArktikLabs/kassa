@@ -16,7 +16,8 @@
     "lint": "biome check",
     "lint:fix": "biome check --write",
     "format": "biome format",
-    "format:write": "biome format --write"
+    "format:write": "biome format --write",
+    "seed:pilot": "pnpm --filter @kassa/api seed:pilot"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.4.13"

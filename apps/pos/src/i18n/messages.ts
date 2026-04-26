@@ -244,6 +244,34 @@ const id: MessageMap = {
   "eod.closed.expectedCash": "Seharusnya",
   "eod.closed.variance": "Selisih",
   "eod.closed.reason": "Alasan",
+  "nav.help": "Bantuan",
+  "help.heading": "Panduan onboarding",
+  "help.intro":
+    "Panduan singkat onboarding Kassa. Target: dari buat akun sampai transaksi pertama <strong>kurang dari {minutes} menit</strong>. Setiap bagian punya tombol untuk loncat ke layar yang relevan.",
+  "help.updated": "Versi terakhir diperbarui {date}.",
+  "help.s1.title": "Daftarkan tablet ini",
+  "help.s1.body":
+    "<p>Minta kode enrolment 8 karakter dari Back Office (menu <strong>Perangkat</strong>). Buka <code>/enrol</code> di tablet, ketik kode atau pindai QR, lalu ketuk <strong>Hubungkan perangkat</strong>. Kode berlaku 15 menit dan hanya bisa dipakai sekali.</p>",
+  "help.s1.link": "Buka Enrol",
+  "help.s2.title": "Sambungkan printer Bluetooth",
+  "help.s2.body":
+    "<p>Pasangkan printer ke tablet via <strong>Pengaturan Bluetooth</strong>. Lalu di <code>/admin</code> → Struk, pilih lebar kertas (58 mm atau 80 mm). Saat transaksi pertama, ketuk <strong>Cetak</strong> di layar struk dan pilih printer Anda — tablet menyimpan pilihan untuk transaksi berikutnya.</p>",
+  "help.s2.link": "Buka Admin",
+  "help.s3.title": "Periksa sinkronisasi data",
+  "help.s3.body":
+    "<p>Item, BOM, dan stok yang dibuat di Back Office muncul di tablet setelah sinkron (≤ 30 detik kalau online). Buka <code>/admin</code> → <strong>Sinkronisasi data</strong> dan ketuk <strong>Segarkan data</strong> untuk paksa refresh kalau item baru belum terlihat.</p>",
+  "help.s3.link": "Buka Admin",
+  "help.s4.title": "Transaksi pertama",
+  "help.s4.body":
+    "<p>Di <code>/catalog</code>, ketuk item — masuk keranjang. Buka <strong>Keranjang</strong>, ketuk <strong>Bayar tunai</strong> atau <strong>Bayar QRIS</strong>, masukkan jumlah uang (untuk tunai), lalu ketuk <strong>Selesai</strong>. Layar struk muncul; ketuk <strong>Cetak</strong>. Saat offline, transaksi tetap selesai dan masuk outbox lokal.</p>",
+  "help.s4.link": "Buka Katalog",
+  "help.s5.title": "Tutup hari (end-of-day)",
+  "help.s5.body":
+    "<p>Di akhir hari, buka <code>/eod</code>. Sistem menampilkan total tunai dan QRIS yang diharapkan. Hitung uang fisik di laci, masukkan ke kolom <strong>Tunai dihitung</strong>, isi alasan kalau ada selisih, lalu ketuk <strong>Tutup hari</strong>. Target varians: Rp 0.</p>",
+  "help.s5.link": "Buka EOD",
+  "help.printable.heading": "Versi cetak",
+  "help.printable.body":
+    "Versi lengkap (termasuk daftar printer yang didukung dan log revisi) ada di <a>docs/ONBOARDING.md</a> di repositori. Cetak A4, ≤ 8 halaman.",
 };
 
 const en: MessageMap = {
@@ -472,6 +500,34 @@ const en: MessageMap = {
   "eod.closed.expectedCash": "Expected",
   "eod.closed.variance": "Variance",
   "eod.closed.reason": "Reason",
+  "nav.help": "Help",
+  "help.heading": "Onboarding guide",
+  "help.intro":
+    "Quick onboarding guide for Kassa. Target: from account creation to first transaction in <strong>under {minutes} minutes</strong>. Each section has a button to jump straight to the relevant screen.",
+  "help.updated": "Last updated {date}.",
+  "help.s1.title": "Enrol this tablet",
+  "help.s1.body":
+    "<p>Get the 8-character enrolment code from Back Office (<strong>Devices</strong> menu). Open <code>/enrol</code> on the tablet, type the code or scan its QR, then tap <strong>Connect device</strong>. Codes expire after 15 minutes and are single-use.</p>",
+  "help.s1.link": "Open Enrol",
+  "help.s2.title": "Connect Bluetooth printer",
+  "help.s2.body":
+    "<p>Pair the printer to the tablet from <strong>Bluetooth Settings</strong>. Then in <code>/admin</code> → Receipt, pick the paper width (58 mm or 80 mm). On the first transaction, tap <strong>Print</strong> on the receipt screen and pick your printer — the tablet remembers the choice for future transactions.</p>",
+  "help.s2.link": "Open Admin",
+  "help.s3.title": "Verify data sync",
+  "help.s3.body":
+    "<p>Items, BOMs, and stock created in Back Office appear on the tablet after sync (≤ 30 seconds when online). Open <code>/admin</code> → <strong>Data sync</strong> and tap <strong>Refresh data</strong> to force a refresh if a new item is missing.</p>",
+  "help.s3.link": "Open Admin",
+  "help.s4.title": "First transaction",
+  "help.s4.body":
+    "<p>In <code>/catalog</code>, tap an item to add it to the cart. Open <strong>Cart</strong>, tap <strong>Pay cash</strong> or <strong>Pay QRIS</strong>, enter the cash received (for cash), then tap <strong>Done</strong>. The receipt screen appears — tap <strong>Print</strong>. When offline, the transaction still completes and is queued in the local outbox.</p>",
+  "help.s4.link": "Open Catalog",
+  "help.s5.title": "Close the day (end-of-day)",
+  "help.s5.body":
+    "<p>At end of day, open <code>/eod</code>. The system shows expected cash and QRIS totals. Count physical cash in the drawer, enter it in <strong>Counted cash</strong>, add a reason if there is a variance, then tap <strong>Close day</strong>. Variance target: Rp 0.</p>",
+  "help.s5.link": "Open EOD",
+  "help.printable.heading": "Printable version",
+  "help.printable.body":
+    "The full version (including supported printer list and revision log) lives in <a>docs/ONBOARDING.md</a> in the repo. A4, ≤ 8 pages.",
 };
 
 const CATALOGUES: Record<Locale, MessageMap> = {

@@ -85,6 +85,24 @@ export function LoginScreen() {
             <FormattedMessage id="login.submit" />
           </Button>
         </form>
+        {/*
+         * Onboarding runbook discovery (KASA-69 acceptance criterion).
+         * `/onboarding.md` is the printable runbook copied from
+         * `docs/ONBOARDING.md` into `public/` at build time, so a brand-new
+         * merchant who lands on the login screen on day one can read the
+         * guide before they have credentials.
+         */}
+        <p className="mt-6 border-t border-neutral-200 pt-4 text-center text-sm text-neutral-600">
+          <a
+            href="/onboarding.md"
+            target="_blank"
+            rel="noreferrer"
+            className="font-semibold text-primary-700 hover:underline"
+          >
+            <FormattedMessage id="login.onboarding.link" />
+          </a>{" "}
+          <FormattedMessage id="login.onboarding.suffix" />
+        </p>
       </div>
     </main>
   );

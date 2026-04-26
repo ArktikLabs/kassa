@@ -39,13 +39,26 @@ export function RootLayout({ children }: { children: ReactNode }) {
         <Link to="/catalog" className="text-lg font-bold text-primary-700">
           <FormattedMessage id="app.name" />
         </Link>
-        <ConnectionPill
-          state={state}
-          pendingCount={pendingCount}
-          onTap={() => {
-            void triggerRefresh();
-          }}
-        />
+        <div className="flex items-center gap-3">
+          {/*
+           * Onboarding runbook (KASA-69). Reachable from every screen,
+           * including `/enrol` (the unenrolled-device entry point), so a
+           * fresh tester can fall back to the guide without leaving the app.
+           */}
+          <Link
+            to="/help"
+            className="text-sm font-semibold text-neutral-600 hover:text-primary-700"
+          >
+            <FormattedMessage id="nav.help" />
+          </Link>
+          <ConnectionPill
+            state={state}
+            pendingCount={pendingCount}
+            onTap={() => {
+              void triggerRefresh();
+            }}
+          />
+        </div>
       </header>
       <main className="flex-1 px-4 py-6">{children}</main>
       <UpdatePrompt />

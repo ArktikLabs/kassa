@@ -31,6 +31,8 @@ const id: MessageMap = {
   "login.submit": "Masuk",
   "login.error":
     "Email atau kata sandi tidak dikenali. Stub scaffold: gunakan email staf yang diseed.",
+  "login.onboarding.link": "Baca panduan onboarding (PDF · 8 halaman)",
+  "login.onboarding.suffix": "— bisa dibaca sebelum login.",
   "guard.forbidden.heading": "Akses dibatasi",
   "guard.forbidden.body":
     "Halaman ini hanya untuk peran manajer atau pemilik. Hubungi pemilik outlet untuk akses.",
@@ -172,6 +174,8 @@ const en: MessageMap = {
   "login.password": "Password",
   "login.submit": "Sign in",
   "login.error": "Email or password not recognised. Scaffold stub: use a seeded staff email.",
+  "login.onboarding.link": "Read the onboarding guide (PDF · 8 pages)",
+  "login.onboarding.suffix": "— available before you sign in.",
   "guard.forbidden.heading": "Access restricted",
   "guard.forbidden.body":
     "This page is for managers or owners only. Ask your outlet owner to grant access.",

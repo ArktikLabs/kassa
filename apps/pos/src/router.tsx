@@ -15,6 +15,7 @@ import { TenderQrisStaticScreen } from "./routes/tender.qris.static";
 import { ReceiptScreen } from "./routes/receipt.$id";
 import { AdminScreen } from "./routes/admin";
 import { EodRoute } from "./routes/eod";
+import { HelpRoute } from "./routes/help";
 import { hydrateEnrolment, isEnrolled } from "./lib/enrolment";
 
 async function guardEnrolled(): Promise<void> {
@@ -110,6 +111,15 @@ const eodRoute = createRoute({
   component: EodRoute,
 });
 
+// `/help` is the in-PWA mirror of `docs/ONBOARDING.md` (KASA-69). No guard:
+// a fresh tablet on `/enrol` must be able to reach the runbook before the
+// device is enrolled to any outlet.
+const helpRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/help",
+  component: HelpRoute,
+});
+
 const routeTree = rootRoute.addChildren([
   indexRoute,
   enrolRoute,
@@ -121,6 +131,7 @@ const routeTree = rootRoute.addChildren([
   receiptRoute,
   adminRoute,
   eodRoute,
+  helpRoute,
 ]);
 
 export const router = createRouter({ routeTree });
