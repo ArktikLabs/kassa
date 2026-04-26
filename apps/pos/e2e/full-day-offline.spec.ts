@@ -485,6 +485,10 @@ async function triggerPushAndWait(page: Page): Promise<void> {
     // instead we wait for the runner's automatic drain after the online event.
     window.dispatchEvent(new Event("online"));
   });
+  // Phase 1: wait for every retriable / in-flight row to settle. `synced`
+  // and `needs_attention` are terminal; the runner moves rows out of
+  // `queued`/`sending`/`error` into one of those, so this condition holds
+  // the moment classification finishes — even if every row was 4xx-rejected.
   await page.waitForFunction(
     async () => {
       const db = await new Promise<IDBDatabase>((resolve, reject) => {
@@ -515,6 +519,39 @@ async function triggerPushAndWait(page: Page): Promise<void> {
     null,
     { timeout: 120_000, polling: 500 },
   );
+  // Phase 2: assert no row landed in `needs_attention`. push.ts parks every
+  // terminal 4xx there (push.ts:310-315) and listDrainable() does not retry
+  // it (pending-sales.ts:60-65). Without this guard, a batch where every
+  // row was 4xx-rejected would satisfy phase 1 immediately while producing
+  // zero server-side state — the misleading `serverA = []` 4-second pass on
+  // PR #47. Surface lastError so a regression names the actual HTTP code.
+  const stuck = await page.evaluate(async () => {
+    const db = await new Promise<IDBDatabase>((resolve, reject) => {
+      const req = indexedDB.open("kassa-pos");
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+    const tx = db.transaction("pending_sales", "readonly");
+    const rows = await new Promise<unknown[]>((resolve, reject) => {
+      const req = tx
+        .objectStore("pending_sales")
+        .index("status")
+        .getAll(IDBKeyRange.only("needs_attention"));
+      req.onsuccess = () => resolve(req.result as unknown[]);
+      req.onerror = () => reject(req.error);
+    });
+    db.close();
+    return rows as { localSaleId: string; outletId: string; lastError: string | null }[];
+  });
+  if (stuck.length > 0) {
+    const sample = stuck
+      .slice(0, 5)
+      .map((r) => `  ${r.localSaleId} (${r.outletId}): ${r.lastError ?? "(no error captured)"}`)
+      .join("\n");
+    throw new Error(
+      `${stuck.length} pending_sales row(s) parked in \`needs_attention\` (terminal 4xx). Sample:\n${sample}`,
+    );
+  }
 }
 
 interface ServerSale {
