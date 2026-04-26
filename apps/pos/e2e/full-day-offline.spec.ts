@@ -490,12 +490,17 @@ async function triggerPushAndWait(page: Page): Promise<void> {
   // `queued`/`sending`/`error` into one of those, so this condition holds
   // the moment classification finishes — even if every row was 4xx-rejected.
   //
-  // NOTE: prior versions ran three sequential `idx.count(only(...))` reads
-  // inside a single readonly transaction. That tx auto-commits between
-  // awaits, so the second/third counts ran on an inactive transaction and
-  // the wait silently fast-passed with zeroed counts even when 25 rows sat
-  // in `queued`. Single `getAll()` + filter-in-JS sidesteps the auto-commit
-  // race entirely.
+  // Requires rows.length > 0 — empty pending_sales would satisfy
+  // `every()` vacuously and silently fast-pass before seedOutbox writes
+  // are visible to a fresh IDB connection. In this suite at least one
+  // sale is always enqueued before this wait runs, so the lower bound is
+  // safe and catches any "wait raced ahead of the writes" regression.
+  //
+  // Earlier attempts that used three sequential `idx.count(only(...))` reads
+  // inside one readonly transaction also fast-passed: IDB auto-commits a tx
+  // between awaits when it sees no pending requests, so the second/third
+  // counts landed on an inactive transaction and Chromium silently produced
+  // zeroed counts. Single `getAll()` + filter-in-JS sidesteps that race.
   await page.waitForFunction(
     async () => {
       const db = await new Promise<IDBDatabase>((resolve, reject) => {
@@ -510,6 +515,12 @@ async function triggerPushAndWait(page: Page): Promise<void> {
           req.onsuccess = () => resolve(req.result as { status: string }[]);
           req.onerror = () => reject(req.error);
         });
+        // Log every poll so a regression in wait/seed timing is greppable
+        // in the trace's console events instead of being a silent 4-sec pass.
+        const counts: Record<string, number> = {};
+        for (const r of rows) counts[r.status] = (counts[r.status] ?? 0) + 1;
+        console.log(`[KASA-68 wait] total=${rows.length} ${JSON.stringify(counts)}`);
+        if (rows.length === 0) return false;
         return rows.every(
           (r) => r.status !== "queued" && r.status !== "sending" && r.status !== "error",
         );
