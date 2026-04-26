@@ -6,6 +6,41 @@
   "description": "Kassa API server — Fastify + TypeScript.",
   "license": "AGPL-3.0-or-later",
   "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./app.js": {
+      "types": "./dist/app.d.ts",
+      "default": "./dist/app.js"
+    },
+    "./services/sales/index.js": {
+      "types": "./dist/services/sales/index.d.ts",
+      "default": "./dist/services/sales/index.js"
+    },
+    "./services/outlets/index.js": {
+      "types": "./dist/services/outlets/index.d.ts",
+      "default": "./dist/services/outlets/index.js"
+    },
+    "./services/catalog/index.js": {
+      "types": "./dist/services/catalog/index.d.ts",
+      "default": "./dist/services/catalog/index.js"
+    },
+    "./services/enrolment/index.js": {
+      "types": "./dist/services/enrolment/index.d.ts",
+      "default": "./dist/services/enrolment/index.js"
+    },
+    "./services/eod/index.js": {
+      "types": "./dist/services/eod/index.d.ts",
+      "default": "./dist/services/eod/index.js"
+    },
+    "./auth/staff-bootstrap.js": {
+      "types": "./dist/auth/staff-bootstrap.d.ts",
+      "default": "./dist/auth/staff-bootstrap.js"
+    }
+  },
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "build": "tsc -p tsconfig.build.json && node scripts/copy-migrations.mjs",

@@ -87,3 +87,68 @@ jobs:
             pnpm-workspace.yaml
           if-no-files-found: error
           retention-days: 7
+
+  # KASA-68 vision-metric gate: full-day offline acceptance suite.
+  #
+  # Runs the Playwright spec at apps/pos/e2e/full-day-offline.spec.ts against
+  # an in-memory API harness + the production POS bundle. Two browser
+  # contexts simulate the two devices; the suite proves a merchant can ring
+  # up 50 sales offline (mix of cash + QRIS-static, including BOM-parents,
+  # plus 3 voids and 2 refunds) and reconcile EOD with zero cash variance
+  # at both outlets.
+  #
+  # Posture is *informational on PR* and *blocking on push to main* per
+  # docs/TECH-STACK.md §9 — keep PR CI fast, gate the trunk. Flake quarantine
+  # is not permitted; any failure is a P0.
+  acceptance-full-day-offline:
+    name: Acceptance — full-day offline (KASA-68)
+    runs-on: ubuntu-latest
+    needs: ci
+    timeout-minutes: 15
+    # Informational on PRs, blocking on main. continue-on-error short-circuits
+    # the failure → red-cross signal on PR while keeping the workflow green;
+    # on push the same step runs without that flag and trips the merge gate.
+    continue-on-error: ${{ github.event_name == 'pull_request' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@fe02b34f77f8bc703788d5817da081398fad5dd2 # v4.0.0
+        with:
+          run_install: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # The harness imports the api package's compiled `buildApp` plus the
+      # in-memory repos via the `exports` map in apps/api/package.json. A
+      # workspace build before Playwright runs ensures `apps/api/dist/*` is
+      # populated.
+      - name: Build workspace
+        run: pnpm -r build
+
+      - name: Install Playwright browsers
+        run: pnpm --filter @kassa/pos exec playwright install --with-deps chromium
+
+      - name: Run full-day offline acceptance suite
+        run: pnpm --filter @kassa/pos run test:e2e:full-day-offline
+        env:
+          CI: "true"
+
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        with:
+          name: playwright-full-day-offline-report
+          path: |
+            apps/pos/playwright-report
+            apps/pos/test-results
+          if-no-files-found: ignore
+          retention-days: 14

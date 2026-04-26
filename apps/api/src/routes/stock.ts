@@ -27,9 +27,18 @@ export interface StockRouteDeps {
   now?: () => Date;
 }
 
+// `outlet` is required; `updatedAfter` / `pageToken` are accepted but
+// currently ignored — the snapshot endpoint always returns the full
+// on-hand projection. They live in the schema because the response sets
+// `nextCursor: <now>` (the watermark a future delta-aware pull will use)
+// and the shared sync runner round-trips that cursor on every cycle. Without
+// them the second-cycle pull dropped to a 422 and aborted the cycle before
+// the outbox push could drain (KASA-68 acceptance regression).
 const stockSnapshotQuery = z
   .object({
     outlet: z.string().min(1),
+    updatedAfter: z.string().datetime({ offset: true }).optional(),
+    pageToken: z.string().min(1).max(512).optional(),
   })
   .strict();
 type StockSnapshotQuery = z.infer<typeof stockSnapshotQuery>;
