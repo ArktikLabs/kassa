@@ -1,10 +1,9 @@
 import * as Sentry from "@sentry/react";
 
 /*
- * Sentry browser init for the POS PWA.
- *
- * PII posture is intentionally conservative until ARCHITECTURE.md
- * ADR-010 lands and ratifies the long-form contract:
+ * Sentry browser init for the POS PWA. Implements ADR-010 ("No PII in
+ * Sentry events", ARCHITECTURE.md): the buyer-identifying fields named
+ * by the contract (name, phone, email) never leave the device.
  *
  *  - sendDefaultPii=false so the SDK never auto-attaches IP, cookies,
  *    or query strings.
@@ -12,7 +11,8 @@ import * as Sentry from "@sentry/react";
  *    Indonesian-style addresses (jl. / gg. / no.), email addresses,
  *    and any field containing a 12+ digit run that could be a card or
  *    bank account number. Receipts and tender amounts are not scrubbed
- *    — they are not PII and we need them to triage charge bugs.
+ *    — they are not PII under PDPA and we need them to triage charge
+ *    bugs.
  *  - Session replay is disabled. The clerk's screen contains customer
  *    PII (cart contents tied to an attached customer); replay needs a
  *    dedicated review before it ships.
@@ -23,16 +23,28 @@ import * as Sentry from "@sentry/react";
  * deploys are expected to inject the DSN at build time.
  */
 
-const PHONE_RE = /(\+?62|0)[\s.-]?\d{2,4}[\s.-]?\d{3,4}[\s.-]?\d{3,5}/g;
+// Indonesian phone shape: +62 / 62 / 0 prefix followed by 8–13 more digits
+// in 2–4 / 3–4 / 3–5 groups separated by space or dash. Dots are NOT
+// allowed as separators so version strings like "0.500.100.123" do not
+// masquerade as phone numbers. Bordered by non-digit / non-dot to avoid
+// chopping into longer numeric runs.
+const PHONE_RE = /(?<![.\d])(?:\+62|62|0)[\s-]?\d{2,4}[\s-]?\d{3,4}[\s-]?\d{3,5}(?![.\d])/g;
 const EMAIL_RE = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi;
-const ADDRESS_RE = /\b(jl\.?|jalan|gg\.?|gang|no\.?|rt\.?|rw\.?)\s*\S+/gi;
+// Full Indonesian street address: street prefix (jl/jalan/gg/gang) + street
+// name + a numbered component (no./rt/rw + digits) within a few tokens.
+const ADDRESS_STREET_RE =
+  /\b(?:jl\.?|jalan|gg\.?|gang)\s+\S+(?:\s+\S+){0,8}?\s+(?:no\.?|rt\.?|rw\.?)\s*\d+\b/gi;
+// Bare numbered address component: requires digits to follow the prefix so
+// generic English like "no one" or "rt happy" no longer matches.
+const ADDRESS_NUMBER_RE = /\b(?:no\.?|rt\.?|rw\.?)\s*\d+\b/gi;
 const LONG_DIGIT_RUN = /\b\d{12,}\b/g;
 
 function scrubString(input: string): string {
   return input
     .replace(EMAIL_RE, "[email]")
     .replace(PHONE_RE, "[phone]")
-    .replace(ADDRESS_RE, "[address]")
+    .replace(ADDRESS_STREET_RE, "[address]")
+    .replace(ADDRESS_NUMBER_RE, "[address]")
     .replace(LONG_DIGIT_RUN, "[digits]");
 }
 
