@@ -50,7 +50,8 @@
     "typecheck": "tsc --noEmit",
     "db:generate": "tsx ./node_modules/drizzle-kit/bin.cjs generate --config=./drizzle.config.ts",
     "db:migrate": "tsx src/db/migrate.ts",
-    "db:studio": "tsx ./node_modules/drizzle-kit/bin.cjs studio --config=./drizzle.config.ts"
+    "db:studio": "tsx ./node_modules/drizzle-kit/bin.cjs studio --config=./drizzle.config.ts",
+    "seed:pilot": "tsx ../../scripts/seed-pilot.ts"
   },
   "dependencies": {
     "@fastify/rate-limit": "^10.3.0",

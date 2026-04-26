@@ -6,7 +6,9 @@
   "description": "Kassa Back Office — manager-facing admin UI for catalog, BOMs, outlets, staff, devices, and reconciliation.",
   "license": "AGPL-3.0-or-later",
   "scripts": {
+    "predev": "node scripts/copy-onboarding.mjs",
     "dev": "vite",
+    "prebuild": "node scripts/copy-onboarding.mjs",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "typecheck": "tsc -b --noEmit",
