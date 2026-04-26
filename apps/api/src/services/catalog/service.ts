@@ -1,11 +1,6 @@
 import { uuidv7 } from "../../lib/uuid.js";
 import type { Item } from "../../db/schema/items.js";
-import type {
-  CreateItemInput,
-  ItemsRepository,
-  ListItemsResult,
-  UpdateItemInput,
-} from "./repository.js";
+import type { CreateItemInput, ItemsRepository, UpdateItemInput } from "./repository.js";
 
 export const DEFAULT_ITEM_PAGE_LIMIT = 100;
 export const MAX_ITEM_PAGE_LIMIT = 500;
@@ -202,19 +197,23 @@ export class ItemsService {
     return row;
   }
 
-  async list(cmd: ListItemsCommand): Promise<ListItemsResult> {
+  async list(cmd: ListItemsCommand): Promise<{
+    records: Item[];
+    nextCursor: Date | null;
+    nextPageToken: string | null;
+  }> {
     const rawLimit = cmd.limit ?? DEFAULT_ITEM_PAGE_LIMIT;
     const limit = Math.max(1, Math.min(MAX_ITEM_PAGE_LIMIT, rawLimit));
 
-    // `pageToken` wins when both are present; it encodes the exact updatedAt
-    // boundary that `updatedAfter` is coarser about. Clients should pass one
-    // or the other per request.
+    // `pageToken` wins when both are present; it encodes the exact (updatedAt,
+    // id) boundary that `updatedAfter` is coarser about. Decoding lives at the
+    // service boundary so repos receive a parsed cursor and never touch the
+    // opaque wire format.
     let updatedAfter: Date | undefined;
-    let pageToken: string | null = null;
+    let cursor: { updatedAt: string; id: string } | undefined;
     if (cmd.pageToken) {
       const payload = decodePageToken(cmd.pageToken);
-      updatedAfter = new Date(payload.a);
-      pageToken = cmd.pageToken;
+      cursor = { updatedAt: payload.a, id: payload.i };
     } else if (cmd.updatedAfter) {
       updatedAfter = cmd.updatedAfter;
     }
@@ -222,11 +221,24 @@ export class ItemsService {
     const result = await this.repository.listItems({
       merchantId: cmd.merchantId,
       ...(updatedAfter !== undefined ? { updatedAfter } : {}),
-      pageToken,
+      ...(cursor !== undefined ? { cursor } : {}),
       limit,
     });
 
-    return result;
+    let nextCursor: Date | null = null;
+    let nextPageToken: string | null = null;
+    if (result.nextBoundary) {
+      if (result.hasMore) {
+        nextPageToken = encodePageToken({
+          a: result.nextBoundary.updatedAtIso,
+          i: result.nextBoundary.id,
+        });
+      } else {
+        nextCursor = new Date(result.nextBoundary.updatedAtIso);
+      }
+    }
+
+    return { records: result.records, nextCursor, nextPageToken };
   }
 
   async update(cmd: UpdateItemCommand): Promise<Item> {

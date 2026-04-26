@@ -1,7 +1,14 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { FastifyInstance } from "fastify";
 import { buildApp } from "../src/app.js";
-import { InMemoryItemsRepository, ItemsService } from "../src/services/catalog/index.js";
+import {
+  InMemoryItemsRepository,
+  type ItemError,
+  ItemsService,
+  type ItemsRepository,
+  type ListItemsInput,
+  type ListItemsResult,
+} from "../src/services/catalog/index.js";
 import { uuidv7 } from "../src/lib/uuid.js";
 
 const STAFF_TOKEN = "test-staff-token-1234567890abcdef";
@@ -604,5 +611,120 @@ describe("GET /v1/catalog/items — pagination", () => {
     expect(body.error.code).toBe("validation_error");
     expect(body.error.details.issues[0]?.source).toBe("query");
     expect(body.error.details.issues[0]?.path).toBe("limit");
+  });
+});
+
+// KASA-115: pageToken decoding lives at the service boundary. The repository
+// contract takes a parsed cursor, so neither PgItemsRepository nor
+// InMemoryItemsRepository ever sees the raw base64url string.
+describe("ItemsService.list — page-token boundary travels parsed", () => {
+  function captureRepo(): {
+    repo: ItemsRepository;
+    calls: ListItemsInput[];
+    setNextResult: (r: ListItemsResult) => void;
+  } {
+    const calls: ListItemsInput[] = [];
+    let nextResult: ListItemsResult = { records: [], nextBoundary: null, hasMore: false };
+    const repo: ItemsRepository = {
+      async listItems(input) {
+        calls.push(input);
+        return nextResult;
+      },
+      async findItem() {
+        return null;
+      },
+      async createItem() {
+        throw new Error("not used");
+      },
+      async updateItem() {
+        return null;
+      },
+      async softDeleteItem() {
+        return null;
+      },
+      async findUom() {
+        return null;
+      },
+      async findBom() {
+        return null;
+      },
+    };
+    return {
+      repo,
+      calls,
+      setNextResult: (r) => {
+        nextResult = r;
+      },
+    };
+  }
+
+  it("decodes the token in the service and hands the repo a parsed cursor", async () => {
+    const { repo, calls } = captureRepo();
+    const service = new ItemsService({ repository: repo });
+    const cursorIso = "2026-04-24T00:02:00.000123Z";
+    const cursorId = "01890abc-1234-7def-8000-0000000c1234";
+    const token = Buffer.from(JSON.stringify({ a: cursorIso, i: cursorId }), "utf8").toString(
+      "base64url",
+    );
+
+    await service.list({ merchantId: MERCHANT_A, pageToken: token });
+
+    expect(calls).toHaveLength(1);
+    const call = calls[0];
+    expect(call?.cursor).toEqual({ updatedAt: cursorIso, id: cursorId });
+    // The repo never sees the raw token: ListItemsInput has no `pageToken`.
+    expect((call as unknown as { pageToken?: unknown }).pageToken).toBeUndefined();
+    expect(call?.updatedAfter).toBeUndefined();
+  });
+
+  it("encodes the next page token from the repo's boundary, not the input cursor", async () => {
+    const { repo, setNextResult } = captureRepo();
+    const service = new ItemsService({ repository: repo });
+    const lastIso = "2026-04-24T00:05:00.999000Z";
+    const lastId = "01890abc-1234-7def-8000-0000000c5005";
+    setNextResult({
+      records: [],
+      nextBoundary: { updatedAtIso: lastIso, id: lastId },
+      hasMore: true,
+    });
+
+    const result = await service.list({ merchantId: MERCHANT_A, limit: 2 });
+
+    expect(result.nextCursor).toBeNull();
+    expect(result.nextPageToken).not.toBeNull();
+    const decoded = JSON.parse(
+      Buffer.from(result.nextPageToken ?? "", "base64url").toString("utf8"),
+    );
+    expect(decoded).toEqual({ a: lastIso, i: lastId });
+  });
+
+  it("surfaces the boundary as nextCursor (Date) when the page is drained", async () => {
+    const { repo, setNextResult } = captureRepo();
+    const service = new ItemsService({ repository: repo });
+    const lastIso = "2026-04-24T00:09:00.000Z";
+    setNextResult({
+      records: [],
+      nextBoundary: { updatedAtIso: lastIso, id: "01890abc-1234-7def-8000-0000000c9009" },
+      hasMore: false,
+    });
+
+    const result = await service.list({ merchantId: MERCHANT_A });
+
+    expect(result.nextPageToken).toBeNull();
+    expect(result.nextCursor).toEqual(new Date(lastIso));
+  });
+
+  it("rejects a malformed pageToken with invalid_page_token before touching the repo", async () => {
+    const { repo, calls } = captureRepo();
+    const service = new ItemsService({ repository: repo });
+    // Valid base64url that decodes to non-JSON — exercises the JSON.parse
+    // failure path without smuggling invalid base64 chars past Node's lenient
+    // decoder.
+    const malformed = Buffer.from("not json", "utf8").toString("base64url");
+
+    await expect(
+      service.list({ merchantId: MERCHANT_A, pageToken: malformed }),
+    ).rejects.toMatchObject({ code: "invalid_page_token" } satisfies Pick<ItemError, "code">);
+    expect(calls).toHaveLength(0);
   });
 });
