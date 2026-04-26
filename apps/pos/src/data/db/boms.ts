@@ -4,6 +4,7 @@ import type { Bom } from "./types.ts";
 export interface BomsRepo {
   getById(id: string): Promise<Bom | undefined>;
   getByItemId(itemId: string): Promise<Bom | undefined>;
+  listByIds(ids: readonly string[]): Promise<Bom[]>;
   upsertMany(boms: readonly Bom[]): Promise<void>;
 }
 
@@ -14,6 +15,11 @@ export function bomsRepo(db: KassaDexie): BomsRepo {
     },
     getByItemId(itemId) {
       return db.boms.where("itemId").equals(itemId).first();
+    },
+    async listByIds(ids) {
+      if (ids.length === 0) return [];
+      const rows = await db.boms.bulkGet([...ids]);
+      return rows.filter((bom): bom is Bom => bom !== undefined);
     },
     async upsertMany(boms) {
       if (boms.length === 0) return;
