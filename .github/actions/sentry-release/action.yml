@@ -1,0 +1,71 @@
+name: Sentry release + source-map upload
+description: |
+  Creates (or finds) a Sentry release for the given identifier, attaches the
+  source commit, injects + uploads source maps from the given dist path, and
+  finalizes the release. No-op (with a `::warning::`) when SENTRY_AUTH_TOKEN /
+  SENTRY_ORG / SENTRY_PROJECT are not all set so the parent workflow stays
+  green during the pre-provisioning window.
+
+  Used by both .github/workflows/cd.yml (POS + Back Office surfaces) and
+  .github/workflows/deploy-prod.yml (API). KASA-70.
+
+inputs:
+  release:
+    description: Release identifier (e.g. `kassa-api@<sha12>`).
+    required: true
+  commit-sha:
+    description: Full commit SHA (40 chars) for `releases set-commits`.
+    required: true
+  dist-path:
+    description: Path to the directory containing compiled JS + .map files.
+    required: true
+  repo:
+    description: GitHub repo slug for `releases set-commits` (e.g. `org/name`).
+    required: true
+  sentry-auth-token:
+    description: Sentry auth token. Skip step when empty.
+    required: false
+    default: ""
+  sentry-org:
+    description: Sentry org slug. Skip step when empty.
+    required: false
+    default: ""
+  sentry-project:
+    description: Sentry project slug. Skip step when empty.
+    required: false
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    - name: Sentry release
+      shell: bash
+      env:
+        SENTRY_AUTH_TOKEN: ${{ inputs.sentry-auth-token }}
+        SENTRY_ORG: ${{ inputs.sentry-org }}
+        SENTRY_PROJECT: ${{ inputs.sentry-project }}
+        RELEASE: ${{ inputs.release }}
+        COMMIT_SHA: ${{ inputs.commit-sha }}
+        DIST_PATH: ${{ inputs.dist-path }}
+        REPO: ${{ inputs.repo }}
+      run: |
+        set -euo pipefail
+        if [ -z "${SENTRY_AUTH_TOKEN:-}" ] || [ -z "${SENTRY_ORG:-}" ] || [ -z "${SENTRY_PROJECT:-}" ]; then
+          echo "::warning title=Sentry not configured::SENTRY_AUTH_TOKEN, SENTRY_ORG, or project slug is unset; skipping release '$RELEASE' + source-map upload from '$DIST_PATH'. Wire these per docs/RUNBOOK-DEPLOY.md §3 before the next release."
+          exit 0
+        fi
+        if [ ! -d "$DIST_PATH" ]; then
+          echo "::error::dist-path '$DIST_PATH' does not exist."
+          exit 1
+        fi
+        # Pinned to a known-good sentry-cli; bump deliberately when chasing
+        # a fix or a new SDK protocol.
+        SENTRY_CLI="npx --yes @sentry/cli@2.39.1"
+        $SENTRY_CLI releases new "$RELEASE"
+        # `--ignore-missing` lets set-commits fall through when the commit is
+        # ahead of what Sentry has indexed (CI run faster than Sentry's repo
+        # poll). The release still records the SHA on the release object.
+        $SENTRY_CLI releases set-commits "$RELEASE" --commit "${REPO}@${COMMIT_SHA}" --ignore-missing
+        $SENTRY_CLI sourcemaps inject "$DIST_PATH"
+        $SENTRY_CLI sourcemaps upload --release "$RELEASE" "$DIST_PATH"
+        $SENTRY_CLI releases finalize "$RELEASE"

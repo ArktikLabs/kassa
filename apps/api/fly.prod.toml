@@ -1,0 +1,112 @@
+# Fly.io deployment spec for the Kassa API — PRODUCTION tier (KASA-70).
+#
+# Sibling of apps/api/fly.toml (staging — KASA-107). Same Dockerfile, same
+# image, same workspace artifact; this file diverges only on the dimensions
+# that production must answer differently from staging:
+#
+#   - HA: min_machines_running = 2, no auto-stop on the web group.
+#   - Sizing: 1 GB RAM on web, 512 MB on worker (staging is 512 / 256).
+#   - Region: pinned to `sin` to match staging — single-region for v0; the
+#     multi-region flip is a follow-up once we have a second pilot merchant
+#     outside Indonesia.
+#
+# Deployed by `.github/workflows/deploy-prod.yml`. Manual promotion only —
+# the workflow is `workflow_dispatch`-triggered, gated on the GitHub
+# environment `production-prod` (which carries the required-reviewer rule
+# for CEO/CTO sign-off), and verifies that the source CI run had a green
+# `acceptance-full-day-offline` job before letting deploy proceed.
+#
+# Enablement / provisioning checklist (one-time, by ops):
+#   1. `fly apps create kassa-api-prod --org kassa`
+#   2. `fly secrets set --app kassa-api-prod LOG_LEVEL=info \
+#         STAFF_BOOTSTRAP_TOKEN="$(openssl rand -base64 24)" \
+#         MIDTRANS_ENVIRONMENT=production \
+#         MIDTRANS_SERVER_KEY=<rotated production merchant key>`
+#      (Sandbox keys MUST stay on `kassa-api-staging`. Cross-tier key
+#      reuse is the kind of mistake that charges live customer cards
+#      from a staging webhook test.)
+#   3. Provision the production Neon branch and bind `DATABASE_URL`:
+#         fly secrets set --app kassa-api-prod \
+#           DATABASE_URL="postgres://...@<prod-neon-host>/...?sslmode=require"
+#      Neon production branch must have PITR enabled — see
+#      docs/RUNBOOK-DEPLOY.md §2.
+#   4. Provision the production Redis broker and bind `REDIS_URL`:
+#         flyctl redis create --org kassa --name kassa-redis-prod \
+#           --region sin --no-replicas --plan 3G
+#         fly secrets set --app kassa-api-prod \
+#           REDIS_URL="redis://default:<token>@<host>:6379"
+#      Staging and production must point at separate Redis instances
+#      (docs/CI-CD.md §3.10).
+#   5. In the GitHub `production-prod` environment, add:
+#         FLY_API_TOKEN_PROD     (Fly token scoped to kassa-api-prod, Deploy)
+#         SENTRY_AUTH_TOKEN      (Sentry internal integration with
+#                                 Releases: Admin scope on the Kassa org)
+#      Add required reviewer rule on the env: CEO and CTO.
+#   6. Set repository variable DEPLOY_PROD_ENABLED=true.
+
+app = "kassa-api-prod"
+primary_region = "sin"
+
+# See apps/api/fly.toml for why the build stanza is omitted; deploy-prod.yml
+# passes --dockerfile apps/api/Dockerfile with the artifact root as context.
+
+# Same release_command as staging — Drizzle migrations are forward-only and
+# must run before any new machine starts serving traffic. Failure aborts the
+# deploy without flipping the load balancer over.
+[deploy]
+  release_command = "node apps/api/dist/db/migrate.js"
+
+# Two entrypoints from the same image. Fly runs each as its own machine group.
+[processes]
+  web = "node apps/api/dist/index.js"
+  worker = "node apps/api/dist/workers/index.js"
+
+[env]
+  NODE_ENV = "production"
+  HOST = "0.0.0.0"
+  PORT = "8080"
+  LOG_LEVEL = "info"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  # Production: never auto-stop the web group. A merchant tap on the POS
+  # must not pay a Fly cold-start. `auto_start_machines` stays true so a
+  # crashed/replaced machine wakes on demand without operator action.
+  auto_stop_machines = "off"
+  auto_start_machines = true
+  # HA floor. The pair survives a single-machine crash, single-host outage,
+  # or a `fly deploy --strategy rolling` rollover without downtime. Bump
+  # only after a Better Stack / Sentry signal forces it (KASA-71).
+  min_machines_running = 2
+  processes = ["web"]
+
+  [http_service.concurrency]
+    type = "requests"
+    soft_limit = 200
+    hard_limit = 250
+
+  [[http_service.checks]]
+    grace_period = "15s"
+    interval = "30s"
+    timeout = "5s"
+    method = "GET"
+    path = "/health"
+
+# Production VM sizing. Web doubles staging's memory because argon2 +
+# Fastify keep ~250 MB resident under load and we want headroom for the
+# pino transport buffers. Worker stays small until BullMQ depth justifies
+# the bump (tracked under KASA-71's queue-depth dashboard).
+[[vm]]
+  processes = ["web"]
+  size = "shared-cpu-1x"
+  memory = "1024mb"
+  cpu_kind = "shared"
+  cpus = 1
+
+[[vm]]
+  processes = ["worker"]
+  size = "shared-cpu-1x"
+  memory = "512mb"
+  cpu_kind = "shared"
+  cpus = 1
