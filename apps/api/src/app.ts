@@ -5,12 +5,18 @@ import Fastify, {
   type FastifyRequest,
   type FastifyServerOptions,
 } from "fastify";
+import {
+  hasZodFastifySchemaValidationErrors,
+  serializerCompiler,
+  validatorCompiler,
+} from "fastify-type-provider-zod";
 import type { PaymentProvider } from "@kassa/payments";
 import { makeDeviceAuthPreHandler, type DeviceAuthRepository } from "./auth/device-auth.js";
 import { healthRoutes } from "./routes/health.js";
 import { registerV1Routes, type V1RouteDeps } from "./routes/index.js";
 import { sendError } from "./lib/errors.js";
 import { createDomainEventBus, type DomainEventBus } from "./lib/events.js";
+import { registerOpenapi } from "./lib/openapi.js";
 import { createInMemoryDedupeStore, type WebhookDedupeStore } from "./lib/webhook-dedupe.js";
 import { EnrolmentService, InMemoryEnrolmentRepository } from "./services/enrolment/index.js";
 import {
@@ -110,11 +116,23 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   app.decorate("webhookDedupe", options.webhookDedupe ?? createInMemoryDedupeStore());
   app.decorate("midtransProvider", options.midtransProvider ?? null);
 
+  // Wire fastify-type-provider-zod so route schemas authored as Zod are
+  // both runtime-validated AND emitted to OpenAPI from the same definition.
+  app.setValidatorCompiler(validatorCompiler);
+  app.setSerializerCompiler(serializerCompiler);
+
   app.setNotFoundHandler((req, reply) => {
     sendError(reply, 404, "not_found", `No route for ${req.method} ${req.url}.`);
   });
 
   app.setErrorHandler((err: FastifyError, req: FastifyRequest, reply: FastifyReply) => {
+    // Map Zod schema-validation failures to the existing `bad_request`
+    // contract so clients keep getting `{ error: { code, message, details } }`
+    // rather than Fastify's default validation envelope.
+    if (hasZodFastifySchemaValidationErrors(err)) {
+      sendError(reply, 400, "bad_request", "Invalid request.", err.validation);
+      return;
+    }
     req.log.error({ err }, "request failed");
     const status = err.statusCode && err.statusCode >= 400 ? err.statusCode : 500;
     const code = status >= 500 ? "internal_error" : (err.code ?? "bad_request").toLowerCase();
@@ -217,6 +235,9 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
         : {}),
     },
   };
+
+  // Swagger MUST be registered before routes so it can capture them.
+  await registerOpenapi(app);
 
   await app.register(healthRoutes);
   await app.register(async (instance) => registerV1Routes(instance, v1Deps), { prefix: "/v1" });

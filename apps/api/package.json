@@ -54,12 +54,15 @@
   },
   "dependencies": {
     "@fastify/rate-limit": "^10.3.0",
+    "@fastify/swagger": "^9.7.0",
+    "@fastify/swagger-ui": "^5.2.6",
     "@kassa/payments": "workspace:*",
     "@kassa/schemas": "workspace:*",
     "argon2": "^0.41.1",
     "bullmq": "^5.76.2",
     "drizzle-orm": "^0.36.4",
     "fastify": "^5.1.0",
+    "fastify-type-provider-zod": "^4.0.2",
     "ioredis": "^5.10.1",
     "pg": "8.14.1",
     "zod": "^3.23.8"
