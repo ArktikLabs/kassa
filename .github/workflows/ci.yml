@@ -18,6 +18,34 @@ jobs:
     name: install → lint → build → typecheck → test
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    # Postgres service container backs the API integration suite (KASA-28) and
+    # the fresh-DB migrate test (KASA-21). Without these env vars set both
+    # suites skip cleanly via their `runIf*` gates; with them, every endpoint
+    # covered by the integration suite round-trips through real SQL.
+    #
+    # `KASA_INTEGRATION_DATABASE_URL` is the dedicated gate for KASA-28's
+    # truncate-between-tests harness — keeping it separate from `DATABASE_URL`
+    # makes it impossible for a developer to accidentally TRUNCATE their app DB
+    # by exporting `DATABASE_URL` and running `pnpm test`.
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: kassa
+          POSTGRES_PASSWORD: kassa
+          POSTGRES_DB: kassa_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U kassa -d kassa_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgres://kassa:kassa@localhost:5432/kassa_test
+      DATABASE_SSL: "false"
+      KASA_INTEGRATION_DATABASE_URL: postgres://kassa:kassa@localhost:5432/kassa_test
+      KASA_INTEGRATION_DATABASE_SSL: "false"
     steps:
       - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
