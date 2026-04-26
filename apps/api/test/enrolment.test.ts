@@ -46,6 +46,8 @@ async function issueCode(app: FastifyInstance, body: object = { outletId: OUTLET
     headers: {
       authorization: `Bearer ${STAFF_TOKEN}`,
       "x-staff-user-id": STAFF_USER_ID,
+      "x-staff-merchant-id": MERCHANT_ID,
+      "x-staff-role": "owner",
       "content-type": "application/json",
     },
     payload: body,
@@ -88,6 +90,8 @@ describe("POST /v1/auth/enrolment-codes", () => {
       headers: {
         authorization: "Bearer wrong-token-of-the-same-length-fillr",
         "x-staff-user-id": STAFF_USER_ID,
+        "x-staff-merchant-id": MERCHANT_ID,
+        "x-staff-role": "owner",
       },
       payload: { outletId: OUTLET_ID },
     });
@@ -98,7 +102,11 @@ describe("POST /v1/auth/enrolment-codes", () => {
     const res = await h.app.inject({
       method: "POST",
       url: "/v1/auth/enrolment-codes",
-      headers: { authorization: `Bearer ${STAFF_TOKEN}` },
+      headers: {
+        authorization: `Bearer ${STAFF_TOKEN}`,
+        "x-staff-merchant-id": MERCHANT_ID,
+        "x-staff-role": "owner",
+      },
       payload: { outletId: OUTLET_ID },
     });
     expect(res.statusCode).toBe(400);
