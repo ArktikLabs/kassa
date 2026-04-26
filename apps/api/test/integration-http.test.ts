@@ -219,8 +219,9 @@ runIfIntegration("apps/api — real HTTP + Postgres integration suite (KASA-28)"
   it("GET /v1/outlets — pagination: nextPageToken round-trips and partitions the rows", async () => {
     await seedMerchant(h().db, { id: MERCHANT_A_ID });
     // Three outlets with strictly-increasing updated_at courtesy of separate
-    // INSERT statements — Postgres `now()` advances per statement under the
-    // default isolation level.
+    // INSERT statements. Within a transaction `now()` is constant
+    // (`transaction_timestamp()`), but each `db.execute()` here auto-commits
+    // its own implicit transaction, so each insert sees a later wall clock.
     await seedOutlet(h().db, {
       id: OUTLET_A1_ID,
       merchantId: MERCHANT_A_ID,

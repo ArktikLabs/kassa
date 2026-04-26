@@ -101,7 +101,12 @@ const TRUNCATABLE_TABLES = [
 /**
  * Mirror of vitest's `describe.skipIf` shape so suites can simply call
  * `runIfIntegration("...", () => { ... })` and stay green on machines without
- * Postgres. CI sets `DATABASE_URL` and the suite runs there.
+ * Postgres. CI sets `KASA_INTEGRATION_DATABASE_URL` and the suite runs there.
+ *
+ * `databaseUrl` is read at module-import time (see top of file). Mutating
+ * `process.env.KASA_INTEGRATION_DATABASE_URL` after the test file has been
+ * loaded will not flip a skipped suite back on — set the env before vitest
+ * imports this module.
  */
 export const runIfIntegration = databaseUrl ? describe : describe.skip;
 
