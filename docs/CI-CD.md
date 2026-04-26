@@ -1,9 +1,9 @@
 # Kassa CI/CD Pipeline
 
-Status: v0 (CI + CD — POS / Back Office in Cloudflare Pages production, API in Fly.io staging; preview-per-PR deferred). Owner: DevOps. Source issues: [KASA-12](/KASA/issues/KASA-12) (pipeline), [KASA-17](/KASA/issues/KASA-17) (deployable build artifacts), [KASA-18](/KASA/issues/KASA-18) (production CD — static surfaces), [KASA-107](/KASA/issues/KASA-107) (staging CD — API), [KASA-19](/KASA/issues/KASA-19) (post-deploy smoke tests).
-Companion docs: [TECH-STACK.md](./TECH-STACK.md), [ARCHITECTURE.md](./ARCHITECTURE.md), [ROADMAP.md](./ROADMAP.md).
+Status: v0 (CI + CD — POS / Back Office in Cloudflare Pages production, API in Fly.io staging on every green main, API production via manual gate; preview-per-PR deferred). Owner: DevOps. Source issues: [KASA-12](/KASA/issues/KASA-12) (pipeline), [KASA-17](/KASA/issues/KASA-17) (deployable build artifacts), [KASA-18](/KASA/issues/KASA-18) (production CD — static surfaces), [KASA-107](/KASA/issues/KASA-107) (staging CD — API), [KASA-19](/KASA/issues/KASA-19) (post-deploy smoke tests), [KASA-70](/KASA/issues/KASA-70) (production CD — API).
+Companion docs: [TECH-STACK.md](./TECH-STACK.md), [ARCHITECTURE.md](./ARCHITECTURE.md), [ROADMAP.md](./ROADMAP.md), [RUNBOOK-DEPLOY.md](./RUNBOOK-DEPLOY.md).
 
-This is the authoritative description of how Kassa code moves from a contributor's branch into `main` and — in later milestones — into production. v0 covers **CI** (lint/typecheck/test/build on every PR and every push to `main`, with compiled outputs preserved as workflow artifacts) and **CD** for three surfaces: the POS PWA and Back Office SPA deploy to Cloudflare Pages, and the API deploys to a Fly.io staging app, on every successful CI run against `main`. Preview-per-PR environments and the production promotion gate for the API remain in follow-up tickets under M0.
+This is the authoritative description of how Kassa code moves from a contributor's branch into `main` and into production. v0 covers **CI** (lint/typecheck/test/build on every PR and every push to `main`, with compiled outputs preserved as workflow artifacts) and **CD** for four surfaces: the POS PWA and Back Office SPA deploy to Cloudflare Pages production and the API deploys to a Fly.io staging app on every successful CI run against `main`; the API ships to Fly.io production via a manual promotion gate (`deploy-prod.yml`) with required-reviewer approval. Preview-per-PR environments remain a follow-up ticket under M0. Operator playbook for production lives in [RUNBOOK-DEPLOY.md](./RUNBOOK-DEPLOY.md).
 
 ---
 
@@ -23,8 +23,8 @@ This is the authoritative description of how Kassa code moves from a contributor
 | Build artifacts   | `actions/upload-artifact` — one per deployable, 7-day retention (see §2.3) |
 | E2E (deferred)    | Playwright — separate workflow in a later ticket |
 | CD orchestrator   | GitHub Actions (see [`cd.yml`](../.github/workflows/cd.yml)) |
-| CD targets (live) | Cloudflare Pages — `kassa-pos`, `kassa-back-office`; Fly.io — `kassa-api-staging` (`sin`) |
-| CD targets (deferred) | Fly.io production (`kassa-api`, KASA-70), per-PR preview environments (KASA-108) |
+| CD targets (live) | Cloudflare Pages — `kassa-pos`, `kassa-back-office`; Fly.io — `kassa-api-staging` (`sin`); Fly.io — `kassa-api-prod` (`sin`, manual gate) |
+| CD targets (deferred) | Per-PR preview environments (KASA-108) |
 
 All workflows live in [`.github/workflows/`](../.github/workflows). The CI workflow is [`ci.yml`](../.github/workflows/ci.yml).
 
@@ -155,7 +155,7 @@ The workflow file is [`cd.yml`](../.github/workflows/cd.yml).
 | Preview     | Cloudflare Pages (PWA), Fly.io staging app (API), Neon branch DB | PR opened/updated            | Deferred ([KASA-108](/KASA/issues/KASA-108)) |
 | Staging — API       | Fly.io `kassa-api-staging` (`sin`)         | Successful CI run on `main`              | **Live** ([KASA-107](/KASA/issues/KASA-107), this section §3.7) |
 | Production — static | Cloudflare Pages (`kassa-pos`, `kassa-back-office`) | Successful CI run on `main`       | **Live** ([KASA-18](/KASA/issues/KASA-18), this section §3.2–§3.6) |
-| Production — API    | Fly.io `kassa-api` + Neon main (Postgres) | Manual promotion from staging            | Deferred ([KASA-70](/KASA/issues/KASA-70), M4) |
+| Production — API    | Fly.io `kassa-api-prod` + Neon production branch | Manual promotion via `deploy-prod.yml` (CEO/CTO required reviewer) | **Live** ([KASA-70](/KASA/issues/KASA-70), this section §3.11; runbook at [RUNBOOK-DEPLOY.md](./RUNBOOK-DEPLOY.md)) |
 
 ### 3.2 Triggers
 
@@ -288,7 +288,13 @@ If the failing deploy is the most recent merge and the fix is trivially "undo th
 | `FLY_API_TOKEN`              | Env: `production` (secret) | `flyctl deploy` auth for `kassa-api-staging`    | Required for current CD |
 | `DEPLOY_ENABLED`             | Repo (variable)            | Master switch — `true` turns on deploy jobs     | Required for current CD |
 | `NEON_API_KEY`               | Env: `preview` (secret)    | Ephemeral Neon branch per PR                    | Deferred (KASA-108)      |
-| `SENTRY_AUTH_TOKEN`          | Env: `production` (secret) | Source map uploads (both PWA and API)           | Deferred (KASA-70)       |
+| `SENTRY_AUTH_TOKEN`          | Env: `production` + `production-prod` (secret) | Source map uploads on every prod deploy (POS, Back Office, API) | Required for current CD ([KASA-70](/KASA/issues/KASA-70)) |
+| `SENTRY_ORG`                 | Repo (variable)            | Sentry org slug used by all release uploads     | Required for current CD ([KASA-70](/KASA/issues/KASA-70)) |
+| `SENTRY_PROJECT_POS`         | Repo (variable)            | Sentry project slug for POS PWA releases        | Required for current CD ([KASA-70](/KASA/issues/KASA-70)) |
+| `SENTRY_PROJECT_BACK_OFFICE` | Repo (variable)            | Sentry project slug for Back Office releases    | Required for current CD ([KASA-70](/KASA/issues/KASA-70)) |
+| `SENTRY_PROJECT_API`         | Repo (variable)            | Sentry project slug for API releases            | Required for current CD ([KASA-70](/KASA/issues/KASA-70)) |
+| `FLY_API_TOKEN_PROD`         | Env: `production-prod` (secret) | `flyctl deploy` auth for `kassa-api-prod`  | Required for current CD ([KASA-70](/KASA/issues/KASA-70)) |
+| `DEPLOY_PROD_ENABLED`        | Repo (variable)            | Master switch for `deploy-prod.yml`             | Required for current CD ([KASA-70](/KASA/issues/KASA-70)) |
 
 Secrets never live in workflow YAML; the workflow references them via `${{ secrets.NAME }}` and GitHub injects them at runtime.
 
@@ -449,6 +455,49 @@ Conclusion: Redis is **not a meaningful line item** in the v0 infra budget at th
 - Specific job implementations (nightly reconciliation, EOD rollup, sync-log purge, webhook replay, …) — each follow-up issue ships its own queue + processor in `apps/api/src/workers/<feature>.ts`.
 - Redis observability (queue-depth dashboards, Sentry alerts on stuck jobs) — folded into [KASA-71](/KASA/issues/KASA-71) once the first real consumer is producing real signal.
 
+### 3.11 API production deploy path ([KASA-70](/KASA/issues/KASA-70))
+
+The `deploy-prod.yml` workflow is the manual-promotion gate for the API. It is intentionally separate from `cd.yml` (which auto-deploys to Cloudflare Pages production and Fly.io staging on every green main) because the production-API deploy needs three things the staging path does not: (1) deliberate operator action per release, (2) required-reviewer approval from CEO/CTO, and (3) re-verification that the cited CI run had a green KASA-68 acceptance suite.
+
+**Trigger.** `workflow_dispatch` only. The operator pastes a CI run id from the Actions UI; the workflow promotes the `api-dist` artifact from that exact run. There is no `workflow_run` trigger — production never deploys automatically.
+
+**Preflight gates** (in order):
+
+1. `DEPLOY_PROD_ENABLED == true` repository variable. Until set, the workflow is inert (notice + skip), exactly the same shape as `cd.yml`'s `DEPLOY_ENABLED` flag.
+2. The cited CI run is on `main` (`gh api repos/:owner/:repo/actions/runs/$ID --jq .head_branch`).
+3. The cited CI run conclusion is `success`.
+4. The cited CI run's `Acceptance — full-day offline (KASA-68)` job conclusion is `success` (read separately because the parent run reports `success` even when a `continue-on-error` job is red, and we explicitly want to block on the acceptance gate).
+
+**Manual approval.** The `deploy-api-prod` job lives in the GitHub `production-prod` environment, which carries a required-reviewer rule including CEO + CTO. After preflight passes, the run pauses at the environment gate; one of the named reviewers clicks **Review deployments → Approve and deploy**. The approval is recorded on the run and is the audit trail for the deploy.
+
+**Sentry release.** Before the Fly deploy, the workflow creates a Sentry release `kassa-api@<sha12>`, attaches the source commit (`releases set-commits --commit owner/repo@<sha> --ignore-missing`), uploads the source maps from `apps/api/dist`, and finalizes the release. Static-surface releases (POS + Back Office) get the same treatment in `cd.yml` on every main deploy. The shared composite action lives at `.github/actions/sentry-release/action.yml` so the four call sites (POS + Back Office in `cd.yml`, API in `deploy-prod.yml`, plus future ones) cannot drift. The action no-ops with a `::warning::` when `SENTRY_AUTH_TOKEN`/`SENTRY_ORG`/project slug is unset, so the workflows stay green during the pre-provisioning window.
+
+**Deploy command.**
+
+```sh
+flyctl deploy . \
+  --app kassa-api-prod \
+  --config apps/api/fly.prod.toml \
+  --dockerfile apps/api/Dockerfile \
+  --local-only \
+  --image-label "prod-<sha12>" \
+  --env "KASSA_API_VERSION=prod-<sha12>" \
+  --strategy rolling \
+  --wait-timeout 600
+```
+
+`--wait-timeout 600` is double the staging budget because the production fly file pins `min_machines_running = 2` — a rolling deploy replaces both web machines one at a time, and the `release_command` (Drizzle migrate) runs first.
+
+**Production fly file** ([`apps/api/fly.prod.toml`](../apps/api/fly.prod.toml)) diverges from staging only on prod-only dimensions:
+
+- `auto_stop_machines = "off"` (no cold-starts on a merchant tap).
+- `min_machines_running = 2` (HA floor; survives a single-machine crash and a rolling deploy without downtime).
+- Web VM memory bumped to 1 GB (staging is 512 MB) for argon2 + Fastify + pino headroom.
+
+**Smoke tests.** The same `scripts/deploy-smoke.sh` from KASA-19, parameterised with the production URLs (`kassa-api-prod.fly.dev`, the production Pages URLs for POS + Back Office). The API check asserts `version == prod-<sha12>` so a stuck rollout (old machines still serving) fails the gate. POS + Back Office checks are cross-tier: they prove the static surfaces the API serves are still reachable on the production URLs, which catches "API works but PWA is stale" cases.
+
+**Provisioning, secrets, and the operator runbook (rollback, pause/cancel, post-incident)** all live in [RUNBOOK-DEPLOY.md](./RUNBOOK-DEPLOY.md). This doc covers the pipeline shape; the runbook covers the on-call playbook.
+
 ---
 
 ## 4. Pipeline health (v0 baselines)
@@ -488,10 +537,10 @@ These are out of scope for the initial CI + static-surface CD setup but are **pr
 2. ~~**Build artifacts**~~ — landed via [KASA-17](/KASA/issues/KASA-17).
 3. ~~**Production CD for static surfaces**~~ — landed via [KASA-18](/KASA/issues/KASA-18) (this section).
 4. ~~**API → Fly.io staging deploy**~~ — landed via [KASA-107](/KASA/issues/KASA-107) (this section §3.7–§3.8).
-5. **API → Fly.io production deploy** — tracked in [KASA-70](/KASA/issues/KASA-70) (M4). Production Fly app, Neon production branch, Midtrans prod keys, Sentry release tagging, manual promotion gate.
+5. ~~**API → Fly.io production deploy**~~ — landed via [KASA-70](/KASA/issues/KASA-70) (this section §3.11; runbook at [RUNBOOK-DEPLOY.md](./RUNBOOK-DEPLOY.md)). Production Fly app, Neon production branch, Sentry release tagging, manual promotion gate, Midtrans prod keys (provisioned out-of-band per RUNBOOK-DEPLOY.md §1).
 6. **Preview-per-PR environments** — tracked in [KASA-108](/KASA/issues/KASA-108) (M0, unblocked by KASA-107). Cloudflare Pages preview deploys for both static surfaces, Fly.io staging redeploy for the API, Neon branch DB per PR, teardown on PR close.
 7. ~~**Worker queue broker + real workers**~~ — broker provisioning + BullMQ bootstrap landed via [KASA-111](/KASA/issues/KASA-111) (this section §3.10). The first real consumer (nightly reconciliation) is tracked in [KASA-120](/KASA/issues/KASA-120); subsequent per-feature consumers fan out from there.
-8. **Production promotion gate** — `cd-prod.yml` with `workflow_dispatch` and environment protection rules (required reviewers) for the API cutover once staging/preview are live.
+8. ~~**Production promotion gate**~~ — landed via [KASA-70](/KASA/issues/KASA-70) (`deploy-prod.yml`, §3.11): `workflow_dispatch` with environment protection rules (CEO + CTO required reviewers) on the `production-prod` env, gated on a green KASA-68 acceptance run.
 9. **Playwright E2E workflow** — nightly + on-merge run, not on PR.
 10. **Turborepo remote cache** — named in [TECH-STACK.md §10.3](./TECH-STACK.md); wire it once CI is live and we have a signal on cold vs warm install time.
 

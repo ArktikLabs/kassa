@@ -78,6 +78,7 @@ jobs:
             apps/api/package.json
             apps/api/Dockerfile
             apps/api/fly.toml
+            apps/api/fly.prod.toml
             packages/payments/dist
             packages/payments/package.json
             packages/schemas/dist

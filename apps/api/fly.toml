@@ -1,7 +1,10 @@
 # Fly.io deployment spec for the Kassa API — STAGING tier (KASA-107).
 #
-# Production deployment lives under KASA-70 (M4) and will use a separate app
-# (`kassa-api`) with stricter machine sizing and min_machines_running for HA.
+# Production deployment lives in apps/api/fly.prod.toml (KASA-70) and uses a
+# separate app (`kassa-api-prod`) with stricter machine sizing and
+# min_machines_running for HA. Same Dockerfile, same image, same workspace
+# artifact — the two configs only diverge on prod-only dimensions (HA floor,
+# auto-stop policy, VM memory).
 #
 # Enablement / provisioning checklist (one-time, by ops):
 #   1. `fly apps create kassa-api-staging --org kassa`
@@ -46,7 +49,7 @@ primary_region = "sin"
   force_https = true
   auto_stop_machines = "stop"       # cost control on staging
   auto_start_machines = true
-  min_machines_running = 0          # staging; HA on production (KASA-70)
+  min_machines_running = 0          # staging; HA on production (fly.prod.toml)
   processes = ["web"]
 
   [http_service.concurrency]
@@ -62,7 +65,7 @@ primary_region = "sin"
     method = "GET"
     path = "/health"
 
-# Machine sizing. Staging uses the smallest tier; production lives in KASA-70.
+# Machine sizing. Staging uses the smallest tier; production lives in fly.prod.toml.
 [[vm]]
   processes = ["web"]
   size = "shared-cpu-1x"
