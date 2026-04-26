@@ -15,6 +15,10 @@ interface BomHeaderRow {
   merchantId: string;
   itemId: string;
   updatedAt: Date;
+  /** Full-microsecond ISO 8601 stamp from `to_jsonb(updated_at)#>>'{}'`,
+   *  used verbatim in the page-token cursor so DB timestamp precision is
+   *  preserved across the round-trip (see outlets `pg-repository.ts`). */
+  updatedAtIso: string;
 }
 
 /**
@@ -32,46 +36,38 @@ export class PgBomsRepository implements BomsRepository {
     const { merchantId, limit } = input;
     const scanLimit = limit + 1;
 
+    const headerSelect = {
+      id: boms.id,
+      merchantId: boms.merchantId,
+      itemId: boms.itemId,
+      updatedAt: boms.updatedAt,
+      updatedAtIso: sql<string>`to_jsonb(${boms.updatedAt})#>>'{}'`.as("updated_at_iso"),
+    };
+
     let headers: BomHeaderRow[];
     if (input.pageToken) {
       const boundary = decodePageToken(input.pageToken);
-      const boundaryAt = new Date(boundary.a);
       headers = await this.db
-        .select({
-          id: boms.id,
-          merchantId: boms.merchantId,
-          itemId: boms.itemId,
-          updatedAt: boms.updatedAt,
-        })
+        .select(headerSelect)
         .from(boms)
         .where(
           and(
             eq(boms.merchantId, merchantId),
-            sql`(${boms.updatedAt}, ${boms.id}) > (${boundaryAt.toISOString()}::timestamptz, ${boundary.i}::uuid)`,
+            sql`(${boms.updatedAt}, ${boms.id}) > (${boundary.a}::timestamptz, ${boundary.i}::uuid)`,
           ),
         )
         .orderBy(asc(boms.updatedAt), asc(boms.id))
         .limit(scanLimit);
     } else if (input.updatedAfter) {
       headers = await this.db
-        .select({
-          id: boms.id,
-          merchantId: boms.merchantId,
-          itemId: boms.itemId,
-          updatedAt: boms.updatedAt,
-        })
+        .select(headerSelect)
         .from(boms)
         .where(and(eq(boms.merchantId, merchantId), gt(boms.updatedAt, input.updatedAfter)))
         .orderBy(asc(boms.updatedAt), asc(boms.id))
         .limit(scanLimit);
     } else {
       headers = await this.db
-        .select({
-          id: boms.id,
-          merchantId: boms.merchantId,
-          itemId: boms.itemId,
-          updatedAt: boms.updatedAt,
-        })
+        .select(headerSelect)
         .from(boms)
         .where(eq(boms.merchantId, merchantId))
         .orderBy(asc(boms.updatedAt), asc(boms.id))
@@ -121,14 +117,14 @@ export class PgBomsRepository implements BomsRepository {
       updatedAt: h.updatedAt,
     }));
 
-    const last = records.at(-1) ?? null;
+    const lastHeader = page.at(-1) ?? null;
     let nextCursor: Date | null = null;
     let nextPageToken: string | null = null;
 
-    if (hasMore && last) {
-      nextPageToken = encodePageToken({ a: last.updatedAt.toISOString(), i: last.id });
-    } else if (last) {
-      nextCursor = last.updatedAt;
+    if (hasMore && lastHeader) {
+      nextPageToken = encodePageToken({ a: lastHeader.updatedAtIso, i: lastHeader.id });
+    } else if (lastHeader) {
+      nextCursor = lastHeader.updatedAt;
     }
 
     return { records, nextCursor, nextPageToken };

@@ -1,4 +1,5 @@
 import type { Item } from "../../db/schema/items.js";
+import { decodePageToken, encodePageToken } from "../../lib/page-token.js";
 import { ItemCodeConflictError } from "./service.js";
 import type {
   CreateItemInput,
@@ -7,15 +8,6 @@ import type {
   ListItemsResult,
   UpdateItemInput,
 } from "./repository.js";
-
-interface PageTokenPayload {
-  a: string;
-  i: string;
-}
-
-function decodePageToken(token: string): PageTokenPayload {
-  return JSON.parse(Buffer.from(token, "base64url").toString("utf8")) as PageTokenPayload;
-}
 
 /**
  * In-memory repo for tests. Enforces the same invariants as the Pg impl:
@@ -95,10 +87,7 @@ export class InMemoryItemsRepository implements ItemsRepository {
     let nextPageToken: string | null = null;
 
     if (hasMore && last) {
-      nextPageToken = Buffer.from(
-        JSON.stringify({ a: last.updatedAt.toISOString(), i: last.id }),
-        "utf8",
-      ).toString("base64url");
+      nextPageToken = encodePageToken({ a: last.updatedAt.toISOString(), i: last.id });
     } else if (page.length > 0 && last) {
       nextCursor = last.updatedAt;
     }

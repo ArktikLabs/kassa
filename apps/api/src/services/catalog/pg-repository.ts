@@ -1,9 +1,10 @@
-import { and, asc, eq, gt, sql } from "drizzle-orm";
+import { and, asc, eq, getTableColumns, gt, sql } from "drizzle-orm";
 import type { Database } from "../../db/client.js";
 import { boms } from "../../db/schema/boms.js";
 import type { Item } from "../../db/schema/items.js";
 import { items } from "../../db/schema/items.js";
 import { uoms } from "../../db/schema/uoms.js";
+import { decodePageToken, encodePageToken } from "../../lib/page-token.js";
 import { ItemCodeConflictError } from "./service.js";
 import type {
   CreateItemInput,
@@ -25,20 +26,15 @@ function isUniqueViolation(err: unknown): boolean {
   );
 }
 
-interface PageTokenPayload {
-  a: string;
-  i: string;
-}
-
-function decodePageToken(token: string): PageTokenPayload {
-  return JSON.parse(Buffer.from(token, "base64url").toString("utf8")) as PageTokenPayload;
-}
-
 /**
  * Drizzle-backed `ItemsRepository` against Postgres. Queries use the
  * `items_merchant_updated_at_idx` and `items_merchant_code_uniq` indexes
  * (KASA-21). `list` paginates `(updated_at ASC, id ASC)` so cursor boundaries
  * are deterministic even when two rows share an `updated_at`.
+ *
+ * Cursor stamp is sourced from `to_jsonb(updated_at)#>>'{}'` (full-microsecond
+ * ISO 8601) rather than the JS `Date`, so the boundary survives the
+ * Postgres/JS precision gap; see outlets `pg-repository.ts` for the rationale.
  */
 export class PgItemsRepository implements ItemsRepository {
   constructor(private readonly db: Database) {}
@@ -56,32 +52,37 @@ export class PgItemsRepository implements ItemsRepository {
     const { merchantId, limit } = input;
     const scanLimit = limit + 1;
 
-    let rows: Item[];
+    const selectShape = {
+      ...getTableColumns(items),
+      updatedAtIso: sql<string>`to_jsonb(${items.updatedAt})#>>'{}'`.as("updated_at_iso"),
+    };
+
+    let rows: (Item & { updatedAtIso: string })[];
     if (input.pageToken) {
       const boundary = decodePageToken(input.pageToken);
-      const boundaryAt = new Date(boundary.a);
-      // (updated_at, id) > (boundaryAt, boundary.i)
+      // (updated_at, id) > (cursor.updated_at, cursor.id) with the cursor
+      // string passed verbatim into ::timestamptz to preserve microseconds.
       rows = await this.db
-        .select()
+        .select(selectShape)
         .from(items)
         .where(
           and(
             eq(items.merchantId, merchantId),
-            sql`(${items.updatedAt}, ${items.id}) > (${boundaryAt.toISOString()}::timestamptz, ${boundary.i}::uuid)`,
+            sql`(${items.updatedAt}, ${items.id}) > (${boundary.a}::timestamptz, ${boundary.i}::uuid)`,
           ),
         )
         .orderBy(asc(items.updatedAt), asc(items.id))
         .limit(scanLimit);
     } else if (input.updatedAfter) {
       rows = await this.db
-        .select()
+        .select(selectShape)
         .from(items)
         .where(and(eq(items.merchantId, merchantId), gt(items.updatedAt, input.updatedAfter)))
         .orderBy(asc(items.updatedAt), asc(items.id))
         .limit(scanLimit);
     } else {
       rows = await this.db
-        .select()
+        .select(selectShape)
         .from(items)
         .where(eq(items.merchantId, merchantId))
         .orderBy(asc(items.updatedAt), asc(items.id))
@@ -96,15 +97,13 @@ export class PgItemsRepository implements ItemsRepository {
     let nextPageToken: string | null = null;
 
     if (hasMore && last) {
-      nextPageToken = Buffer.from(
-        JSON.stringify({ a: last.updatedAt.toISOString(), i: last.id }),
-        "utf8",
-      ).toString("base64url");
+      nextPageToken = encodePageToken({ a: last.updatedAtIso, i: last.id });
     } else if (last) {
       nextCursor = last.updatedAt;
     }
 
-    return { records: page, nextCursor, nextPageToken };
+    const records: Item[] = page.map(({ updatedAtIso: _drop, ...row }) => row);
+    return { records, nextCursor, nextPageToken };
   }
 
   async createItem(input: CreateItemInput): Promise<Item> {
