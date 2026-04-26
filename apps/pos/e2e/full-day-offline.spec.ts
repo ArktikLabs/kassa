@@ -489,6 +489,13 @@ async function triggerPushAndWait(page: Page): Promise<void> {
   // and `needs_attention` are terminal; the runner moves rows out of
   // `queued`/`sending`/`error` into one of those, so this condition holds
   // the moment classification finishes — even if every row was 4xx-rejected.
+  //
+  // NOTE: prior versions ran three sequential `idx.count(only(...))` reads
+  // inside a single readonly transaction. That tx auto-commits between
+  // awaits, so the second/third counts ran on an inactive transaction and
+  // the wait silently fast-passed with zeroed counts even when 25 rows sat
+  // in `queued`. Single `getAll()` + filter-in-JS sidesteps the auto-commit
+  // race entirely.
   await page.waitForFunction(
     async () => {
       const db = await new Promise<IDBDatabase>((resolve, reject) => {
@@ -496,25 +503,19 @@ async function triggerPushAndWait(page: Page): Promise<void> {
         req.onsuccess = () => resolve(req.result);
         req.onerror = () => reject(req.error);
       });
-      const tx = db.transaction("pending_sales", "readonly");
-      const idx = tx.objectStore("pending_sales").index("status");
-      const queued = await new Promise<number>((resolve, reject) => {
-        const req = idx.count(IDBKeyRange.only("queued"));
-        req.onsuccess = () => resolve(req.result);
-        req.onerror = () => reject(req.error);
-      });
-      const sending = await new Promise<number>((resolve, reject) => {
-        const req = idx.count(IDBKeyRange.only("sending"));
-        req.onsuccess = () => resolve(req.result);
-        req.onerror = () => reject(req.error);
-      });
-      const error = await new Promise<number>((resolve, reject) => {
-        const req = idx.count(IDBKeyRange.only("error"));
-        req.onsuccess = () => resolve(req.result);
-        req.onerror = () => reject(req.error);
-      });
-      db.close();
-      return queued === 0 && sending === 0 && error === 0;
+      try {
+        const tx = db.transaction("pending_sales", "readonly");
+        const rows = await new Promise<{ status: string }[]>((resolve, reject) => {
+          const req = tx.objectStore("pending_sales").getAll();
+          req.onsuccess = () => resolve(req.result as { status: string }[]);
+          req.onerror = () => reject(req.error);
+        });
+        return rows.every(
+          (r) => r.status !== "queued" && r.status !== "sending" && r.status !== "error",
+        );
+      } finally {
+        db.close();
+      }
     },
     null,
     { timeout: 120_000, polling: 500 },
