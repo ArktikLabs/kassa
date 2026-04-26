@@ -120,7 +120,7 @@ const helpRoute = createRoute({
   component: HelpRoute,
 });
 
-const routeTree = rootRoute.addChildren([
+export const routeTree = rootRoute.addChildren([
   indexRoute,
   enrolRoute,
   catalogRoute,
