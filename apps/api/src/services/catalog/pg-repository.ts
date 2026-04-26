@@ -4,7 +4,6 @@ import { boms } from "../../db/schema/boms.js";
 import type { Item } from "../../db/schema/items.js";
 import { items } from "../../db/schema/items.js";
 import { uoms } from "../../db/schema/uoms.js";
-import { decodePageToken, encodePageToken } from "../../lib/page-token.js";
 import {
   ItemCodeConflictError,
   ItemForeignKeyError,
@@ -85,17 +84,16 @@ export class PgItemsRepository implements ItemsRepository {
     };
 
     let rows: (Item & { updatedAtIso: string })[];
-    if (input.pageToken) {
-      const boundary = decodePageToken(input.pageToken);
+    if (input.cursor) {
       // (updated_at, id) > (cursor.updated_at, cursor.id) with the cursor
-      // string passed verbatim into ::timestamptz to preserve microseconds.
+      // stamp passed verbatim into ::timestamptz to preserve microseconds.
       rows = await this.db
         .select(selectShape)
         .from(items)
         .where(
           and(
             eq(items.merchantId, merchantId),
-            sql`(${items.updatedAt}, ${items.id}) > (${boundary.a}::timestamptz, ${boundary.i}::uuid)`,
+            sql`(${items.updatedAt}, ${items.id}) > (${input.cursor.updatedAt}::timestamptz, ${input.cursor.id}::uuid)`,
           ),
         )
         .orderBy(asc(items.updatedAt), asc(items.id))
@@ -120,17 +118,9 @@ export class PgItemsRepository implements ItemsRepository {
     const page = hasMore ? rows.slice(0, limit) : rows;
     const last = page.at(-1) ?? null;
 
-    let nextCursor: Date | null = null;
-    let nextPageToken: string | null = null;
-
-    if (hasMore && last) {
-      nextPageToken = encodePageToken({ a: last.updatedAtIso, i: last.id });
-    } else if (last) {
-      nextCursor = last.updatedAt;
-    }
-
+    const nextBoundary = last ? { updatedAtIso: last.updatedAtIso, id: last.id } : null;
     const records: Item[] = page.map(({ updatedAtIso: _drop, ...row }) => row);
-    return { records, nextCursor, nextPageToken };
+    return { records, nextBoundary, hasMore };
   }
 
   async createItem(input: CreateItemInput): Promise<Item> {

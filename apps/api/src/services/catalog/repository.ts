@@ -31,14 +31,32 @@ export interface UpdateItemInput {
 export interface ListItemsInput {
   merchantId: string;
   updatedAfter?: Date;
-  pageToken?: string | null;
+  /**
+   * Parsed pagination boundary — rows where `(updated_at, id)` is strictly
+   * greater than `(cursor.updatedAt, cursor.id)`. The service decodes the
+   * client's opaque page token into this shape so the repo never touches
+   * token decoding.
+   *
+   * `updatedAt` is the same ISO 8601 stamp the repo emitted via
+   * `nextBoundary.updatedAtIso` — kept as a string so microsecond precision
+   * (which JS `Date` truncates) survives the round-trip into Postgres'
+   * `::timestamptz`.
+   */
+  cursor?: { updatedAt: string; id: string };
   limit: number;
 }
 
 export interface ListItemsResult {
   records: Item[];
-  nextCursor: Date | null;
-  nextPageToken: string | null;
+  /**
+   * Boundary at the last row of the page, or `null` when the page is empty.
+   * `updatedAtIso` carries microsecond precision so the value can be fed
+   * back in as `cursor.updatedAt` without loss. The service decides whether
+   * to surface this as the drained `nextCursor` (Date, used as
+   * `updatedAfter` next time) or encode it into `nextPageToken`.
+   */
+  nextBoundary: { updatedAtIso: string; id: string } | null;
+  hasMore: boolean;
 }
 
 /**

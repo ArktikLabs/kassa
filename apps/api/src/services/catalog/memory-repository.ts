@@ -1,5 +1,4 @@
 import type { Item } from "../../db/schema/items.js";
-import { decodePageToken, encodePageToken } from "../../lib/page-token.js";
 import { ItemCodeConflictError } from "./service.js";
 import type {
   CreateItemInput,
@@ -53,20 +52,18 @@ export class InMemoryItemsRepository implements ItemsRepository {
   }
 
   async listItems(input: ListItemsInput): Promise<ListItemsResult> {
-    let tokenBoundary: { updatedAt: Date; id: string } | null = null;
-    if (input.pageToken) {
-      const decoded = decodePageToken(input.pageToken);
-      tokenBoundary = { updatedAt: new Date(decoded.a), id: decoded.i };
-    }
+    const cursorBoundary = input.cursor
+      ? { updatedAt: new Date(input.cursor.updatedAt), id: input.cursor.id }
+      : null;
     const updatedAfter = input.updatedAfter;
 
     const filtered = [...this.items.values()]
       .filter((row) => row.merchantId === input.merchantId)
       .filter((row) => {
-        if (tokenBoundary) {
-          if (row.updatedAt.getTime() > tokenBoundary.updatedAt.getTime()) return true;
-          if (row.updatedAt.getTime() === tokenBoundary.updatedAt.getTime()) {
-            return row.id > tokenBoundary.id;
+        if (cursorBoundary) {
+          if (row.updatedAt.getTime() > cursorBoundary.updatedAt.getTime()) return true;
+          if (row.updatedAt.getTime() === cursorBoundary.updatedAt.getTime()) {
+            return row.id > cursorBoundary.id;
           }
           return false;
         }
@@ -81,18 +78,10 @@ export class InMemoryItemsRepository implements ItemsRepository {
 
     const page = filtered.slice(0, input.limit);
     const hasMore = filtered.length > input.limit;
-    const last = page.at(-1);
+    const last = page.at(-1) ?? null;
+    const nextBoundary = last ? { updatedAtIso: last.updatedAt.toISOString(), id: last.id } : null;
 
-    let nextCursor: Date | null = null;
-    let nextPageToken: string | null = null;
-
-    if (hasMore && last) {
-      nextPageToken = encodePageToken({ a: last.updatedAt.toISOString(), i: last.id });
-    } else if (page.length > 0 && last) {
-      nextCursor = last.updatedAt;
-    }
-
-    return { records: page.map((r) => ({ ...r })), nextCursor, nextPageToken };
+    return { records: page.map((r) => ({ ...r })), nextBoundary, hasMore };
   }
 
   async createItem(input: CreateItemInput): Promise<Item> {
