@@ -40,6 +40,25 @@ export class ItemCodeConflictError extends Error {
   }
 }
 
+export type ItemForeignKeyTarget = "uom_not_found" | "bom_not_found";
+
+/**
+ * Thrown by the Pg implementation when a write trips an FK constraint on
+ * `items.uom_id` / `items.bom_id` (SQLSTATE `23503`) — the TOCTOU window
+ * between `findUom`/`findBom` and the `INSERT`/`UPDATE`. The service rethrows
+ * this as `ItemError("uom_not_found" | "bom_not_found")` so the route emits
+ * 404 instead of leaking a 500.
+ */
+export class ItemForeignKeyError extends Error {
+  constructor(
+    public readonly target: ItemForeignKeyTarget,
+    public readonly id: string,
+  ) {
+    super(`item references missing ${target === "uom_not_found" ? "uom" : "bom"} ${id}`);
+    this.name = "ItemForeignKeyError";
+  }
+}
+
 export interface ItemsServiceDeps {
   repository: ItemsRepository;
   now?: () => Date;
@@ -163,6 +182,14 @@ export class ItemsService {
       if (err instanceof ItemCodeConflictError) {
         throw new ItemError("item_code_conflict", `Code ${cmd.code} is already in use.`);
       }
+      if (err instanceof ItemForeignKeyError) {
+        throw new ItemError(
+          err.target,
+          err.target === "uom_not_found"
+            ? `No uom ${err.id} for this merchant.`
+            : `No bom ${err.id} for this merchant.`,
+        );
+      }
       throw err;
     }
   }
@@ -238,6 +265,14 @@ export class ItemsService {
         throw new ItemError(
           "item_code_conflict",
           `Code ${cmd.patch.code ?? "?"} is already in use.`,
+        );
+      }
+      if (err instanceof ItemForeignKeyError) {
+        throw new ItemError(
+          err.target,
+          err.target === "uom_not_found"
+            ? `No uom ${err.id} for this merchant.`
+            : `No bom ${err.id} for this merchant.`,
         );
       }
       throw err;

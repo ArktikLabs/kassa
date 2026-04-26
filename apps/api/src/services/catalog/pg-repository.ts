@@ -5,7 +5,11 @@ import type { Item } from "../../db/schema/items.js";
 import { items } from "../../db/schema/items.js";
 import { uoms } from "../../db/schema/uoms.js";
 import { decodePageToken, encodePageToken } from "../../lib/page-token.js";
-import { ItemCodeConflictError } from "./service.js";
+import {
+  ItemCodeConflictError,
+  ItemForeignKeyError,
+  type ItemForeignKeyTarget,
+} from "./service.js";
 import type {
   CreateItemInput,
   ItemsRepository,
@@ -20,10 +24,33 @@ import type {
  */
 const UNIQUE_VIOLATION = "23505";
 
+/**
+ * Postgres `SQLSTATE` for `foreign_key_violation`. Fires on `INSERT`/`UPDATE`
+ * when the referenced row was deleted between the service's pre-check and
+ * the write — the TOCTOU window the service tries to close (KASA-114).
+ *
+ * `items.bom_id` has no FK in v0 (declared without `.references()` to break the
+ * circular import with `boms.ts`), so the bom translation is forward-looking;
+ * once the FK lands, the existing constraint name will already be mapped.
+ */
+const FOREIGN_KEY_VIOLATION = "23503";
+
+const ITEMS_FK_TARGETS: Readonly<Record<string, ItemForeignKeyTarget>> = {
+  items_uom_id_uoms_id_fk: "uom_not_found",
+  items_bom_id_boms_id_fk: "bom_not_found",
+};
+
 function isUniqueViolation(err: unknown): boolean {
   return (
     typeof err === "object" && err !== null && (err as { code?: unknown }).code === UNIQUE_VIOLATION
   );
+}
+
+function itemsForeignKeyTarget(err: unknown): ItemForeignKeyTarget | null {
+  if (typeof err !== "object" || err === null) return null;
+  const e = err as { code?: unknown; constraint?: unknown };
+  if (e.code !== FOREIGN_KEY_VIOLATION || typeof e.constraint !== "string") return null;
+  return ITEMS_FK_TARGETS[e.constraint] ?? null;
 }
 
 /**
@@ -131,6 +158,11 @@ export class PgItemsRepository implements ItemsRepository {
       if (isUniqueViolation(err)) {
         throw new ItemCodeConflictError(input.code);
       }
+      const fkTarget = itemsForeignKeyTarget(err);
+      if (fkTarget) {
+        const id = fkTarget === "uom_not_found" ? input.uomId : (input.bomId ?? "");
+        throw new ItemForeignKeyError(fkTarget, id);
+      }
       throw err;
     }
   }
@@ -164,6 +196,12 @@ export class PgItemsRepository implements ItemsRepository {
     } catch (err) {
       if (isUniqueViolation(err) && input.patch.code) {
         throw new ItemCodeConflictError(input.patch.code);
+      }
+      const fkTarget = itemsForeignKeyTarget(err);
+      if (fkTarget) {
+        const id =
+          fkTarget === "uom_not_found" ? (input.patch.uomId ?? "") : (input.patch.bomId ?? "");
+        throw new ItemForeignKeyError(fkTarget, id);
       }
       throw err;
     }
