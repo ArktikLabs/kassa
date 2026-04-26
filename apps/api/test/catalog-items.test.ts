@@ -52,10 +52,14 @@ async function setup(): Promise<Harness> {
 }
 
 function headers(overrides: Partial<Record<string, string>> = {}): Record<string, string> {
+  // Default role is `owner` so the existing CRUD test bodies (which were
+  // written before KASA-26 added role checks) keep covering the happy path.
+  // Role-specific 403/200 coverage lives in `catalog-rbac.test.ts`.
   return {
     authorization: `Bearer ${STAFF_TOKEN}`,
     "x-staff-user-id": STAFF_USER,
     "x-staff-merchant-id": MERCHANT_A,
+    "x-staff-role": "owner",
     "content-type": "application/json",
     ...overrides,
   };
