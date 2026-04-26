@@ -1,7 +1,7 @@
 import { useLiveQuery } from "dexie-react-hooks";
 import { useEffect, useState } from "react";
 import type { Database } from "../../data/db/index.ts";
-import type { Item, StockSnapshot } from "../../data/db/types.ts";
+import type { Bom, Item, StockSnapshot } from "../../data/db/types.ts";
 import { getDatabase } from "../../data/db/index.ts";
 
 export interface CatalogTileData {
@@ -20,6 +20,34 @@ const EMPTY_RESULT: CatalogQueryResult = {
   items: [],
   stockByItem: {},
 };
+
+/**
+ * Decide whether a catalog tile should render `Habis`.
+ *
+ * Three shapes:
+ *   - stock-tracked item -> snapshot.onHand <= 0
+ *   - BOM-parent (untracked, has bomId) -> any component snapshot < component.quantity
+ *     (server `sale.submit` is still the source of truth for oversell rejection)
+ *   - everything else -> sellable
+ *
+ * Per KASA-112 v0 scope: one BOM level only; component-of-component recursion
+ * is intentionally out of scope.
+ */
+export function tileOutOfStock(
+  item: Item,
+  stockByItem: Readonly<Record<string, StockSnapshot | undefined>>,
+  bomById: ReadonlyMap<string, Bom>,
+): boolean {
+  if (item.isStockTracked) {
+    return (stockByItem[item.id]?.onHand ?? 0) <= 0;
+  }
+  if (item.bomId === null) return false;
+  const bom = bomById.get(item.bomId);
+  if (!bom || bom.components.length === 0) return false;
+  return bom.components.some(
+    (component) => (stockByItem[component.componentItemId]?.onHand ?? 0) < component.quantity,
+  );
+}
 
 export function useCatalog(): {
   tiles: readonly CatalogTileData[];
@@ -51,9 +79,12 @@ export function useCatalog(): {
     const stockRows = outletId ? await db.repos.stockSnapshot.forOutlet(outletId) : [];
     const stockByItem: Record<string, StockSnapshot | undefined> = {};
     for (const row of stockRows) stockByItem[row.itemId] = row;
+    const bomIds = items.map((item) => item.bomId).filter((id): id is string => id !== null);
+    const boms = await db.repos.boms.listByIds(bomIds);
+    const bomById = new Map(boms.map((bom) => [bom.id, bom]));
     const tiles: CatalogTileData[] = items.map((item) => ({
       item,
-      outOfStock: item.isStockTracked && (stockByItem[item.id]?.onHand ?? 0) <= 0,
+      outOfStock: tileOutOfStock(item, stockByItem, bomById),
     }));
     return { tiles, items, stockByItem };
   }, [db]);
