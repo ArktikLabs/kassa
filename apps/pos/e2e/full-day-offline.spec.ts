@@ -104,7 +104,16 @@ test("KASA-68: full-day offline acceptance gate", async ({ browser, request }) =
     await waitForCatalogPullComplete(pageA);
     await waitForCatalogPullComplete(pageB);
 
-    // Step 3: both devices go offline.
+    // Step 3: pin each page's clock to the fixture business date, then go
+    // offline. The UI tender path computes `businessDate` from
+    // `toBusinessDate(new Date(), outlet.timezone)`; without the pin it
+    // resolves to the runner's wall clock (e.g. 2026-04-26) while seeded
+    // sales explicitly write FIXTURE_BUSINESS_DATE (2026-04-24). The two
+    // sets land server-side on different dates, so `listSalesByDate`'s
+    // exact-match filter would miss the UI sales — the local outbox audit
+    // can't catch the drift because the rows are still `synced`.
+    await pageA.clock.install({ time: FIXTURE_BUSINESS_DATE });
+    await pageB.clock.install({ time: FIXTURE_BUSINESS_DATE });
     await ctxA.setOffline(true);
     await ctxB.setOffline(true);
 
