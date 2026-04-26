@@ -4,14 +4,13 @@ Kassa back-office API. Fastify 5 + TypeScript, per [docs/TECH-STACK.md](../../do
 
 ## Status
 
-Scaffold ([KASA-22](/KASA/issues/KASA-22)) plus the device-enrolment pair of endpoints from [KASA-53](/KASA/issues/KASA-53). Every other business endpoint is still a placeholder that returns HTTP 501 with `{ error: { code: "not_implemented", ... } }`. `GET /health` is the only live read endpoint and is intentionally **unversioned** so external uptime monitors ([docs/TECH-STACK.md](../../docs/TECH-STACK.md) §12, line "Synthetic checks on POS shell and API `/health`") never need to track API versions.
+Scaffold ([KASA-22](/KASA/issues/KASA-22)) plus the device-enrolment pair of endpoints from [KASA-53](/KASA/issues/KASA-53) and the full v0 Drizzle schema + migrations from [KASA-21](/KASA/issues/KASA-21). Every other business endpoint is still a placeholder that returns HTTP 501 with `{ error: { code: "not_implemented", ... } }`. `GET /health` is the only live read endpoint and is intentionally **unversioned** so external uptime monitors ([docs/TECH-STACK.md](../../docs/TECH-STACK.md) §12, line "Synthetic checks on POS shell and API `/health`") never need to track API versions.
 
-The device enrolment endpoints currently use an in-memory `EnrolmentRepository`; the Postgres-backed implementation lands in [KASA-21](/KASA/issues/KASA-21). Drizzle table definitions for `devices` and `enrolment_codes` already live in `src/db/schema/` so KASA-21 only adds the migration runner and connection wiring.
+The device enrolment endpoints still use an in-memory `EnrolmentRepository`; the Postgres-backed repository (catching `23505` on the `enrolment_codes.code` insert and wrapping `createDevice + consumeEnrolmentCode` in one Drizzle transaction) lands in a follow-up. All enrolment writes already thread `merchantId` and persist `devices.fingerprint` so the swap is a drop-in.
 
 Subsequent issues wire real behaviour in:
 
-- [KASA-21](/KASA/issues/KASA-21) — Drizzle migrations + Postgres connection.
-- [KASA-23](/KASA/issues/KASA-23) — CRUD endpoints using shared Zod schemas.
+- [KASA-23](/KASA/issues/KASA-23) — CRUD endpoints using shared Zod schemas + Postgres-backed enrolment repo.
 - [KASA-24](/KASA/issues/KASA-24) — Validation preHandler wiring.
 - [KASA-25](/KASA/issues/KASA-25), [KASA-26](/KASA/issues/KASA-26) — Staff session + RBAC (replaces the `STAFF_BOOTSTRAP_TOKEN` shim).
 
@@ -68,6 +67,9 @@ All configuration is via environment variables, validated by Zod on boot. Missin
 | `ENROLMENT_CODE_TTL_MS` | `600000` | TTL for enrolment codes, in ms. |
 | `MIDTRANS_SERVER_KEY` | _unset_ | Midtrans Core API server key. Blank/absent → `POST /v1/payments/webhooks/midtrans` answers 503 `payments_unavailable` instead of crashing boot. **Never** commit. Local sandbox key lives in `.env`; production key comes from Fly secrets (see rotation below). |
 | `MIDTRANS_ENVIRONMENT` | `sandbox` | `sandbox` \| `production`. Switches the Midtrans base URL. Sandbox (`api.sandbox.midtrans.com`) for all non-production boots; production (`api.midtrans.com`) only on the `prd` Fly app. |
+| `DATABASE_URL` | _unset_ | `postgres://user:pass@host:5432/db`. Optional in `development`/`test` so the enrolment in-memory path still boots; **required** in `production` (boot fails loudly otherwise). Repo swap + migration runner use it; the Fly `release_command` calls `pnpm --filter @kassa/api db:migrate` against it before the new image serves traffic. |
+| `DATABASE_SSL` | `true` | Request TLS to Postgres. Neon + Fly Postgres require `true`; flip to `false` for a local loopback test instance. |
+| `REDIS_URL` | _unset_ | `redis://default:<token>@<host>:6379` (or `rediss://…` for TLS). BullMQ broker for the `worker` Fly process group. Optional today — the worker logs and idles when unset. The first PR that lands a real consumer (KASA-120 nightly reconciliation) will tighten the Zod refinement to required-in-production. Provisioned per-environment via `flyctl redis create`; staging and production point at separate Redis instances. See [docs/CI-CD.md §3.10](../../docs/CI-CD.md). |
 
 ## Route map
 
@@ -94,12 +96,26 @@ All configuration is via environment variables, validated by Zod on boot. Missin
 | POST | `/v1/sales/:saleId/void` | 501 |
 | POST | `/v1/sales/:saleId/refund` | 501 |
 | POST | `/v1/sales/sync` | 501 |
-| POST | `/v1/payments/qris` | 501 |
-| GET | `/v1/payments/qris/:orderId/status` | 501 |
+| POST | `/v1/payments/qris` | Live — device-authenticated. Creates a Midtrans QRIS order keyed on the POS `localSaleId`. |
+| GET | `/v1/payments/qris/:orderId/status` | Live — device-authenticated. Polls Midtrans for the current order status. |
 | POST | `/v1/payments/webhooks/midtrans` | Live — HMAC-SHA512 signature-verified; dedupes by `(orderId, normalized status)` so Midtrans's `capture + settlement` collapses to a single `tender.paid`. 503 `payments_unavailable` when `MIDTRANS_SERVER_KEY` is unset. |
 | POST | `/v1/eod/close` | 501 |
 | GET | `/v1/eod/report` | 501 |
 | GET | `/v1/eod/:eodId` | 501 |
+
+## Device authentication
+
+Routes that the POS device calls authenticate with HTTP Basic against the credentials minted by `POST /v1/auth/enroll` ([KASA-25](/KASA/issues/KASA-25)):
+
+```
+Authorization: Basic base64(<apiKey>:<apiSecret>)
+```
+
+The `apiKey` is the public, lookup-friendly `kk_dev_<base64url>` form of the device row id. The `apiSecret` is matched against `argon2id(api_secret)` stored in `devices.api_key_hash` — the plaintext secret was returned exactly once at enrol time and is not recoverable from the server.
+
+On success the gate populates `req.devicePrincipal = { deviceId, merchantId, outletId }` for downstream handlers. On any failure (missing header, malformed Basic blob, unknown device, wrong secret, revoked status) the response is `401 { error: { code: "unauthorized" } }` — the specific failure reason is logged but never leaked to the caller, so probes can't distinguish "unknown device" from "wrong secret".
+
+The current rollout gates `/v1/payments/qris` and `/v1/payments/qris/:orderId/status`. The Midtrans webhook (`POST /v1/payments/webhooks/midtrans`) authenticates via HMAC signature on the body and stays outside the gate. Sales/stock/EOD endpoints still read `x-kassa-merchant-id` for the bootstrap window; they will move behind this gate in a follow-up alongside KASA-26 RBAC.
 
 ## Payments (Midtrans)
 
@@ -139,6 +155,42 @@ Point the Midtrans merchant console's "Payment notification URL" at `https://<ap
 
 Never rotate in the reverse order — retiring first produces signed webhooks the API cannot verify.
 
+## Database
+
+Postgres 16 via Drizzle ORM + `node-postgres`. The schema covers every v0 aggregate in [ARCHITECTURE.md §3.2](../../docs/ARCHITECTURE.md): `merchants`, `outlets`, `staff`, `devices`, `enrolment_codes`, `uoms`, `modifiers`, `items`, `boms` + `bom_components`, `stock_snapshots`, `stock_ledger`, `sales` + `sale_items`, `tenders`, `end_of_day`, `sync_log`, `transaction_events`. One file per aggregate under `src/db/schema/`; generated SQL is committed under `src/db/migrations/`.
+
+Indexes land alongside the schema defs: every tenant-scoped table has a `(merchant_id, updated_at)` delta-pull index; `sales` has the load-bearing `(merchant_id, local_sale_id)` unique idempotency index; `end_of_day` has the `(outlet_id, business_date)` lock tuple; `stock_ledger` has `(outlet_id, item_id, created_at)` for reconciliation scans. Rupiah columns are `bigint` (integer IDR, safe under `Number.MAX_SAFE_INTEGER`); stock quantities are `numeric(18,6)` to represent sub-gram/ml without float drift.
+
+### Scripts
+
+```bash
+# Generate a new migration after editing a schema file under src/db/schema/.
+pnpm --filter @kassa/api db:generate
+
+# Apply pending migrations against $DATABASE_URL. Idempotent — Drizzle's
+# migrator keeps a `drizzle.__drizzle_migrations` table. Runs as Fly's
+# `release_command` on deploy.
+pnpm --filter @kassa/api db:migrate
+
+# Interactive schema browser (dev only; never point at production).
+pnpm --filter @kassa/api db:studio
+```
+
+### Testing against a real database
+
+`pnpm --filter @kassa/api test` keeps the fresh-DB migration test in a gated suite that skips when `DATABASE_URL` is unset, so the default test run stays green on machines without Postgres. To exercise the migration against a disposable database:
+
+```bash
+# create a throwaway DB first (psql or any client)
+createdb kassa_migrate_test
+
+DATABASE_URL=postgres://localhost/kassa_migrate_test \
+DATABASE_SSL=false \
+pnpm --filter @kassa/api test
+```
+
+The suite asserts every expected v0 table lands and that a second `runMigrations` call is a no-op. CI will set `DATABASE_URL` to a per-job Neon branch under a follow-up infra ticket.
+
 ## Error contract
 
 Every error response uses the shared shape:
@@ -148,3 +200,25 @@ Every error response uses the shared shape:
 ```
 
 See `src/lib/errors.ts`. Client is expected to treat 5xx and network errors as retriable; 4xx as terminal (except 409 on idempotency keys once implemented).
+
+## Deployment
+
+Staging (`kassa-api-staging` on Fly.io, region `sin`) deploys automatically on every successful CI run against `main` via [`cd.yml` → `deploy-api-staging`](../../.github/workflows/cd.yml). The Dockerfile and fly.toml travel with the `api-dist` CI artifact so rollback replays the exact infra config each release shipped with — see [docs/CI-CD.md §3.7 and §3.8](../../docs/CI-CD.md) for the full deploy path and rollback runbook.
+
+Migrations apply as Fly's `release_command` (`node apps/api/dist/db/migrate.js`); a failure here aborts the release before any new machine starts serving traffic. The runner is idempotent, so re-deploys do not re-apply already-applied migrations.
+
+Local `flyctl deploy` (rare; prefer `workflow_dispatch`) runs from the **repo root** so the Docker build context has the full workspace:
+
+```bash
+# from repo root, with the workspace built (so dist/ is present)
+pnpm -r build
+flyctl deploy . \
+  --app kassa-api-staging \
+  --config apps/api/fly.toml \
+  --dockerfile apps/api/Dockerfile \
+  --local-only
+```
+
+Running `flyctl deploy` from `apps/api/` will fail — the Dockerfile needs `pnpm-lock.yaml` and the `packages/` tree, which only exist at the repo root.
+
+Production (`kassa-api`) lands under [KASA-70](/KASA/issues/KASA-70) in M4 with a manual promotion gate.

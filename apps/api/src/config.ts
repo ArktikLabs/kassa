@@ -8,20 +8,55 @@ const optionalTrimmedString = z.preprocess((v) => {
   return s === "" ? undefined : s;
 }, z.string().min(1).optional());
 
-const envSchema = z.object({
-  NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
-  HOST: z.string().default("0.0.0.0"),
-  PORT: z.coerce.number().int().positive().default(3000),
-  LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace", "silent"]).default("info"),
-  STAFF_BOOTSTRAP_TOKEN: z.string().min(16).optional(),
-  ENROLMENT_CODE_TTL_MS: z.coerce
-    .number()
-    .int()
-    .positive()
-    .default(10 * 60 * 1000),
-  MIDTRANS_SERVER_KEY: optionalTrimmedString,
-  MIDTRANS_ENVIRONMENT: z.enum(["sandbox", "production"]).default("sandbox"),
-});
+const envSchema = z
+  .object({
+    NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
+    HOST: z.string().default("0.0.0.0"),
+    PORT: z.coerce.number().int().positive().default(3000),
+    LOG_LEVEL: z
+      .enum(["fatal", "error", "warn", "info", "debug", "trace", "silent"])
+      .default("info"),
+    STAFF_BOOTSTRAP_TOKEN: z.string().min(16).optional(),
+    ENROLMENT_CODE_TTL_MS: z.coerce
+      .number()
+      .int()
+      .positive()
+      .default(10 * 60 * 1000),
+    MIDTRANS_SERVER_KEY: optionalTrimmedString,
+    MIDTRANS_ENVIRONMENT: z.enum(["sandbox", "production"]).default("sandbox"),
+    // `postgres://…` URL. Optional in dev/test so the enrolment in-memory repo
+    // path keeps working without a running Postgres; required in production —
+    // see the refinement below.
+    DATABASE_URL: optionalTrimmedString,
+    // TLS toggle for the Postgres connection. Neon + Fly Postgres need `true`;
+    // a local loopback test db can opt out with `DATABASE_SSL=false`.
+    DATABASE_SSL: z
+      .preprocess(
+        (v) => (typeof v === "string" ? v.trim().toLowerCase() : v),
+        z.enum(["true", "false"]).default("true"),
+      )
+      .transform((v) => v === "true"),
+    // `redis://…` (or `rediss://…` for TLS) — BullMQ broker for the worker
+    // process group. Optional today (KASA-111 ships only a placeholder queue;
+    // the worker logs and idles when REDIS_URL is unset). The first PR that
+    // wires a real consumer (KASA-120: nightly reconciliation) is expected to
+    // tighten this to required-in-production via the refinement block below,
+    // alongside the Fly secret being landed on `kassa-api-staging` and the
+    // production `kassa-api` app. See docs/CI-CD.md §3.4 for provisioning.
+    //
+    // Staging and production must point at separate Redis instances — no
+    // shared queue state across tiers.
+    REDIS_URL: optionalTrimmedString,
+  })
+  .superRefine((env, ctx) => {
+    if (env.NODE_ENV === "production" && !env.DATABASE_URL) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["DATABASE_URL"],
+        message: "DATABASE_URL is required when NODE_ENV=production.",
+      });
+    }
+  });
 
 export type Env = z.infer<typeof envSchema>;
 

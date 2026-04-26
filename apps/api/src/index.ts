@@ -1,7 +1,14 @@
 import { createMidtransProvider, type PaymentProvider } from "@kassa/payments";
 import { buildApp } from "./app.js";
 import { loadEnv } from "./config.js";
+import { createDatabase, type DatabaseHandle } from "./db/client.js";
 import { EnrolmentService, InMemoryEnrolmentRepository } from "./services/enrolment/index.js";
+import {
+  InMemoryItemsRepository,
+  ItemsService,
+  PgItemsRepository,
+  type ItemsRepository,
+} from "./services/catalog/index.js";
 
 async function main(): Promise<void> {
   const env = loadEnv();
@@ -14,6 +21,18 @@ async function main(): Promise<void> {
     repository,
     codeTtlMs: env.ENROLMENT_CODE_TTL_MS,
   });
+
+  // Catalog (KASA-23) is merchant-scoped; bind to Postgres when DATABASE_URL
+  // is set, otherwise fall back to the in-memory repo (dev convenience).
+  let database: DatabaseHandle | null = null;
+  let itemsRepository: ItemsRepository;
+  if (env.DATABASE_URL) {
+    database = createDatabase({ url: env.DATABASE_URL, ssl: env.DATABASE_SSL });
+    itemsRepository = new PgItemsRepository(database.db);
+  } else {
+    itemsRepository = new InMemoryItemsRepository();
+  }
+  const itemsService = new ItemsService({ repository: itemsRepository });
 
   let midtransProvider: PaymentProvider | undefined;
   if (env.MIDTRANS_SERVER_KEY) {
@@ -36,6 +55,13 @@ async function main(): Promise<void> {
         ? { staffBootstrapToken: env.STAFF_BOOTSTRAP_TOKEN }
         : {}),
     },
+    deviceAuth: { repository },
+    catalog: {
+      items: itemsService,
+      ...(env.STAFF_BOOTSTRAP_TOKEN !== undefined
+        ? { staffBootstrapToken: env.STAFF_BOOTSTRAP_TOKEN }
+        : {}),
+    },
     ...(midtransProvider !== undefined ? { midtransProvider } : {}),
   });
 
@@ -50,6 +76,11 @@ async function main(): Promise<void> {
     );
   }
   app.log.warn("Enrolment store is in-memory; persistent Postgres binding lands in KASA-21.");
+  if (!env.DATABASE_URL) {
+    app.log.warn(
+      "DATABASE_URL not set; catalog CRUD is using an in-memory items repo (data is lost on restart).",
+    );
+  }
 
   try {
     await app.listen({ host: env.HOST, port: env.PORT });
@@ -63,6 +94,7 @@ async function main(): Promise<void> {
       app.log.info({ signal }, "shutting down");
       try {
         await app.close();
+        if (database) await database.close();
         process.exit(0);
       } catch (err) {
         app.log.error({ err }, "shutdown failed");

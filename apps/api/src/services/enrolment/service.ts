@@ -29,9 +29,6 @@ export interface IssueCodeResult {
 
 export interface EnrolDeviceInput {
   code: string;
-  // Reserved for the `devices.fingerprint` column added in KASA-21; today
-  // it is surfaced to the route layer for the structured `device.enrolled`
-  // audit log line and is not persisted on the device row.
   deviceFingerprint: string;
 }
 
@@ -80,6 +77,7 @@ export class EnrolmentService {
       if (existing) continue;
       const row = await this.repository.createEnrolmentCode({
         code,
+        merchantId: outlet.merchant.id,
         outletId: input.outletId,
         createdByUserId: input.createdByUserId,
         expiresAt,
@@ -119,8 +117,10 @@ export class EnrolmentService {
 
     await this.repository.createDevice({
       id: deviceId,
+      merchantId: outlet.merchant.id,
       outletId: codeRow.outletId,
       apiKeyHash,
+      fingerprint: input.deviceFingerprint,
       status: "active",
     });
     await this.repository.consumeEnrolmentCode({

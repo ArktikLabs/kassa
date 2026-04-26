@@ -51,10 +51,50 @@ export interface StockSnapshot {
   updatedAt: string;
 }
 
+/**
+ * Tender method codes as written to the local outbox.
+ *
+ * `qris_static` is the printed-merchant-QR fallback (KASA-64 / ADR-008): the
+ * clerk shows the buyer the merchant's static EMV QR, the buyer pays from
+ * their banking app, and the clerk captures the last 4 digits of the buyer's
+ * reference into `buyerRefLast4`. The tender is stored unverified — server-
+ * side reconciliation against the Midtrans EOD settlement report flips
+ * `verified` when the row matches by amount + last4 + outlet + ±10-min window.
+ */
+export type PendingSaleTenderMethod = "cash" | "qris" | "qris_static" | "card" | "other";
+
 export interface PendingSaleTender {
-  method: "cash" | "qris" | "card" | "other";
+  method: PendingSaleTenderMethod;
   amountIdr: Rupiah;
   reference: string | null;
+  /**
+   * `true` once the server has matched this tender against an upstream
+   * settlement record. Always `false` for `qris_static` at write time;
+   * always `true` for `cash` (no settlement needed). Optional on the wire
+   * so existing outbox rows survive the schema bump unchanged.
+   */
+  verified?: boolean;
+  /**
+   * Last 4 digits of the buyer's QRIS reference, captured by the clerk on
+   * the static-QRIS panel. Required for `qris_static` so the back-office
+   * matcher can reconcile ambiguous amounts; absent for every other method.
+   */
+  buyerRefLast4?: string | null;
+}
+
+/**
+ * Per-outlet cache of the merchant's printed-QR image. The clerk shows this
+ * to the buyer when the device is offline (ADR-008 fallback). Cached as a
+ * data URL so the panel can render it under StrictMode without re-fetching
+ * a Blob URL across renders. Refreshed when older than ~24h.
+ */
+export interface PrintedQris {
+  outletId: string;
+  /** Data URL (e.g. `data:image/png;base64,...`) ready to drop into `<img src>`. */
+  image: string;
+  /** Original MIME type so the receipt printer or admin export can re-encode if needed. */
+  mimeType: string;
+  fetchedAt: string;
 }
 
 export interface PendingSaleItem {
@@ -66,6 +106,23 @@ export interface PendingSaleItem {
   lineTotalIdr: Rupiah;
 }
 
+/**
+ * Outbox lifecycle:
+ *  - `queued` — ready to push on the next drain cycle.
+ *  - `sending` — a drain picked the row up and is awaiting the response.
+ *    On app boot any stuck `sending` rows are reset to `queued` because
+ *    the tab may have died mid-flight.
+ *  - `error` — the last POST returned a retriable failure (network, 5xx,
+ *    408, 429). The drain will re-enter these rows next cycle and the SW
+ *    `BackgroundSyncPlugin` replays in-flight requests across activations.
+ *  - `needs_attention` — the server returned a terminal validation
+ *    failure (4xx other than 408/409/429). Surfaced in the admin
+ *    "Perlu perhatian" list; clerk requeues with "Coba kirim ulang".
+ *  - `synced` — the server has canonical knowledge of the sale (200 on
+ *    first attempt or 409 on a duplicate). Kept for receipt reprints;
+ *    `serverSaleName` is the server's canonical identifier used for
+ *    back-office links.
+ */
 export interface PendingSale {
   localSaleId: string;
   outletId: string;
@@ -77,10 +134,16 @@ export interface PendingSale {
   totalIdr: Rupiah;
   items: readonly PendingSaleItem[];
   tenders: readonly PendingSaleTender[];
-  status: "queued" | "sending" | "error";
+  status: "queued" | "sending" | "error" | "needs_attention" | "synced";
   attempts: number;
   lastError: string | null;
   lastAttemptAt: string | null;
+  /**
+   * Server's canonical sale identifier, populated by the first 2xx or by
+   * the 409 reconciliation fetch. `null` until the sale is durably on the
+   * server; the receipt reprint screen can still render from the local row.
+   */
+  serverSaleName: string | null;
 }
 
 export interface SyncState {
@@ -88,6 +151,25 @@ export interface SyncState {
   cursor: string | null;
   lastPulledAt: string | null;
   lastPushedAt: string | null;
+}
+
+/**
+ * Read-only marker that the outlet's business day has been closed on the
+ * server. Keyed on `outletId::businessDate` (see `eodClosureKey`). The PWA
+ * writes it after a successful `POST /v1/eod/close` so re-visiting `/eod`
+ * for that date renders the summary without re-posting, and the catalog
+ * could later refuse new sales for a locked date (future work).
+ */
+export interface EodClosure {
+  key: string;
+  outletId: string;
+  businessDate: string;
+  eodId: string;
+  closedAt: string;
+  countedCashIdr: number;
+  expectedCashIdr: number;
+  varianceIdr: number;
+  varianceReason: string | null;
 }
 
 /**
@@ -123,4 +205,8 @@ export interface DeviceMeta {
 
 export function stockSnapshotKey(outletId: string, itemId: string): string {
   return `${outletId}::${itemId}`;
+}
+
+export function eodClosureKey(outletId: string, businessDate: string): string {
+  return `${outletId}::${businessDate}`;
 }

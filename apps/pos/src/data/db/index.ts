@@ -10,9 +10,11 @@ import {
 import { bomsRepo, type BomsRepo } from "./boms.ts";
 import { deviceMetaRepo, type DeviceMetaRepo } from "./device-meta.ts";
 import { deviceSecretRepo, type DeviceSecretRepo } from "./device-secret.ts";
+import { eodClosuresRepo, type EodClosuresRepo } from "./eod-closures.ts";
 import { itemsRepo, type ItemsRepo } from "./items.ts";
 import { outletsRepo, type OutletsRepo } from "./outlets.ts";
 import { pendingSalesRepo, type PendingSalesRepo } from "./pending-sales.ts";
+import { printedQrisRepo, type PrintedQrisRepo } from "./printed-qris.ts";
 import { stockSnapshotRepo, type StockSnapshotRepo } from "./stock-snapshot.ts";
 import { syncStateRepo, type SyncStateRepo } from "./sync-state.ts";
 import { uomsRepo, type UomsRepo } from "./uoms.ts";
@@ -27,6 +29,8 @@ export interface Repos {
   syncState: SyncStateRepo;
   deviceSecret: DeviceSecretRepo;
   deviceMeta: DeviceMetaRepo;
+  eodClosures: EodClosuresRepo;
+  printedQris: PrintedQrisRepo;
 }
 
 export function createRepos(db: KassaDexie): Repos {
@@ -40,6 +44,8 @@ export function createRepos(db: KassaDexie): Repos {
     syncState: syncStateRepo(db),
     deviceSecret: deviceSecretRepo(db),
     deviceMeta: deviceMetaRepo(db),
+    eodClosures: eodClosuresRepo(db),
+    printedQris: printedQrisRepo(db),
   };
 }
 

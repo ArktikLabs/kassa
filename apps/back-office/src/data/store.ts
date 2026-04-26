@@ -22,6 +22,7 @@ import type {
   Outlet,
   ReconciliationRow,
   Staff,
+  UnmatchedStaticTender,
 } from "./types";
 
 const STORE_KEY = "kassa.back-office.store.v1";
@@ -34,6 +35,7 @@ type State = {
   devices: Device[];
   enrolmentCodes: EnrolmentCode[];
   reconciliation: ReconciliationRow[];
+  unmatchedStaticTenders: UnmatchedStaticTender[];
 };
 
 function seed(): State {
@@ -120,6 +122,52 @@ function seed(): State {
     devices: [],
     enrolmentCodes: [],
     reconciliation: [],
+    unmatchedStaticTenders: [
+      {
+        id: "01H0000000000000UNMATCH0001",
+        outletId,
+        businessDate: "2026-04-24",
+        saleAt: "2026-04-24T11:42:00.000+07:00",
+        amountIdr: 75_000,
+        last4: "8421",
+      },
+      {
+        id: "01H0000000000000UNMATCH0002",
+        outletId,
+        businessDate: "2026-04-24",
+        saleAt: "2026-04-24T13:08:00.000+07:00",
+        amountIdr: 25_000,
+        last4: "1029",
+      },
+      {
+        id: "01H0000000000000UNMATCH0003",
+        outletId,
+        businessDate: "2026-04-23",
+        saleAt: "2026-04-23T19:20:00.000+07:00",
+        amountIdr: 110_000,
+        last4: "5566",
+      },
+    ],
+  };
+}
+
+/* Hydrate every State slice even if the browser snapshot was written
+ * before that slice existed. Without this, adding a required slice
+ * (e.g. unmatchedStaticTenders in KASA-119) crashes any user with a
+ * stale snapshot the moment a screen does `[...state.<newSlice>]`.
+ * Seed defaults are used so devs still see scaffold rows when they
+ * had only a partial snapshot from an older build. */
+function hydrate(parsed: Partial<State>): State {
+  const defaults = seed();
+  return {
+    outlets: parsed.outlets ?? defaults.outlets,
+    items: parsed.items ?? defaults.items,
+    boms: parsed.boms ?? defaults.boms,
+    staff: parsed.staff ?? defaults.staff,
+    devices: parsed.devices ?? defaults.devices,
+    enrolmentCodes: parsed.enrolmentCodes ?? defaults.enrolmentCodes,
+    reconciliation: parsed.reconciliation ?? defaults.reconciliation,
+    unmatchedStaticTenders: parsed.unmatchedStaticTenders ?? defaults.unmatchedStaticTenders,
   };
 }
 
@@ -132,7 +180,7 @@ function load(): State {
     return s;
   }
   try {
-    return JSON.parse(raw) as State;
+    return hydrate(JSON.parse(raw) as Partial<State>);
   } catch {
     const s = seed();
     localStorage.setItem(STORE_KEY, JSON.stringify(s));
@@ -272,6 +320,16 @@ export function revokeDevice(id: string): void {
   state = {
     ...state,
     devices: state.devices.map((d) => (d.id === id ? { ...d, status: "revoked" } : d)),
+  };
+  emit();
+}
+
+// Unmatched static QRIS tenders -------------------------------------
+
+export function removeUnmatchedStaticTender(id: string): void {
+  state = {
+    ...state,
+    unmatchedStaticTenders: state.unmatchedStaticTenders.filter((t) => t.id !== id),
   };
   emit();
 }

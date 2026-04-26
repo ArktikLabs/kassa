@@ -15,4 +15,10 @@ export type {
 } from "./repository.js";
 export { InMemoryEnrolmentRepository } from "./memory-repository.js";
 export { CODE_LENGTH, generateEnrolmentCode } from "./code.js";
-export { encodeApiKey, generateApiSecret, hashApiSecret, verifyApiSecret } from "./credentials.js";
+export {
+  decodeApiKey,
+  encodeApiKey,
+  generateApiSecret,
+  hashApiSecret,
+  verifyApiSecret,
+} from "./credentials.js";

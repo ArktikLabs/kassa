@@ -1,14 +1,9 @@
-import { FormattedMessage } from "react-intl";
+import { TenderCashPanel } from "../features/tender-cash/TenderCashPanel";
 
 export function TenderCashScreen() {
   return (
-    <section className="space-y-4">
-      <h1 className="text-2xl font-bold text-neutral-900">
-        <FormattedMessage id="tender.cash.heading" />
-      </h1>
-      <p className="text-neutral-600">
-        <FormattedMessage id="tender.cash.placeholder" />
-      </p>
-    </section>
+    <div className="flex h-full flex-col rounded-lg border border-neutral-200 bg-neutral-50 p-4">
+      <TenderCashPanel />
+    </div>
   );
 }

@@ -1,73 +1,131 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
-import { z } from "zod";
-import { type NormalizedWebhookEvent, WebhookSignatureError } from "@kassa/payments";
-import { notImplemented, sendError } from "../lib/errors.js";
-import { errorBodySchema, notImplementedResponses } from "../lib/openapi.js";
+import {
+  type NormalizedWebhookEvent,
+  PaymentProviderError,
+  WebhookSignatureError,
+} from "@kassa/payments";
+import {
+  qrisCreateOrderRequest,
+  type QrisCreateOrderRequest,
+  type QrisCreateOrderResponse,
+  type QrisOrderStatus,
+  type QrisOrderStatusResponse,
+} from "@kassa/schemas/payments";
+import type { DeviceAuthPreHandler } from "../auth/device-auth.js";
+import { sendError } from "../lib/errors.js";
+import { validate } from "../lib/validate.js";
 
-const orderIdParam = z.object({ orderId: z.string().min(1) }).strict();
+export function paymentsRoutes(requireDevice: DeviceAuthPreHandler) {
+  return async function register(app: FastifyInstance): Promise<void> {
+    app.post<{ Body: QrisCreateOrderRequest }>(
+      "/qris",
+      { preHandler: [requireDevice, validate({ body: qrisCreateOrderRequest })] },
+      createQrisOrderHandler,
+    );
+    app.get<{ Params: { orderId: string } }>(
+      "/qris/:orderId/status",
+      { preHandler: requireDevice },
+      getQrisOrderStatusHandler,
+    );
+    // The Midtrans webhook authenticates via HMAC signature on the body, not
+    // device credentials, so it stays outside the `requireDevice` gate.
+    app.post("/webhooks/midtrans", midtransWebhookHandler);
+  };
+}
 
-const webhookAckResponse = z
-  .object({
-    ok: z.literal(true),
-    duplicate: z.boolean(),
-  })
-  .strict()
-  .describe(
-    "Acknowledgement returned to the payment provider. `duplicate: true` " +
-      "means the event was already processed and no domain event was emitted.",
-  );
+async function createQrisOrderHandler(
+  req: FastifyRequest<{ Body: QrisCreateOrderRequest }>,
+  reply: FastifyReply,
+): Promise<FastifyReply> {
+  const provider = req.server.midtransProvider;
+  if (!provider) {
+    return sendError(
+      reply,
+      503,
+      "payments_unavailable",
+      "Payments provider is not configured on this instance.",
+    );
+  }
 
-export async function paymentsRoutes(app: FastifyInstance): Promise<void> {
-  app.post(
-    "/qris",
-    {
-      schema: {
-        tags: ["payments"],
-        summary: "Create a QRIS charge (not implemented)",
-        description:
-          "Will create a QRIS payment intent via the active provider. Lands with KASA-63.",
-        response: notImplementedResponses,
-      },
-    },
-    async (req, reply) => notImplemented(req, reply),
-  );
-  app.get(
-    "/qris/:orderId/status",
-    {
-      schema: {
-        tags: ["payments"],
-        summary: "Poll QRIS charge status (not implemented)",
-        description:
-          "Will poll the active provider for the latest charge status. Lands with KASA-63.",
-        params: orderIdParam,
-        response: notImplementedResponses,
-      },
-    },
-    async (req, reply) => notImplemented(req, reply),
-  );
-  app.post(
-    "/webhooks/midtrans",
-    {
-      schema: {
-        tags: ["payments"],
-        summary: "Midtrans payment webhook",
-        description:
-          "Receives Midtrans payment notifications. Verifies the HMAC-SHA512 " +
-          "`signature_key` with a timing-safe compare, normalizes " +
-          "`transaction_status + fraud_status` to one of " +
-          "`pending | paid | failed | expired | cancelled`, and dedupes " +
-          "by `(orderId, normalized status)` so capture+settlement collapse " +
-          "to a single `tender.paid` domain event. Returns 503 " +
-          "`payments_unavailable` when `MIDTRANS_SERVER_KEY` is unset.",
-        response: {
-          200: webhookAckResponse,
-          401: errorBodySchema,
-          503: errorBodySchema,
-        },
-      },
-    },
-    midtransWebhookHandler,
-  );
+  // The POS's `localSaleId` (UUIDv7) is the Midtrans `order_id`. Using it
+  // directly avoids an extra lookup table on the webhook path — the paid
+  // callback arrives already keyed to the outbox row the PWA will finalise.
+  try {
+    const result = await provider.createQris({
+      orderId: req.body.localSaleId,
+      grossAmount: req.body.amount,
+      currency: "IDR",
+      outletId: req.body.outletId,
+      ...(req.body.expiryMinutes !== undefined ? { expiryMinutes: req.body.expiryMinutes } : {}),
+    });
+    const body: QrisCreateOrderResponse = {
+      qrisOrderId: result.providerOrderId,
+      qrString: result.qrString,
+      expiresAt: result.expiresAt ?? null,
+    };
+    reply.code(201).send(body);
+    return reply;
+  } catch (err) {
+    return handleProviderError(req, reply, err, "qris_create_failed");
+  }
+}
+
+async function getQrisOrderStatusHandler(
+  req: FastifyRequest<{ Params: { orderId: string } }>,
+  reply: FastifyReply,
+): Promise<FastifyReply> {
+  const provider = req.server.midtransProvider;
+  if (!provider) {
+    return sendError(
+      reply,
+      503,
+      "payments_unavailable",
+      "Payments provider is not configured on this instance.",
+    );
+  }
+
+  const { orderId } = req.params;
+  if (typeof orderId !== "string" || orderId.trim() === "") {
+    return sendError(reply, 400, "bad_request", "orderId is required.");
+  }
+
+  try {
+    const result = await provider.getQrisStatus(orderId);
+    const body: QrisOrderStatusResponse = {
+      qrisOrderId: result.providerOrderId,
+      status: result.status as QrisOrderStatus,
+      grossAmount: result.grossAmount,
+      paidAt: result.paidAt ?? null,
+    };
+    reply.code(200).send(body);
+    return reply;
+  } catch (err) {
+    return handleProviderError(req, reply, err, "qris_status_failed");
+  }
+}
+
+function handleProviderError(
+  req: FastifyRequest,
+  reply: FastifyReply,
+  err: unknown,
+  fallbackCode: string,
+): FastifyReply {
+  if (err instanceof PaymentProviderError) {
+    const upstream = err.status ?? 0;
+    // Midtrans 4xx is a genuine client error (bad amount, dup order); Midtrans
+    // 5xx / network failures are upstream outages, which we surface as 502 so
+    // the PWA can fall back to static QRIS without retrying the same request.
+    // 401/403 mean our server key is missing or wrong — that's a config
+    // problem on our side, not something the PWA can act on, so we collapse
+    // those into 502 too instead of leaking auth state downstream.
+    const isClientFixable =
+      upstream >= 400 && upstream < 500 && upstream !== 401 && upstream !== 403;
+    const status = isClientFixable ? upstream : 502;
+    req.log.warn({ err, providerCode: err.code }, "midtrans request failed");
+    return sendError(reply, status, err.code, err.message);
+  }
+  req.log.error({ err }, "unexpected payment provider failure");
+  return sendError(reply, 500, fallbackCode, "Unexpected error from the payments provider.");
 }
 
 async function midtransWebhookHandler(

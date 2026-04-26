@@ -5,11 +5,14 @@ import {
   deviceEnrolResponse,
   enrolmentCodeIssueRequest,
   enrolmentCodeIssueResponse,
+  type DeviceEnrolRequest,
   type DeviceEnrolResponse,
+  type EnrolmentCodeIssueRequest,
   type EnrolmentCodeIssueResponse,
 } from "@kassa/schemas/auth";
 import { sendError, notImplemented } from "../lib/errors.js";
 import { errorBodySchema, notImplementedResponses } from "../lib/openapi.js";
+import { validate } from "../lib/validate.js";
 import { EnrolmentError, type EnrolmentService } from "../services/enrolment/index.js";
 import { makeStaffBootstrapPreHandler } from "../auth/staff-bootstrap.js";
 
@@ -26,14 +29,18 @@ export function authRoutes(deps: AuthRouteDeps) {
       ? makeStaffBootstrapPreHandler(deps.staffBootstrapToken)
       : null;
 
-    // In-memory limiter; KASA-21/devops will swap the store to the Redis
-    // chosen for BullMQ once the Fly.io worker plane has more than one
-    // instance, otherwise per-instance counters defeat the limit.
+    // In-memory limiter; devops will swap the store to the Redis chosen for
+    // BullMQ once the Fly.io worker plane has more than one instance,
+    // otherwise per-instance counters defeat the limit.
     await app.register(rateLimit, { global: false });
 
-    app.post(
+    app.post<{ Body: EnrolmentCodeIssueRequest }>(
       "/enrolment-codes",
       {
+        // Body validation lives in the `validate()` preHandler so failures
+        // surface as 422 `validation_error` per the existing API contract.
+        // The schema below is consumed by `@fastify/swagger` for OpenAPI
+        // generation only — no runtime body validation happens here.
         schema: {
           tags: ["auth"],
           summary: "Issue an enrolment code",
@@ -43,32 +50,31 @@ export function authRoutes(deps: AuthRouteDeps) {
             "the caller must present `Authorization: Bearer <STAFF_BOOTSTRAP_TOKEN>` " +
             "and `X-Staff-User-Id: <uuid>` headers; when the bootstrap token is " +
             "unset the endpoint returns 503.",
-          body: enrolmentCodeIssueRequest,
           response: {
             201: enrolmentCodeIssueResponse,
-            400: errorBodySchema,
             401: errorBodySchema,
             404: errorBodySchema,
+            422: errorBodySchema,
             503: errorBodySchema,
           },
         },
-        preHandler: async (req, reply) => {
-          if (!requireStaff) {
-            sendError(
-              reply,
-              503,
-              "staff_bootstrap_disabled",
-              "Set STAFF_BOOTSTRAP_TOKEN to enable enrolment-code issuance until KASA-25 ships staff sessions.",
-            );
-            return reply;
-          }
-          return requireStaff(req, reply);
-        },
+        preHandler: [
+          async (req, reply) => {
+            if (!requireStaff) {
+              sendError(
+                reply,
+                503,
+                "staff_bootstrap_disabled",
+                "Set STAFF_BOOTSTRAP_TOKEN to enable enrolment-code issuance until KASA-25 ships staff sessions.",
+              );
+              return reply;
+            }
+            return requireStaff(req, reply);
+          },
+          validate({ body: enrolmentCodeIssueRequest }),
+        ],
       },
       async (req, reply) => {
-        // The validatorCompiler has already parsed `req.body` against
-        // `enrolmentCodeIssueRequest`; cast to the inferred type.
-        const body = req.body as { outletId: string };
         const principal = req.staffPrincipal;
         if (!principal) {
           sendError(reply, 401, "unauthorized", "Staff session missing.");
@@ -76,7 +82,7 @@ export function authRoutes(deps: AuthRouteDeps) {
         }
         try {
           const result = await deps.enrolment.issueCode({
-            outletId: body.outletId,
+            outletId: req.body.outletId,
             createdByUserId: principal.userId,
           });
           const responseBody: EnrolmentCodeIssueResponse = {
@@ -96,7 +102,7 @@ export function authRoutes(deps: AuthRouteDeps) {
       },
     );
 
-    app.post(
+    app.post<{ Body: DeviceEnrolRequest }>(
       "/enroll",
       {
         schema: {
@@ -108,12 +114,11 @@ export function authRoutes(deps: AuthRouteDeps) {
             "Rate-limited to 10 requests per minute per IP by default. " +
             "Returns 410 (`code_expired` or `code_already_used`) when the code " +
             "is past its TTL or has been redeemed.",
-          body: deviceEnrolRequest,
           response: {
             201: deviceEnrolResponse,
-            400: errorBodySchema,
             404: errorBodySchema,
             410: errorBodySchema,
+            422: errorBodySchema,
             429: errorBodySchema,
           },
         },
@@ -123,24 +128,24 @@ export function authRoutes(deps: AuthRouteDeps) {
             timeWindow: "1 minute",
           },
         },
+        preHandler: validate({ body: deviceEnrolRequest }),
       },
       async (req, reply) => {
-        const body = req.body as { code: string; deviceFingerprint: string };
         try {
           const result = await deps.enrolment.enrolDevice({
-            code: body.code,
-            deviceFingerprint: body.deviceFingerprint,
+            code: req.body.code,
+            deviceFingerprint: req.body.deviceFingerprint,
           });
-          // Audit trail until `devices.fingerprint` lands in KASA-21. The
-          // fingerprint identifies the tablet across reinstalls; ops needs it
-          // to correlate device-replacement incidents with the enrolment row.
+          // Structured audit line: the fingerprint is persisted on
+          // `devices.fingerprint`, but the log keeps ops correlation cheap
+          // for the "recent enrolments" view without a DB round-trip.
           req.log.info(
             {
               event: "device.enrolled",
               deviceId: result.deviceId,
               outletId: result.outlet.id,
               merchantId: result.merchant.id,
-              deviceFingerprint: body.deviceFingerprint,
+              deviceFingerprint: req.body.deviceFingerprint,
             },
             "device enrolled",
           );

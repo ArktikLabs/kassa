@@ -23,6 +23,7 @@ interface SyncContextValue {
   store: SyncStatusStore;
   runner: SyncRunner | null;
   triggerRefresh: () => Promise<void>;
+  triggerPush: () => Promise<void>;
 }
 
 const SyncContext = createContext<SyncContextValue | null>(null);
@@ -59,11 +60,20 @@ export function SyncProvider({ children }: { children: ReactNode }) {
         const database = await getDatabase();
         if (cancelled) return;
         databaseRef.current = database;
+        // Seed the needs-attention counter so the pill can render "Sync
+        // gagal" before the first drain completes.
+        const parked = await database.repos.pendingSales.listNeedsAttention();
+        store.update((s) => ({ ...s, needsAttentionCount: parked.length }));
         const runner = createSyncRunner({
           database,
           baseUrl: readBaseUrl(),
           status: store,
           onSentryError: reportParseError,
+          auth: async () => {
+            const secret = await database.repos.deviceSecret.get();
+            if (!secret) return null;
+            return { apiKey: secret.apiKey, apiSecret: secret.apiSecret };
+          },
           outletId: async () => {
             const secret = await database.repos.deviceSecret.get();
             return secret?.outletId ?? null;
@@ -87,19 +97,25 @@ export function SyncProvider({ children }: { children: ReactNode }) {
     await runnerRef.current?.trigger();
   }, []);
 
+  const triggerPush = useCallback(async () => {
+    await runnerRef.current?.triggerPush();
+  }, []);
+
   const value = useMemo<SyncContextValue>(
     () => ({
       store,
       runner: runnerRef.current,
       triggerRefresh,
+      triggerPush,
     }),
-    [store, triggerRefresh],
+    [store, triggerRefresh, triggerPush],
   );
   return <SyncContext.Provider value={value}>{children}</SyncContext.Provider>;
 }
 
 const DEFAULT_STATUS: SyncStatus = {
   phase: { kind: "idle", lastSuccessAt: null, lastError: null },
+  needsAttentionCount: 0,
 };
 
 export function useSyncStatus(): SyncStatus {
@@ -114,9 +130,11 @@ export function useSyncStatus(): SyncStatus {
 
 export function useSyncActions(): {
   triggerRefresh: () => Promise<void>;
+  triggerPush: () => Promise<void>;
 } {
   const ctx = useContext(SyncContext);
   return {
     triggerRefresh: ctx?.triggerRefresh ?? (async () => {}),
+    triggerPush: ctx?.triggerPush ?? (async () => {}),
   };
 }

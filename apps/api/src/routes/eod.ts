@@ -1,48 +1,78 @@
 import type { FastifyInstance } from "fastify";
-import { z } from "zod";
-import { notImplemented } from "../lib/errors.js";
-import { notImplementedResponses } from "../lib/openapi.js";
+import {
+  eodCloseRequest,
+  type EodCloseRequest,
+  type EodCloseResponse,
+  type EodMissingSalesDetails,
+} from "@kassa/schemas/eod";
+import { notImplemented, sendError } from "../lib/errors.js";
+import { validate } from "../lib/validate.js";
+import { EodError, type EodService } from "../services/eod/index.js";
 
-const eodIdParam = z.object({ eodId: z.string().uuid() }).strict();
+export interface EodRouteDeps {
+  service: EodService;
+  /**
+   * Merchant isolation will be derived from the authenticated device session
+   * in KASA-25; until then every request is serviced against this bootstrap
+   * merchant id so the data plane stays partitioned correctly.
+   */
+  resolveMerchantId: () => string;
+}
 
-export async function eodRoutes(app: FastifyInstance): Promise<void> {
-  app.post(
-    "/close",
-    {
-      schema: {
-        tags: ["eod"],
-        summary: "Close end-of-day (not implemented)",
-        description:
-          "Will close out the current shift, reconcile cash and QRIS tenders, " +
-          "and snapshot stock movement for the outlet. Lands with KASA-23.",
-        response: notImplementedResponses,
+export function eodRoutes(deps: EodRouteDeps) {
+  return async function register(app: FastifyInstance): Promise<void> {
+    app.post<{ Body: EodCloseRequest }>(
+      "/close",
+      { preHandler: validate({ body: eodCloseRequest }) },
+      async (req, reply) => {
+        try {
+          const record = await deps.service.close({
+            merchantId: deps.resolveMerchantId(),
+            outletId: req.body.outletId,
+            businessDate: req.body.businessDate,
+            countedCashIdr: req.body.countedCashIdr,
+            varianceReason: req.body.varianceReason,
+            clientSaleIds: req.body.clientSaleIds,
+          });
+          const body: EodCloseResponse = {
+            eodId: record.id,
+            outletId: record.outletId,
+            businessDate: record.businessDate,
+            closedAt: record.closedAt,
+            countedCashIdr: record.countedCashIdr,
+            expectedCashIdr: record.expectedCashIdr,
+            varianceIdr: record.varianceIdr,
+            varianceReason: record.varianceReason,
+            breakdown: record.breakdown,
+          };
+          reply.code(201).send(body);
+          return reply;
+        } catch (err) {
+          if (err instanceof EodError) {
+            if (err.code === "eod_sale_mismatch") {
+              const details: EodMissingSalesDetails = err.details ?? {
+                expectedCount: 0,
+                receivedCount: 0,
+                missingSaleIds: [],
+              };
+              sendError(reply, 409, err.code, err.message, details);
+              return reply;
+            }
+            if (err.code === "eod_already_closed") {
+              sendError(reply, 409, err.code, err.message);
+              return reply;
+            }
+            if (err.code === "eod_variance_reason_required") {
+              sendError(reply, 422, err.code, err.message);
+              return reply;
+            }
+          }
+          throw err;
+        }
       },
-    },
-    async (req, reply) => notImplemented(req, reply),
-  );
-  app.get(
-    "/report",
-    {
-      schema: {
-        tags: ["eod"],
-        summary: "End-of-day report (not implemented)",
-        description: "Will return the latest end-of-day report. Lands with KASA-23.",
-        response: notImplementedResponses,
-      },
-    },
-    async (req, reply) => notImplemented(req, reply),
-  );
-  app.get(
-    "/:eodId",
-    {
-      schema: {
-        tags: ["eod"],
-        summary: "Fetch a historical end-of-day record (not implemented)",
-        description: "Will return a single end-of-day record by id. Lands with KASA-23.",
-        params: eodIdParam,
-        response: notImplementedResponses,
-      },
-    },
-    async (req, reply) => notImplemented(req, reply),
-  );
+    );
+
+    app.get("/report", async (req, reply) => notImplemented(req, reply));
+    app.get("/:eodId", async (req, reply) => notImplemented(req, reply));
+  };
 }

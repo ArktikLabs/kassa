@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
+import { useLiveQuery } from "dexie-react-hooks";
 import { useNavigate } from "@tanstack/react-router";
-import { FormattedMessage, useIntl } from "react-intl";
+import { FormattedDate, FormattedMessage, useIntl } from "react-intl";
 import {
   getSnapshot,
   hydrateEnrolment,
@@ -10,6 +11,10 @@ import {
 } from "../lib/enrolment";
 import { showToast } from "../components/Toast";
 import { useSyncActions, useSyncStatus } from "../lib/sync-provider";
+import { usePaperWidthStore, type PaperWidth } from "../features/receipt/paperWidth";
+import { getDatabase, type Database } from "../data/db/index.ts";
+import type { PendingSale } from "../data/db/types.ts";
+import { formatIdr } from "../shared/money/index.ts";
 
 const BOOT_STATE: EnrolmentSnapshot = { state: "loading" };
 
@@ -21,8 +26,11 @@ export function AdminScreen() {
   const [resetting, setResetting] = useState(false);
 
   const status = useSyncStatus();
-  const { triggerRefresh } = useSyncActions();
+  const { triggerRefresh, triggerPush } = useSyncActions();
   const [refreshing, setRefreshing] = useState(false);
+
+  const paperWidth = usePaperWidthStore((s) => s.width);
+  const setPaperWidth = usePaperWidthStore((s) => s.setWidth);
 
   useEffect(() => {
     void hydrateEnrolment();
@@ -141,6 +149,45 @@ export function AdminScreen() {
         </button>
       </div>
 
+      <NeedsAttentionSection triggerPush={triggerPush} />
+
+      <section className="space-y-3 rounded-md border border-neutral-200 bg-white p-4">
+        <h2 className="text-lg font-semibold text-neutral-900">
+          <FormattedMessage id="admin.receipt.heading" />
+        </h2>
+        <p className="text-sm text-neutral-600">
+          <FormattedMessage id="admin.receipt.paperWidth.description" />
+        </p>
+        <div
+          role="radiogroup"
+          aria-label={intl.formatMessage({ id: "admin.receipt.paperWidth.aria" })}
+          data-testid="admin-paper-width"
+          className="flex gap-2"
+        >
+          {(["58mm", "80mm"] as const satisfies readonly PaperWidth[]).map((value) => {
+            const active = value === paperWidth;
+            return (
+              <button
+                key={value}
+                type="button"
+                role="radio"
+                aria-checked={active}
+                onClick={() => setPaperWidth(value)}
+                data-testid={`admin-paper-width-${value}`}
+                className={[
+                  "h-11 flex-1 rounded-md border text-sm font-semibold transition-colors",
+                  active
+                    ? "border-primary-600 bg-primary-50 text-primary-700"
+                    : "border-neutral-300 bg-white text-neutral-700 hover:bg-neutral-100",
+                ].join(" ")}
+              >
+                {value}
+              </button>
+            );
+          })}
+        </div>
+      </section>
+
       {snapshot.state === "enrolled" ? (
         <section className="space-y-3 rounded-md border border-red-200 bg-red-50 p-4">
           <h2 className="text-lg font-semibold text-red-800">
@@ -182,5 +229,123 @@ export function AdminScreen() {
         </section>
       ) : null}
     </section>
+  );
+}
+
+function NeedsAttentionSection({ triggerPush }: { triggerPush: () => Promise<void> }) {
+  const [db, setDb] = useState<Database | null>(null);
+  const [retrying, setRetrying] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    let cancelled = false;
+    getDatabase()
+      .then((database) => {
+        if (!cancelled) setDb(database);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const rows = useLiveQuery(
+    async () => (db ? db.repos.pendingSales.listNeedsAttention() : []),
+    [db],
+    [] as PendingSale[],
+  );
+
+  const onRetry = async (localSaleId: string) => {
+    if (!db) return;
+    setRetrying(localSaleId);
+    try {
+      await db.repos.pendingSales.requeue(localSaleId);
+      await triggerPush();
+    } finally {
+      setRetrying(null);
+    }
+  };
+
+  return (
+    <section
+      className="space-y-3 rounded-md border border-neutral-200 bg-white p-4"
+      data-testid="admin-attention"
+    >
+      <header className="space-y-1">
+        <h2 className="text-lg font-semibold text-neutral-900">
+          <FormattedMessage id="admin.attention.heading" />
+        </h2>
+        <p className="text-sm text-neutral-600">
+          <FormattedMessage id="admin.attention.description" />
+        </p>
+      </header>
+      {rows.length === 0 ? (
+        <p className="text-sm text-neutral-500" data-testid="admin-attention-empty">
+          <FormattedMessage id="admin.attention.empty" />
+        </p>
+      ) : (
+        <ul className="space-y-2">
+          {rows.map((row) => (
+            <NeedsAttentionRow
+              key={row.localSaleId}
+              row={row}
+              retrying={retrying === row.localSaleId}
+              onRetry={() => void onRetry(row.localSaleId)}
+            />
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+function NeedsAttentionRow({
+  row,
+  retrying,
+  onRetry,
+}: {
+  row: PendingSale;
+  retrying: boolean;
+  onRetry: () => void;
+}) {
+  return (
+    <li
+      className="rounded-md border border-warning-border bg-warning-surface p-3 text-sm text-warning-fg"
+      data-testid="admin-attention-row"
+      data-local-sale-id={row.localSaleId}
+    >
+      <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
+        <dt className="font-medium">
+          <FormattedMessage id="admin.attention.total" />
+        </dt>
+        <dd className="font-mono tabular-nums">{formatIdr(row.totalIdr)}</dd>
+        <dt className="font-medium">
+          <FormattedMessage id="admin.attention.created" />
+        </dt>
+        <dd>
+          <FormattedDate
+            value={row.createdAt}
+            year="numeric"
+            month="short"
+            day="2-digit"
+            hour="2-digit"
+            minute="2-digit"
+          />
+        </dd>
+        <dt className="font-medium">
+          <FormattedMessage id="admin.attention.error" />
+        </dt>
+        <dd className="break-all">{row.lastError ?? "—"}</dd>
+      </dl>
+      <button
+        type="button"
+        onClick={onRetry}
+        disabled={retrying}
+        className="mt-3 h-10 w-full rounded-md bg-primary-600 px-4 text-sm font-semibold text-white transition-colors hover:bg-primary-700 disabled:cursor-not-allowed disabled:bg-neutral-300"
+        data-testid="admin-attention-retry"
+      >
+        <FormattedMessage id={retrying ? "admin.attention.retrying" : "admin.attention.retry"} />
+      </button>
+    </li>
   );
 }

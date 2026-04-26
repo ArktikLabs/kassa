@@ -89,3 +89,17 @@ export type ReconciliationRow = {
   variance: number;
   status: "zero_variance" | "variance" | "pending";
 };
+
+/* Unverified static-QRIS tender awaiting manual or settlement match.
+ * Mirrors the slice of `payments_qris_static` rows the
+ * /admin/reconciliation surface needs (KASA-64 §static-QRIS,
+ * KASA-119). The full row lives server-side; we keep just what the
+ * unmatched-list table renders. */
+export type UnmatchedStaticTender = {
+  id: string;
+  outletId: string;
+  businessDate: string;
+  saleAt: string;
+  amountIdr: number;
+  last4: string;
+};

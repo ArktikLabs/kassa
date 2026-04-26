@@ -48,3 +48,42 @@ jobs:
 
       - name: Test
         run: pnpm -r test
+
+      # Deployable artifacts. Uploaded on every CI run so reviewers can inspect a
+      # PR's compiled output and CD (future ticket) can consume the main-branch
+      # artifact without rebuilding. api-dist bundles the workspace packages
+      # apps/api imports at runtime (@kassa/payments, @kassa/schemas).
+      - name: Upload POS PWA artifact
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        with:
+          name: pos-dist
+          path: apps/pos/dist
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Upload Back Office artifact
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        with:
+          name: back-office-dist
+          path: apps/back-office/dist
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Upload API artifact
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        with:
+          name: api-dist
+          path: |
+            apps/api/dist
+            apps/api/package.json
+            apps/api/Dockerfile
+            apps/api/fly.toml
+            packages/payments/dist
+            packages/payments/package.json
+            packages/schemas/dist
+            packages/schemas/package.json
+            package.json
+            pnpm-lock.yaml
+            pnpm-workspace.yaml
+          if-no-files-found: error
+          retention-days: 7

@@ -1,0 +1,250 @@
+name: CD
+
+# Continuous deployment for Kassa.
+#
+# Today:
+#   - POS PWA       → Cloudflare Pages (production) — KASA-18
+#   - Back Office   → Cloudflare Pages (production) — KASA-18
+#   - API           → Fly.io staging (`kassa-api-staging`) — KASA-107
+#
+# Deferred (separate issues):
+#   - API production (`kassa-api`) — KASA-70 (M4)
+#   - Preview-per-PR environments  — KASA-108
+#
+# Trigger model:
+#   - `workflow_run`: when CI finishes successfully on main, consume the CI run's
+#     `pos-dist` / `back-office-dist` / `api-dist` artifacts and deploy. No rebuild
+#     on the deploy runner — same byte-identical outputs that CI verified.
+#   - `workflow_dispatch`: redeploy the artifacts from a prior CI run by id. This
+#     is the in-repo rollback path (Cloudflare Pages dashboard and `fly releases`
+#     are the provider-side rollback paths).
+#
+# Enablement (one-time, by the board / ops):
+#   1. Cloudflare Pages projects `kassa-pos` and `kassa-back-office`
+#      with production branch `main` (empty to start, deploys will fill them).
+#   2. `fly apps create kassa-api-staging --org kassa` (`fly launch --no-deploy`
+#      using `apps/api/fly.toml`). Set app secrets with `fly secrets set --app
+#      kassa-api-staging`.
+#   3. In the GitHub `production` environment, add these secrets:
+#        CLOUDFLARE_API_TOKEN   (Pages → Edit on the account)
+#        CLOUDFLARE_ACCOUNT_ID
+#        FLY_API_TOKEN          (Fly → Tokens → create with Deploy scope)
+#   4. Set repository variable DEPLOY_ENABLED=true.
+# Until DEPLOY_ENABLED is flipped, preflight emits a notice and all deploy jobs
+# are skipped — main stays green.
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      ci_run_id:
+        description: "CI run id whose main-branch artifacts to (re)deploy. Find it under Actions → CI."
+        required: true
+        type: string
+
+concurrency:
+  group: cd-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  preflight:
+    name: Preflight (enablement + source resolution)
+    runs-on: ubuntu-latest
+    # For workflow_run, only fire on a successful CI run on main.
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main')
+    outputs:
+      ready: ${{ steps.gate.outputs.ready }}
+      ci_run_id: ${{ steps.source.outputs.ci_run_id }}
+      commit_sha: ${{ steps.source.outputs.commit_sha }}
+    steps:
+      - name: Check deploy enablement
+        id: gate
+        env:
+          DEPLOY_ENABLED: ${{ vars.DEPLOY_ENABLED }}
+        run: |
+          if [ "${DEPLOY_ENABLED:-false}" != "true" ]; then
+            echo "::notice title=CD disabled::Set repository variable DEPLOY_ENABLED=true (and provision Cloudflare secrets in the 'production' environment) to activate deploys. See .github/workflows/cd.yml header."
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Resolve source CI run
+        id: source
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          WF_RUN_ID: ${{ github.event.workflow_run.id }}
+          WF_RUN_SHA: ${{ github.event.workflow_run.head_sha }}
+          INPUT_RUN_ID: ${{ inputs.ci_run_id }}
+          EVENT_NAME: ${{ github.event_name }}
+          REPO: ${{ github.repository }}
+        run: |
+          if [ "$EVENT_NAME" = "workflow_run" ]; then
+            echo "ci_run_id=$WF_RUN_ID" >> "$GITHUB_OUTPUT"
+            echo "commit_sha=$WF_RUN_SHA" >> "$GITHUB_OUTPUT"
+          else
+            # workflow_dispatch: resolve the head SHA of the named CI run so the
+            # Cloudflare deployment records the correct commit, not this run's SHA.
+            SHA=$(gh api "repos/$REPO/actions/runs/$INPUT_RUN_ID" --jq .head_sha)
+            if [ -z "$SHA" ]; then
+              echo "::error::Could not resolve head_sha for CI run $INPUT_RUN_ID"
+              exit 1
+            fi
+            echo "ci_run_id=$INPUT_RUN_ID" >> "$GITHUB_OUTPUT"
+            echo "commit_sha=$SHA" >> "$GITHUB_OUTPUT"
+          fi
+
+  deploy-pos:
+    name: Deploy POS PWA → Cloudflare Pages
+    needs: preflight
+    if: needs.preflight.outputs.ready == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: production
+      url: https://kassa-pos.pages.dev
+    steps:
+      - name: Download pos-dist from CI run
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+        with:
+          name: pos-dist
+          path: dist
+          run-id: ${{ needs.preflight.outputs.ci_run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Deploy to Cloudflare Pages (kassa-pos)
+        uses: cloudflare/wrangler-action@392082e81ffbcb9ebdde27400634aa004b35ea37 # v3.14.0
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: >-
+            pages deploy dist
+            --project-name=kassa-pos
+            --branch=main
+            --commit-hash=${{ needs.preflight.outputs.commit_sha }}
+
+  deploy-back-office:
+    name: Deploy Back Office SPA → Cloudflare Pages
+    needs: preflight
+    if: needs.preflight.outputs.ready == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: production
+      url: https://kassa-back-office.pages.dev
+    steps:
+      - name: Download back-office-dist from CI run
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+        with:
+          name: back-office-dist
+          path: dist
+          run-id: ${{ needs.preflight.outputs.ci_run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Deploy to Cloudflare Pages (kassa-back-office)
+        uses: cloudflare/wrangler-action@392082e81ffbcb9ebdde27400634aa004b35ea37 # v3.14.0
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: >-
+            pages deploy dist
+            --project-name=kassa-back-office
+            --branch=main
+            --commit-hash=${{ needs.preflight.outputs.commit_sha }}
+
+  deploy-api-staging:
+    name: Deploy API → Fly.io staging
+    needs: preflight
+    if: needs.preflight.outputs.ready == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment:
+      name: production
+      url: https://kassa-api-staging.fly.dev
+    env:
+      FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+    steps:
+      - name: Download api-dist from CI run
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+        with:
+          name: api-dist
+          path: api-image
+          run-id: ${{ needs.preflight.outputs.ci_run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install flyctl
+        uses: superfly/flyctl-actions/setup-flyctl@fc53c09e1bc3be6f54706524e3b82c4f462f77be # 1.5
+        with:
+          version: 0.4.39
+
+      # Build context is the artifact root (`api-image/`) because the Dockerfile
+      # needs `pnpm-lock.yaml`, `pnpm-workspace.yaml`, and both `packages/` and
+      # `apps/api/` under one tree. The positional `.` pins WORKING_DIRECTORY
+      # to cwd, overriding flyctl's default of fly.toml's directory.
+      # --local-only keeps the build on the GH runner (no remote builder) so
+      # staging cost stays at one idle Fly VM until a machine boots.
+      # --image-label pins the release tag to the source commit so rollback
+      # can point `flyctl deploy --image <repo>:staging-<sha>` at a prior release.
+      # --env KASSA_API_VERSION propagates the release tag into the running
+      # app so `/health.version` matches what the smoke-tests job expects.
+      - name: Deploy to Fly (kassa-api-staging)
+        working-directory: api-image
+        env:
+          COMMIT_SHA: ${{ needs.preflight.outputs.commit_sha }}
+        run: |
+          set -euo pipefail
+          SHORT_SHA="${COMMIT_SHA:0:12}"
+          flyctl deploy . \
+            --app kassa-api-staging \
+            --config apps/api/fly.toml \
+            --dockerfile apps/api/Dockerfile \
+            --local-only \
+            --image-label "staging-${SHORT_SHA}" \
+            --env "KASSA_API_VERSION=staging-${SHORT_SHA}" \
+            --strategy rolling \
+            --wait-timeout 300
+
+  smoke-tests:
+    name: Smoke tests (POS + Back Office + API)
+    needs: [preflight, deploy-pos, deploy-back-office, deploy-api-staging]
+    if: needs.preflight.outputs.ready == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      # Check out scripts/ from the same commit that produced the deployed
+      # artifacts. This guarantees the smoke checks match the shape of the
+      # code that is now live, not whatever is on main at this moment.
+      - name: Checkout (for scripts/deploy-smoke.sh)
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ needs.preflight.outputs.commit_sha }}
+          sparse-checkout: scripts
+          sparse-checkout-cone-mode: false
+
+      # Each deploy job owns its own readiness; this job assumes DNS and the
+      # routers are live by the time we reach it. --attempts 5 × --delay 6
+      # gives a ~30s envelope per surface for cold-start propagation
+      # (Cloudflare Pages edge + Fly HTTP router).
+      - name: Run post-deploy smoke tests
+        env:
+          COMMIT_SHA: ${{ needs.preflight.outputs.commit_sha }}
+        run: |
+          set -euo pipefail
+          SHORT_SHA="${COMMIT_SHA:0:12}"
+          bash scripts/deploy-smoke.sh \
+            --api-url https://kassa-api-staging.fly.dev \
+            --pos-url https://kassa-pos.pages.dev \
+            --back-office-url https://kassa-back-office.pages.dev \
+            --expected-version "staging-${SHORT_SHA}" \
+            --attempts 5 \
+            --delay-seconds 6 \
+            --timeout-seconds 10

@@ -305,6 +305,20 @@ The route map is authoritatively documented in [apps/api/README.md](../apps/api/
 
 **Rate limits**: `@fastify/rate-limit` applies a global per-device budget; heavier budgets for read endpoints, tighter for `POST /v1/sales*` and `POST /v1/auth/*`. Rates are tuned once real traffic is observable; v0 ships conservative defaults.
 
+**Authorization (RBAC)** ([KASA-26](/KASA/issues/KASA-26)): four staff roles, enforced by the merchant-scoped staff preHandler via the `allowedRoles` allow-list. Reject is `403 forbidden` (vs. `401 unauthorized` for missing/invalid session). Device-authenticated routes are not role-gated — the device principal carries the merchant + outlet scope, so role only applies to the staff session sitting on top of it.
+
+| Endpoint | `owner` | `manager` | `cashier` | `read_only` |
+|----------|:-------:|:---------:|:---------:|:-----------:|
+| `GET /v1/catalog/items`, `/items/:id`, `/boms`, `/uoms` | ✓ | ✓ | ✓ | ✓ |
+| `POST` / `PATCH` / `DELETE /v1/catalog/items[/:id]` | ✓ | ✓ | — | — |
+| `GET /v1/outlets`, `/outlets/:id` | ✓ | ✓ | ✓ | ✓ |
+| `POST /v1/admin/reconciliation/run`, `/match` | ✓ | — | — | — |
+
+Notes:
+- Tenant scoping (a row belongs to your `merchantId`) is enforced inside each service by `WHERE merchant_id = $1`, not at the route layer. RBAC controls *which verb* a role can issue; tenancy controls *which rows* the verb can touch.
+- The bootstrap preHandler reads `X-Staff-Role` from the request headers; KASA-25's real cookie session derives it from the session record so callers stop sending the header without route handlers changing.
+- Reads intentionally accept any role (including `read_only`) so a clerk can pull catalog/outlet reference data without elevation. Any future read whose payload contains material business data (cost prices, margins) needs an explicit `allowedRoles` opt-in.
+
 ### 4.2 Internal boundaries (inside `@kassa/api`)
 
 | Internal boundary | Callers | Purpose |
@@ -526,3 +540,4 @@ Each milestone produces a deployable increment; no milestone ends with a non-wor
 | 2026-04-22 | v0 initial architecture, written from settled tech stack + vision. | Engineer (KASA-6) |
 | 2026-04-22 | Refresh to match current tech stack — Fastify + Node 22 + Postgres + Drizzle + Fly.io; drop residual Frappe/ERPNext references; align route map with shipped `@kassa/api` scaffold. | Engineer ([KASA-51](/KASA/issues/KASA-51)) |
 | 2026-04-22 | Review fixup: health endpoint is `/health` (unversioned) per [KASA-22](/KASA/issues/KASA-22) — corrected §2.2, §4.1, §5.4, §5.5, §8. Routes layout is `src/routes/*` with `/v1` applied by `routes/index.ts`. `transaction_event` → `transaction_events` aligned with [TECH-STACK.md](./TECH-STACK.md) §6.3. | Engineer ([KASA-51](/KASA/issues/KASA-51)) |
+| 2026-04-26 | Document RBAC role matrix and `allowedRoles` enforcement under §4.1; catalog write paths gated to `owner`/`manager`. | Engineer ([KASA-26](/KASA/issues/KASA-26)) |

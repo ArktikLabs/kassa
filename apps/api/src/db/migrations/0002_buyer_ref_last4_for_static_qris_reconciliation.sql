@@ -1,0 +1,2 @@
+ALTER TABLE "tenders" ADD COLUMN "buyer_ref_last4" text;--> statement-breakpoint
+CREATE INDEX "tenders_static_qris_unverified_idx" ON "tenders" USING btree ("method","verified","amount_idr") WHERE method = 'qris_static' AND verified = false;
