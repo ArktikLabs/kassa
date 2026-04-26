@@ -159,7 +159,7 @@ describe("pullAll", () => {
     expect(result.tables.every((t) => !t.skipped)).toBe(true);
     expect(calls).toHaveLength(5);
     for (const url of calls) {
-      expect(new URL(url).searchParams.has("updated_after")).toBe(false);
+      expect(new URL(url).searchParams.has("updatedAfter")).toBe(false);
     }
     expect(new URL(calls[4] as string).searchParams.get("outlet")).toBe(OUTLET_ID);
 
@@ -195,7 +195,7 @@ describe("pullAll", () => {
 
     const itemsCall = capturedUrls.find((u) => u.includes("/v1/catalog/items"));
     expect(itemsCall).toBeDefined();
-    expect(new URL(itemsCall as string).searchParams.get("updated_after")).toBe(
+    expect(new URL(itemsCall as string).searchParams.get("updatedAfter")).toBe(
       "2026-04-20T00:00:00Z",
     );
   });
@@ -370,14 +370,14 @@ describe("pullAll", () => {
       if (parsed.pathname === "/v1/outlets") {
         state.page += 1;
         if (state.page === 1) {
-          expect(parsed.searchParams.has("page_token")).toBe(false);
+          expect(parsed.searchParams.has("pageToken")).toBe(false);
           return jsonResponse({
             records: outletBody().records,
             nextCursor: "2026-04-24T01:00:00Z",
             nextPageToken: "tok-2",
           });
         }
-        expect(parsed.searchParams.get("page_token")).toBe("tok-2");
+        expect(parsed.searchParams.get("pageToken")).toBe("tok-2");
         return jsonResponse(emptyPageBody());
       }
       return jsonResponse(defaultBodyFor(parsed.pathname));

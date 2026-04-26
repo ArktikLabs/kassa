@@ -195,8 +195,13 @@ function buildUrl(
   query: { cursor: string | null; pageToken: string | null; outletId?: string },
 ): string {
   const url = new URL(path, baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`);
-  if (query.cursor) url.searchParams.set("updated_after", query.cursor);
-  if (query.pageToken) url.searchParams.set("page_token", query.pageToken);
+  // Wire contract is camelCase (`referencePullQuery` in @kassa/schemas is
+  // strict()), so a snake_case fallback drops to a 422 the moment the
+  // cursor is non-null — and that 422 throws inside the runner cycle
+  // before the outbox push can drain. Keep these names locked to the
+  // schema or the offline-drain path silently regresses.
+  if (query.cursor) url.searchParams.set("updatedAfter", query.cursor);
+  if (query.pageToken) url.searchParams.set("pageToken", query.pageToken);
   if (query.outletId) url.searchParams.set("outlet", query.outletId);
   return url.toString();
 }
