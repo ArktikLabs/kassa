@@ -41,6 +41,7 @@ function makeItem(): Item {
     merchantId: MERCHANT_ID,
     code: "EOD-FIXED-01",
     name: "EOD fixture item",
+    priceIdr: 25_000,
     uomId: UOM_ID,
     bomId: null,
     isStockTracked: false,

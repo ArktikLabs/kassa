@@ -15,6 +15,15 @@ export interface Item {
   merchantId: string;
   code: string;
   name: string;
+  /**
+   * Catalog list price in integer rupiah. The sales service treats this as
+   * authoritative on submit: client `unitPriceIdr` is validated for internal
+   * arithmetic consistency, then replaced with this value before persistence
+   * (KASA-113). Components and untracked ingredients carry this for type
+   * uniformity even though the field is only consumed for items appearing as
+   * sale lines.
+   */
+  priceIdr: number;
   uomId: string;
   bomId: string | null;
   isStockTracked: boolean;

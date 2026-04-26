@@ -82,6 +82,7 @@ async function buildFixture(options?: {
       merchantId: MERCHANT,
       code: "KP-001",
       name: "Kopi Susu",
+      priceIdr: 25_000,
       uomId: UOM_PCS,
       bomId: BOM_COFFEE,
       isStockTracked: false,
@@ -93,6 +94,7 @@ async function buildFixture(options?: {
       merchantId: MERCHANT,
       code: "BN-001",
       name: "Biji Kopi",
+      priceIdr: 0,
       uomId: UOM_GR,
       bomId: null,
       isStockTracked: true,
@@ -104,6 +106,7 @@ async function buildFixture(options?: {
       merchantId: MERCHANT,
       code: "MK-001",
       name: "Susu",
+      priceIdr: 0,
       uomId: UOM_ML,
       bomId: null,
       isStockTracked: true,
@@ -115,6 +118,7 @@ async function buildFixture(options?: {
       merchantId: MERCHANT,
       code: "WT-001",
       name: "Air",
+      priceIdr: 0,
       uomId: UOM_ML,
       bomId: null,
       isStockTracked: true,
@@ -127,6 +131,7 @@ async function buildFixture(options?: {
       merchantId: MERCHANT,
       code: "BT-001",
       name: "Air Botol",
+      priceIdr: 8_000,
       uomId: UOM_PCS,
       bomId: null,
       isStockTracked: true,
@@ -138,6 +143,7 @@ async function buildFixture(options?: {
       merchantId: MERCHANT,
       code: "SG-001",
       name: "Gula",
+      priceIdr: 0,
       uomId: UOM_GR,
       bomId: null,
       isStockTracked: true,
@@ -528,6 +534,172 @@ describe("POST /v1/sales/submit", () => {
     });
     expect(res.statusCode).toBe(422);
     expect(res.json()).toMatchObject({ error: { code: "validation_error" } });
+  });
+
+  // KASA-113: server-side pricing arithmetic validation. Until KASA-25 lands
+  // JWT-derived merchant resolution, /v1/sales/submit is reachable only by the
+  // trusted PWA — but a compromised device could still under-charge by sending
+  // mismatched line totals, so the server checks the client's numbers against
+  // themselves and replaces per-line `unitPriceIdr` with the catalog truth
+  // before persisting.
+
+  it("rejects a line where unitPriceIdr * quantity != lineTotalIdr with pricing_mismatch", async () => {
+    const payload = {
+      ...kopi(2, "01929b2d-1e20-7f00-80aa-000000000020"),
+      items: [
+        {
+          itemId: ITEM_COFFEE,
+          bomId: BOM_COFFEE,
+          quantity: 2,
+          uomId: UOM_PCS,
+          // 2 × 25_000 = 50_000, but client claims 30_000.
+          unitPriceIdr: 25_000,
+          lineTotalIdr: 30_000,
+        },
+      ],
+      // Make subtotal/total internally consistent with the bad lineTotalIdr so
+      // we exercise the per-line check, not the subtotal-sum check.
+      subtotalIdr: 30_000,
+      totalIdr: 30_000,
+      tenders: [{ method: "cash" as const, amountIdr: 30_000, reference: null }],
+    };
+    const res = await fixture.app.inject({
+      method: "POST",
+      url: "/v1/sales/submit",
+      headers: { "x-kassa-merchant-id": MERCHANT, "content-type": "application/json" },
+      payload,
+    });
+    expect(res.statusCode).toBe(422);
+    const body = res.json() as {
+      error: {
+        code: string;
+        details?: { lineIndex: number; expected: number; lineTotalIdr: number };
+      };
+    };
+    expect(body.error.code).toBe("pricing_mismatch");
+    expect(body.error.details?.lineIndex).toBe(0);
+    expect(body.error.details?.expected).toBe(50_000);
+    expect(body.error.details?.lineTotalIdr).toBe(30_000);
+    expect(fixture.repository._peekSales()).toHaveLength(0);
+    expect(fixture.repository._peekLedger().every((row) => row.reason !== "sale")).toBe(true);
+  });
+
+  it("rejects a payload where sum(items.lineTotalIdr) != subtotalIdr with pricing_mismatch", async () => {
+    const payload = {
+      ...kopi(1, "01929b2d-1e21-7f00-80aa-000000000021"),
+      // Each line is internally consistent (1 × 25_000 = 25_000) but the
+      // claimed subtotal disagrees with the sum.
+      subtotalIdr: 24_000,
+      totalIdr: 24_000,
+      tenders: [{ method: "cash" as const, amountIdr: 24_000, reference: null }],
+    };
+    const res = await fixture.app.inject({
+      method: "POST",
+      url: "/v1/sales/submit",
+      headers: { "x-kassa-merchant-id": MERCHANT, "content-type": "application/json" },
+      payload,
+    });
+    expect(res.statusCode).toBe(422);
+    const body = res.json() as {
+      error: { code: string; details?: { subtotalIdr: number; expected: number } };
+    };
+    expect(body.error.code).toBe("pricing_mismatch");
+    expect(body.error.details?.subtotalIdr).toBe(24_000);
+    expect(body.error.details?.expected).toBe(25_000);
+    expect(fixture.repository._peekSales()).toHaveLength(0);
+  });
+
+  it("rejects a payload where subtotalIdr - discountIdr != totalIdr with pricing_mismatch", async () => {
+    const payload = {
+      ...kopi(1, "01929b2d-1e22-7f00-80aa-000000000022"),
+      // 25_000 - 5_000 = 20_000, but client claims total 22_000.
+      subtotalIdr: 25_000,
+      discountIdr: 5_000,
+      totalIdr: 22_000,
+      tenders: [{ method: "cash" as const, amountIdr: 22_000, reference: null }],
+    };
+    const res = await fixture.app.inject({
+      method: "POST",
+      url: "/v1/sales/submit",
+      headers: { "x-kassa-merchant-id": MERCHANT, "content-type": "application/json" },
+      payload,
+    });
+    expect(res.statusCode).toBe(422);
+    const body = res.json() as {
+      error: { code: string; details?: { totalIdr: number; expected: number } };
+    };
+    expect(body.error.code).toBe("pricing_mismatch");
+    expect(body.error.details?.totalIdr).toBe(22_000);
+    expect(body.error.details?.expected).toBe(20_000);
+    expect(fixture.repository._peekSales()).toHaveLength(0);
+  });
+
+  it("rejects a payload where discountIdr > subtotalIdr with pricing_mismatch", async () => {
+    const payload = {
+      ...kopi(1, "01929b2d-1e23-7f00-80aa-000000000023"),
+      // Discount larger than subtotal — would underflow totalIdr to a negative
+      // number, so we surface as pricing_mismatch before the internal-arithmetic
+      // check. Schema-side `nonnegative()` would never catch this on its own.
+      subtotalIdr: 25_000,
+      discountIdr: 30_000,
+      totalIdr: 0,
+      tenders: [{ method: "cash" as const, amountIdr: 0, reference: null }],
+    };
+    const res = await fixture.app.inject({
+      method: "POST",
+      url: "/v1/sales/submit",
+      headers: { "x-kassa-merchant-id": MERCHANT, "content-type": "application/json" },
+      payload,
+    });
+    expect(res.statusCode).toBe(422);
+    const body = res.json() as {
+      error: { code: string; details?: { subtotalIdr: number; discountIdr: number } };
+    };
+    expect(body.error.code).toBe("pricing_mismatch");
+    expect(body.error.details?.subtotalIdr).toBe(25_000);
+    expect(body.error.details?.discountIdr).toBe(30_000);
+    expect(fixture.repository._peekSales()).toHaveLength(0);
+  });
+
+  it("replaces a stale client unitPriceIdr with the authoritative catalog price on submit", async () => {
+    // Simulate a client whose cached catalog still shows the old 20_000 price.
+    // The client posts an internally-consistent payload at the stale price, and
+    // the server (catalog-as-truth) rewrites it to 25_000 × 2 = 50_000 before
+    // persisting.
+    const payload = {
+      ...kopi(2, "01929b2d-1e24-7f00-80aa-000000000024"),
+      items: [
+        {
+          itemId: ITEM_COFFEE,
+          bomId: BOM_COFFEE,
+          quantity: 2,
+          uomId: UOM_PCS,
+          unitPriceIdr: 20_000,
+          lineTotalIdr: 40_000,
+        },
+      ],
+      subtotalIdr: 40_000,
+      totalIdr: 40_000,
+      tenders: [{ method: "cash" as const, amountIdr: 40_000, reference: null }],
+    };
+    const res = await fixture.app.inject({
+      method: "POST",
+      url: "/v1/sales/submit",
+      headers: { "x-kassa-merchant-id": MERCHANT, "content-type": "application/json" },
+      payload,
+    });
+    expect(res.statusCode).toBe(201);
+    const body = res.json() as { saleId: string };
+    const sales = fixture.repository._peekSales();
+    expect(sales).toHaveLength(1);
+    const stored = sales[0];
+    expect(stored?.id).toBe(body.saleId);
+    // Catalog price (25_000) won, not the stale client price (20_000).
+    expect(stored?.items[0]?.unitPriceIdr).toBe(25_000);
+    expect(stored?.items[0]?.lineTotalIdr).toBe(50_000);
+    expect(stored?.subtotalIdr).toBe(50_000);
+    expect(stored?.discountIdr).toBe(0);
+    expect(stored?.totalIdr).toBe(50_000);
   });
 
   afterAll(async () => {
