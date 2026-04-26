@@ -21,7 +21,7 @@ export default defineConfig({
         type: "module",
       },
       injectManifest: {
-        globPatterns: ["**/*.{js,css,html,svg,woff2,webmanifest}"],
+        globPatterns: ["**/*.{js,css,html,svg,png,woff2,webmanifest}"],
       },
       manifest: {
         id: "/",
@@ -38,6 +38,24 @@ export default defineConfig({
         background_color: backgroundColor,
         categories: ["business", "finance", "productivity"],
         icons: [
+          {
+            src: "/icons/icon-192.png",
+            sizes: "192x192",
+            type: "image/png",
+            purpose: "any",
+          },
+          {
+            src: "/icons/icon-512.png",
+            sizes: "512x512",
+            type: "image/png",
+            purpose: "any",
+          },
+          {
+            src: "/icons/icon-maskable-512.png",
+            sizes: "512x512",
+            type: "image/png",
+            purpose: "maskable",
+          },
           {
             src: "/icons/icon-192.svg",
             sizes: "192x192",
