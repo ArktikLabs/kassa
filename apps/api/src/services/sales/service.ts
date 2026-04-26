@@ -35,6 +35,7 @@ export class SalesError extends Error {
       | "item_inactive"
       | "bom_not_found"
       | "insufficient_stock"
+      | "pricing_mismatch"
       | "idempotency_conflict"
       | "sale_not_found"
       | "sale_voided"
@@ -137,6 +138,76 @@ export class SalesService {
       }
     }
 
+    // Pricing arithmetic validation (KASA-113). Once JWT auth (KASA-25) opens
+    // this endpoint to non-PWA callers, a compromised device can no longer
+    // under-charge by sending mismatched line totals — the server checks the
+    // client's numbers against itself and then replaces the per-line price
+    // with the catalog truth before persisting.
+    for (let i = 0; i < input.items.length; i += 1) {
+      const line = input.items[i] as SaleLine;
+      const expectedLineTotal = line.unitPriceIdr * line.quantity;
+      if (expectedLineTotal !== line.lineTotalIdr) {
+        throw new SalesError(
+          "pricing_mismatch",
+          `Line ${i}: unitPriceIdr * quantity does not equal lineTotalIdr.`,
+          {
+            lineIndex: i,
+            unitPriceIdr: line.unitPriceIdr,
+            quantity: line.quantity,
+            lineTotalIdr: line.lineTotalIdr,
+            expected: expectedLineTotal,
+          },
+        );
+      }
+    }
+    const sumLineTotals = input.items.reduce((sum, line) => sum + line.lineTotalIdr, 0);
+    if (sumLineTotals !== input.subtotalIdr) {
+      throw new SalesError(
+        "pricing_mismatch",
+        "subtotalIdr does not equal the sum of line totals.",
+        { subtotalIdr: input.subtotalIdr, expected: sumLineTotals },
+      );
+    }
+    if (input.discountIdr > input.subtotalIdr) {
+      throw new SalesError("pricing_mismatch", "discountIdr exceeds subtotalIdr.", {
+        subtotalIdr: input.subtotalIdr,
+        discountIdr: input.discountIdr,
+      });
+    }
+    if (input.subtotalIdr - input.discountIdr !== input.totalIdr) {
+      throw new SalesError(
+        "pricing_mismatch",
+        "subtotalIdr - discountIdr does not equal totalIdr.",
+        {
+          subtotalIdr: input.subtotalIdr,
+          discountIdr: input.discountIdr,
+          totalIdr: input.totalIdr,
+          expected: input.subtotalIdr - input.discountIdr,
+        },
+      );
+    }
+
+    // Catalog price is authoritative (KASA-113 AC). Rebuild per-line and
+    // header amounts from `catalog.priceIdr * quantity` so a client reading a
+    // stale price displays one number to the customer but the persisted ledger
+    // matches the back office's source of truth. Discount stays as the
+    // client-supplied amount, capped at the recomputed subtotal so a catalog
+    // drop cannot push totalIdr negative.
+    const authoritativeItems: SaleLine[] = input.items.map((line) => {
+      const item = saleItemById.get(line.itemId) as Item;
+      return {
+        ...line,
+        unitPriceIdr: item.priceIdr,
+        lineTotalIdr: item.priceIdr * line.quantity,
+      };
+    });
+    const authoritativeSubtotal = authoritativeItems.reduce(
+      (sum, line) => sum + line.lineTotalIdr,
+      0,
+    );
+    const authoritativeDiscount = Math.min(input.discountIdr, authoritativeSubtotal);
+    const authoritativeTotal = authoritativeSubtotal - authoritativeDiscount;
+
     // Resolve BOMs once per referenced id. `line.bomId` is a hint — the
     // server authoritatively picks the item's current `bomId`, so if the
     // client is stale the server explodes against the active version.
@@ -228,10 +299,10 @@ export class SalesService {
       localSaleId: input.localSaleId,
       name: "",
       businessDate: input.businessDate,
-      subtotalIdr: input.subtotalIdr,
-      discountIdr: input.discountIdr,
-      totalIdr: input.totalIdr,
-      items: input.items.map((line) => ({ ...line })),
+      subtotalIdr: authoritativeSubtotal,
+      discountIdr: authoritativeDiscount,
+      totalIdr: authoritativeTotal,
+      items: authoritativeItems,
       tenders: input.tenders.map(normalizeTender),
       createdAt: input.createdAt,
       voidedAt: null,
@@ -597,15 +668,18 @@ function normalizeTender(tender: SaleTender): SaleTender {
 }
 
 function salesAgreeOnShape(existing: Sale, input: SubmitSaleInput): boolean {
+  // Compare structural shape only — outlet, line itemIds, and per-line
+  // quantity. Line totals and the header total are server-authoritative under
+  // KASA-113 (catalog `priceIdr` × quantity), so a replay carrying the same
+  // structural payload is the same sale even if a stale client recomputed
+  // totals from a drifted price.
   if (existing.outletId !== input.outletId) return false;
-  if (existing.totalIdr !== input.totalIdr) return false;
   if (existing.items.length !== input.items.length) return false;
   for (let i = 0; i < existing.items.length; i += 1) {
     const a = existing.items[i] as SaleLine;
     const b = input.items[i] as SaleLine;
     if (a.itemId !== b.itemId) return false;
     if (a.quantity !== b.quantity) return false;
-    if (a.lineTotalIdr !== b.lineTotalIdr) return false;
   }
   return true;
 }

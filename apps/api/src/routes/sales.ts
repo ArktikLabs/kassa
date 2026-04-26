@@ -100,7 +100,11 @@ export function salesRoutes(deps: SalesRouteDeps) {
               sendError(reply, 409, err.code, err.message, err.details);
               return reply;
             }
-            if (err.code === "item_inactive" || err.code === "outlet_merchant_mismatch") {
+            if (
+              err.code === "item_inactive" ||
+              err.code === "outlet_merchant_mismatch" ||
+              err.code === "pricing_mismatch"
+            ) {
               sendError(reply, 422, err.code, err.message, err.details);
               return reply;
             }

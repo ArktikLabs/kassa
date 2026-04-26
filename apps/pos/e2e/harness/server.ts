@@ -169,6 +169,7 @@ async function seedFixtures(
     merchantId: MERCHANT_ID,
     code: i.code,
     name: i.name,
+    priceIdr: i.priceIdr,
     uomId: i.uomId,
     bomId: i.bomId,
     isStockTracked: i.isStockTracked,
