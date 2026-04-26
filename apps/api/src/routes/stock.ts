@@ -2,6 +2,7 @@ import type { FastifyInstance, FastifyRequest } from "fastify";
 import { z } from "zod";
 import {
   stockLedgerPullQuery,
+  stockLedgerPullResponse,
   stockPullResponse,
   type StockLedgerEntry as WireStockLedgerEntry,
   type StockLedgerPullQuery,
@@ -10,6 +11,7 @@ import {
   type StockSnapshotRecord,
 } from "@kassa/schemas";
 import { sendError } from "../lib/errors.js";
+import { errorBodySchema } from "../lib/openapi.js";
 import { validate } from "../lib/validate.js";
 import { SalesError, type SalesService } from "../services/sales/index.js";
 import type { SalesRepository } from "../services/sales/index.js";
@@ -48,7 +50,24 @@ export function stockRoutes(deps: StockRouteDeps) {
   return async function register(app: FastifyInstance): Promise<void> {
     app.get<{ Querystring: StockSnapshotQuery }>(
       "/snapshot",
-      { preHandler: validate({ query: stockSnapshotQuery }) },
+      {
+        schema: {
+          tags: ["stock"],
+          summary: "Stock on-hand snapshot",
+          description:
+            "Returns the full per-(outlet, item) on-hand projection. " +
+            "`updatedAfter` and `pageToken` are accepted but currently ignored " +
+            "— they live in the schema so the shared sync runner can " +
+            "round-trip the cursor on every cycle.",
+          response: {
+            200: stockPullResponse,
+            401: errorBodySchema,
+            404: errorBodySchema,
+            422: errorBodySchema,
+          },
+        },
+        preHandler: validate({ query: stockSnapshotQuery }),
+      },
       async (req, reply) => {
         const merchantId = deps.resolveMerchantId(req);
         if (!merchantId) {
@@ -84,7 +103,24 @@ export function stockRoutes(deps: StockRouteDeps) {
     // this after the offline outbox drains to assert correct BOM deductions.
     app.get<{ Querystring: StockLedgerPullQuery }>(
       "/ledger",
-      { preHandler: validate({ query: stockLedgerPullQuery }) },
+      {
+        schema: {
+          tags: ["stock"],
+          summary: "Pull stock ledger (delta)",
+          description:
+            "Append-only ledger projection scoped to one (merchant, outlet) " +
+            "bucket. Order is `(occurredAt ASC, id ASC)`. The acceptance " +
+            "suite (KASA-68) reads this after the offline outbox drains to " +
+            "assert correct BOM deductions.",
+          response: {
+            200: stockLedgerPullResponse,
+            400: errorBodySchema,
+            401: errorBodySchema,
+            422: errorBodySchema,
+          },
+        },
+        preHandler: validate({ query: stockLedgerPullQuery }),
+      },
       async (req, reply) => {
         const merchantId = deps.resolveMerchantId(req);
         if (!merchantId) {

@@ -1,14 +1,17 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import {
   reconciliationManualMatchRequest,
+  reconciliationManualMatchResponse,
+  reconciliationRunRequest,
+  reconciliationRunResponse,
   type ReconciliationManualMatchRequest,
   type ReconciliationManualMatchResponse,
-  reconciliationRunRequest,
   type ReconciliationRunRequest,
   type ReconciliationRunResponse,
 } from "@kassa/schemas/reconciliation";
 import { makeMerchantScopedStaffPreHandler } from "../auth/staff-bootstrap.js";
 import { sendError } from "../lib/errors.js";
+import { errorBodySchema } from "../lib/openapi.js";
 import { validate } from "../lib/validate.js";
 import type { ReconciliationService } from "../services/reconciliation/index.js";
 
@@ -58,7 +61,25 @@ export function reconciliationRoutes(deps: ReconciliationRouteDeps) {
     // run nightly once KASA-111 lands the broker.
     app.post<{ Body: ReconciliationRunRequest }>(
       "/run",
-      { preHandler: [gatedPreHandler, validate({ body: reconciliationRunRequest })] },
+      {
+        schema: {
+          tags: ["reconciliation"],
+          summary: "Run reconciliation pass for an outlet/business date",
+          description:
+            "Owner-only. Triggers an EOD-style match between unverified " +
+            "static-QRIS tenders and Midtrans settlement rows for the given " +
+            "(outlet, businessDate). Mirrors the pass BullMQ will run nightly " +
+            "once KASA-111 lands.",
+          response: {
+            200: reconciliationRunResponse,
+            401: errorBodySchema,
+            403: errorBodySchema,
+            422: errorBodySchema,
+            503: errorBodySchema,
+          },
+        },
+        preHandler: [gatedPreHandler, validate({ body: reconciliationRunRequest })],
+      },
       async (req, reply) => {
         const principal = requireOwnerPrincipal(req, reply);
         if (!principal) return reply;
@@ -92,7 +113,27 @@ export function reconciliationRoutes(deps: ReconciliationRouteDeps) {
     // back-office page can retry safely.
     app.post<{ Body: ReconciliationManualMatchRequest }>(
       "/match",
-      { preHandler: [gatedPreHandler, validate({ body: reconciliationManualMatchRequest })] },
+      {
+        schema: {
+          tags: ["reconciliation"],
+          summary: "Manually flip a stuck tender to verified",
+          description:
+            "Owner-only escape hatch: pin an unverified static-QRIS tender to " +
+            "a Midtrans `transaction_id` (or null when only a buyer " +
+            "screenshot is on hand). Idempotent — replay returns " +
+            '`outcome: "noop"`. The note is mandatory and surfaces as the ' +
+            "audit row on the tender.",
+          response: {
+            200: reconciliationManualMatchResponse,
+            401: errorBodySchema,
+            403: errorBodySchema,
+            404: errorBodySchema,
+            422: errorBodySchema,
+            503: errorBodySchema,
+          },
+        },
+        preHandler: [gatedPreHandler, validate({ body: reconciliationManualMatchRequest })],
+      },
       async (req, reply) => {
         const principal = requireOwnerPrincipal(req, reply);
         if (!principal) return reply;
