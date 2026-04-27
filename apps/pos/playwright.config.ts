@@ -9,6 +9,13 @@ import { defineConfig, devices } from "@playwright/test";
 
 export default defineConfig({
   testDir: "./e2e",
+  // `full-day-offline.spec.ts` runs under `playwright.full-day-offline.config.ts`,
+  // which brings up the in-memory API harness on :4127 and a separately
+  // ported preview server. Excluding it here keeps `pnpm test:e2e` focused
+  // on the smoke specs (offline shell + tender flows) and prevents the
+  // workflow that drives this default config from double-running the
+  // acceptance suite without the harness.
+  testIgnore: /full-day-offline\.spec\.ts$/,
   timeout: 30_000,
   expect: { timeout: 5_000 },
   fullyParallel: true,
