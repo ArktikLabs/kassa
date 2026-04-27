@@ -157,30 +157,42 @@ Never use a semantic color (success, warning, danger, info) for the logo. Never 
 
 ### 4.1 App icon
 
-Used for PWA install, Android home-screen, browser favicon, and any merchant-facing tile representation.
+Used for PWA install, Android home-screen, iOS home-screen, browser favicon, and any merchant-facing tile representation.
 
-**Construction:**
+**Mark vs. app-icon glyph — they are intentionally different.**
 
-- Square canvas, full bleed.
-- Fill: solid `color.primary.600`.
-- Foreground: the mark (§3.1) in `color.neutral.0`, centered, sized to **48% of the canvas width**.
-- No padding ring beyond the safe area defined by Android adaptive icons.
+The brand **mark** (§3.1) is the stroked geometric K used in lockups, product headers, receipts, and marketing surfaces. The **app icon** uses a *filled slab K* variant of the same letterform — same identity, different drawing — because the stroked mark thins out and softens at launcher sizes (192 px and below on low-DPI Androids), and was not designed against Android adaptive-mask geometry. The filled slab K holds shape down to favicon (32 px) and reads as a confident silhouette under circle, squircle, and rounded-square adaptive masks. This follows the established pattern of platform-shape-aware app icons (e.g. Slack's app tile vs. its wordmark mark).
 
-**Required sizes (PNG, exported from a single SVG source):**
+The two are not interchangeable. App surfaces use the app-icon glyph; brand and marketing surfaces use the stroked mark.
 
-| Use | Size |
-|-----|------|
-| Favicon (modern) | 32 × 32, 48 × 48 (ICO) |
-| Android home-screen | 192 × 192, 512 × 512 |
-| iOS home-screen | 180 × 180 |
-| Maskable icon (Android adaptive) | 512 × 512 with 80% safe area |
-| Splash — small | 1080 × 1080 |
-| Splash — tablet portrait | 1536 × 2048 |
-| Splash — tablet landscape | 2048 × 1536 |
+**Construction — default tile (rounded square; iOS home-screen, favicon, default PWA install):**
 
-The maskable variant **must** keep the mark inside the central 80% safe area; Android can crop the outer 20% into a circle, squircle, or rounded square depending on the launcher.
+- 512 × 512 canvas.
+- Plate: rounded square, **17% corner radius** (`rx=88` at 512 px; scales with size — `rx=32` at 192 px).
+- Fill: `color.primary.600`.
+- Glyph: filled slab K in `color.neutral.0`, vertical bar `x ∈ [160, 212]` (width 52), full glyph bbox `x ∈ [160, 382]`, `y ∈ [116, 396]`. Diagonals meet the vertical bar in the waist region `y ∈ [234, 262]` (midpoint 248) — slightly above geometric centre (256), the same optical-balance rule used for the stroked mark.
+- No padding ring beyond the plate edge; the plate **is** the silhouette.
 
-Source SVG: [docs/brand/kassa-app-icon.svg](./brand/kassa-app-icon.svg).
+**Construction — maskable variant (Android adaptive icons):**
+
+- 512 × 512 canvas.
+- Plate: full-bleed rectangle, no corner radius — the launcher applies the mask.
+- Glyph: filled slab K in `color.neutral.0`, repositioned and resized so the entire glyph sits inside the **central 80% safe area** (`x ∈ [51.2, 460.8]`, `y ∈ [51.2, 460.8]`). Android may crop the outer 20% into a circle, squircle, or rounded square depending on the launcher.
+- Verified safe under all three adaptive-mask shapes (see [KASA-127](/KASA/issues/KASA-127) evidence: `maskable-safezone.png`).
+
+**Required sizes (PNG, rasterized in CI from the SVG sources):**
+
+| Use | Size | Source SVG |
+|-----|------|------------|
+| Favicon (modern) | 32 × 32, 48 × 48 (ICO) | `apps/pos/public/icons/icon-192.svg` (downscaled) |
+| Android home-screen | 192 × 192, 512 × 512 | `apps/pos/public/icons/icon-192.svg`, `icon-512.svg` |
+| iOS home-screen | 180 × 180 | `apps/pos/public/icons/icon-512.svg` (downscaled) |
+| Maskable icon (Android adaptive) | 512 × 512 with 80% safe area | `apps/pos/public/icons/icon-maskable-512.svg` |
+| Splash — small | 1080 × 1080 | composed from the stacked lockup, see §4.2 |
+| Splash — tablet portrait | 1536 × 2048 | composed from the stacked lockup, see §4.2 |
+| Splash — tablet landscape | 2048 × 1536 | composed from the stacked lockup, see §4.2 |
+
+**Canonical sources.** [`docs/brand/kassa-app-icon.svg`](./brand/kassa-app-icon.svg) is the brand-side master for the default tile. The shipped SVG set under `apps/pos/public/icons/` is design-faithful to that master at each size/variant axis: `icon-512.svg` is byte-equivalent (same artwork, shipped at 512), `icon-192.svg` is scaled to 192 with `rx` rounded to the integer grid (`rx=32`, still 17%), and `icon-maskable-512.svg` is full-bleed (no `rx`) with the glyph offset for the adaptive-mask safe zone (§4.1 maskable variant). When the master changes, the shipped SVGs **must** be regenerated and the PNGs re-rasterized in the same PR — the brand source and the shipped assets ship together or not at all.
 
 ### 4.2 Splash screen
 
@@ -437,8 +449,9 @@ Where the brand assets live. All assets are committed to the repo as the source 
 | Wordmark | [docs/brand/kassa-wordmark.svg](./brand/kassa-wordmark.svg) | SVG |
 | Lockup — horizontal | [docs/brand/kassa-lockup-horizontal.svg](./brand/kassa-lockup-horizontal.svg) | SVG |
 | Lockup — stacked | [docs/brand/kassa-lockup-stacked.svg](./brand/kassa-lockup-stacked.svg) | SVG |
-| App icon (source) | [docs/brand/kassa-app-icon.svg](./brand/kassa-app-icon.svg) | SVG |
-| App icon (rastered) | (generated in CI from the SVG into `apps/pos/public/icons/`) | PNG, multiple sizes |
+| App icon (brand-side master, default tile) | [docs/brand/kassa-app-icon.svg](./brand/kassa-app-icon.svg) | SVG |
+| App icon (shipped SVG sources) | `apps/pos/public/icons/icon-{192,512,maskable-512}.svg` | SVG |
+| App icon (rasterized) | `apps/pos/public/icons/icon-{192,512,maskable-512}.png` (rasterized in CI from the shipped SVGs) | PNG |
 | Custom product icons | [docs/brand/icons/](./brand/icons/) | SVG (Lucide-style) |
 
 When the apps are scaffolded ([KASA-8](/KASA/issues/KASA-8) and follow-ups), engineers should consume these SVGs directly — do not duplicate. Rasterized PNGs for native install (Android, iOS) are generated from the SVG sources in CI; the script and configuration are owned by Engineer in a follow-up.
@@ -481,3 +494,4 @@ Not in this brand book until v1 or later.
 | Date | Author | Change |
 |------|--------|--------|
 | 2026-04-22 | UI Designer | v0 — initial brand identity, linked to [KASA-11](/KASA/issues/KASA-11). |
+| 2026-04-26 | UI Designer | §4.1 reworked — app icon is now a documented variant of the mark (filled slab K, not the stroked mark) for launcher legibility and adaptive-mask safety. Asset registry §12 updated. Brand-side master `docs/brand/kassa-app-icon.svg` regenerated to match the shipped `apps/pos/public/icons/icon-512.svg`. Linked to [KASA-129](/KASA/issues/KASA-129). |
