@@ -574,6 +574,25 @@ flyctl deploy . \
 
 **Provisioning, secrets, and the operator runbook (rollback, pause/cancel, post-incident)** all live in [RUNBOOK-DEPLOY.md](./RUNBOOK-DEPLOY.md). This doc covers the pipeline shape; the runbook covers the on-call playbook.
 
+### 3.12 Nightly Neon → S3 backup ([KASA-70](/KASA/issues/KASA-70))
+
+[`backup-prod.yml`](../.github/workflows/backup-prod.yml) runs a daily logical backup of the production Neon branch. It calls [`scripts/db-backup.sh`](../scripts/db-backup.sh), which streams `pg_dump | gzip | aws s3 cp -` into `s3://kassa-backups/prod/<UTC-date>.sql.gz` and then asserts via `s3api head-object` that the resulting object is non-empty before exiting.
+
+**Trigger.** `schedule: 0 2 * * *` (02:00 UTC = 09:00 WIB, comfortably before the Indonesian pilot's open) plus `workflow_dispatch` for ad-hoc dumps. The `label` input on `workflow_dispatch` overrides the `<UTC-date>` portion of the S3 key for DR-rehearsal snapshots that must not collide with the daily key.
+
+**Preflight gate.** `BACKUP_PROD_ENABLED == true` repository variable. Until set, the workflow is inert (notice + skip), same shape as `cd.yml` / `deploy-prod.yml`.
+
+**Auth path.**
+
+- AWS credentials via OIDC federation (`aws-actions/configure-aws-credentials@v4`) — no long-lived keys in GitHub. The IAM role's permissions are scoped to `s3:PutObject` + `s3:HeadObject` on `arn:aws:s3:::kassa-backups/prod/*`.
+- Postgres credentials via the `BACKUP_DATABASE_URL` secret in the `production-prod` environment, scoped to a Neon read-only role (`GRANT pg_read_all_data`). A runner compromise must not be able to mutate prod.
+
+The `production-prod` environment also gates the deploy workflow, so the same approval/secret blast radius covers the credentials that can read prod data.
+
+**Why GitHub Actions and not a Neon scheduled job / Fly Machine cron.** Same dashboard as deploys (operators see backup runs in one place), same notification channel as a failed deploy, no new infra to provision, and the minutes are negligible (~5 min × 30/month). A Neon-side or Fly-side scheduler is a viable second copy if backup durability ever becomes business-critical (M5+).
+
+**Provisioning checklist (S3 bucket + IAM role + Neon read-only role + GH secrets/vars)** lives in [RUNBOOK-DEPLOY.md §2 step 3](./RUNBOOK-DEPLOY.md). Restore path also lives in the runbook.
+
 ---
 
 ## 4. Pipeline health (v0 baselines)
