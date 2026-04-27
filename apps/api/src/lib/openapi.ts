@@ -44,6 +44,10 @@ export const openapiTags = [
   { name: "sales", description: "Sale creation, lookup, void, refund, and offline sync." },
   { name: "payments", description: "QRIS charge initiation and provider webhooks." },
   { name: "eod", description: "End-of-day close and reconciliation reports." },
+  {
+    name: "reconciliation",
+    description: "Owner-only static-QRIS reconciliation pass and manual matches.",
+  },
 ] as const;
 
 export interface OpenapiOptions {

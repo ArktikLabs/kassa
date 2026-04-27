@@ -1,4 +1,5 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import { z } from "zod";
 import {
   type NormalizedWebhookEvent,
   PaymentProviderError,
@@ -6,6 +7,8 @@ import {
 } from "@kassa/payments";
 import {
   qrisCreateOrderRequest,
+  qrisCreateOrderResponse,
+  qrisOrderStatusResponse,
   type QrisCreateOrderRequest,
   type QrisCreateOrderResponse,
   type QrisOrderStatus,
@@ -13,23 +16,89 @@ import {
 } from "@kassa/schemas/payments";
 import type { DeviceAuthPreHandler } from "../auth/device-auth.js";
 import { sendError } from "../lib/errors.js";
+import { errorBodySchema } from "../lib/openapi.js";
 import { validate } from "../lib/validate.js";
+
+const midtransWebhookAck = z
+  .object({
+    ok: z.literal(true),
+    duplicate: z.boolean(),
+  })
+  .strict()
+  .describe("Webhook ack envelope. `duplicate` flags a deduped redelivery.");
 
 export function paymentsRoutes(requireDevice: DeviceAuthPreHandler) {
   return async function register(app: FastifyInstance): Promise<void> {
     app.post<{ Body: QrisCreateOrderRequest }>(
       "/qris",
-      { preHandler: [requireDevice, validate({ body: qrisCreateOrderRequest })] },
+      {
+        schema: {
+          tags: ["payments"],
+          summary: "Create a dynamic QRIS order",
+          description:
+            "Mints a Midtrans QRIS order keyed off the POS `localSaleId` so " +
+            "the webhook callback maps 1:1 against the outbox row. Returns " +
+            "`qrString` for QR rendering and the optional `expiresAt` " +
+            "Midtrans returned. 502 on Midtrans 5xx / network failure / " +
+            "auth misconfig — the PWA falls back to static QRIS in that case.",
+          response: {
+            201: qrisCreateOrderResponse,
+            401: errorBodySchema,
+            422: errorBodySchema,
+            502: errorBodySchema,
+            503: errorBodySchema,
+          },
+        },
+        preHandler: [requireDevice, validate({ body: qrisCreateOrderRequest })],
+      },
       createQrisOrderHandler,
     );
     app.get<{ Params: { orderId: string } }>(
       "/qris/:orderId/status",
-      { preHandler: requireDevice },
+      {
+        schema: {
+          tags: ["payments"],
+          summary: "Poll a QRIS order status",
+          description:
+            "Read-through to Midtrans for the canonical order status. The POS " +
+            "polls this until `paid`/`expired`/`cancelled` while waiting for " +
+            "the webhook. 502 on upstream outage; 503 when Midtrans is not " +
+            "configured on this instance.",
+          response: {
+            200: qrisOrderStatusResponse,
+            400: errorBodySchema,
+            401: errorBodySchema,
+            502: errorBodySchema,
+            503: errorBodySchema,
+          },
+        },
+        preHandler: requireDevice,
+      },
       getQrisOrderStatusHandler,
     );
     // The Midtrans webhook authenticates via HMAC signature on the body, not
     // device credentials, so it stays outside the `requireDevice` gate.
-    app.post("/webhooks/midtrans", midtransWebhookHandler);
+    app.post(
+      "/webhooks/midtrans",
+      {
+        schema: {
+          tags: ["payments"],
+          summary: "Midtrans webhook delivery",
+          description:
+            "Authenticated by HMAC signature on the request body, not device " +
+            "credentials. Deduped on (`providerOrderId`, `status`); a " +
+            "redelivery returns 200 with `duplicate: true` so Midtrans " +
+            "considers the event accepted. 401 on signature mismatch; 503 " +
+            "when Midtrans is not configured.",
+          response: {
+            200: midtransWebhookAck,
+            401: errorBodySchema,
+            503: errorBodySchema,
+          },
+        },
+      },
+      midtransWebhookHandler,
+    );
   };
 }
 

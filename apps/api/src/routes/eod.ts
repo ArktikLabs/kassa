@@ -1,11 +1,13 @@
 import type { FastifyInstance } from "fastify";
 import {
   eodCloseRequest,
+  eodCloseResponse,
   type EodCloseRequest,
   type EodCloseResponse,
   type EodMissingSalesDetails,
 } from "@kassa/schemas/eod";
 import { notImplemented, sendError } from "../lib/errors.js";
+import { errorBodySchema, notImplementedResponses } from "../lib/openapi.js";
 import { validate } from "../lib/validate.js";
 import { EodError, type EodService } from "../services/eod/index.js";
 
@@ -23,7 +25,23 @@ export function eodRoutes(deps: EodRouteDeps) {
   return async function register(app: FastifyInstance): Promise<void> {
     app.post<{ Body: EodCloseRequest }>(
       "/close",
-      { preHandler: validate({ body: eodCloseRequest }) },
+      {
+        schema: {
+          tags: ["eod"],
+          summary: "Close end-of-day",
+          description:
+            "Verifies every `clientSaleIds` entry is present, locks the " +
+            "(outlet, businessDate) bucket, and returns the canonical " +
+            "tender breakdown. 409 `eod_sale_mismatch` carries the missing " +
+            "ids so the PWA can re-queue them.",
+          response: {
+            201: eodCloseResponse,
+            409: errorBodySchema,
+            422: errorBodySchema,
+          },
+        },
+        preHandler: validate({ body: eodCloseRequest }),
+      },
       async (req, reply) => {
         try {
           const record = await deps.service.close({
@@ -72,7 +90,29 @@ export function eodRoutes(deps: EodRouteDeps) {
       },
     );
 
-    app.get("/report", async (req, reply) => notImplemented(req, reply));
-    app.get("/:eodId", async (req, reply) => notImplemented(req, reply));
+    app.get(
+      "/report",
+      {
+        schema: {
+          tags: ["eod"],
+          summary: "EOD report (not implemented)",
+          description: "Reserved for the EOD report aggregate. Returns 501.",
+          response: notImplementedResponses,
+        },
+      },
+      async (req, reply) => notImplemented(req, reply),
+    );
+    app.get(
+      "/:eodId",
+      {
+        schema: {
+          tags: ["eod"],
+          summary: "Get one EOD record (not implemented)",
+          description: "Reserved for fetching an individual EOD record. Returns 501.",
+          response: notImplementedResponses,
+        },
+      },
+      async (req, reply) => notImplemented(req, reply),
+    );
   };
 }
