@@ -65,6 +65,7 @@ jobs:
       ready: ${{ steps.gate.outputs.ready }}
       ci_run_id: ${{ steps.source.outputs.ci_run_id }}
       commit_sha: ${{ steps.source.outputs.commit_sha }}
+      short_sha: ${{ steps.source.outputs.short_sha }}
     steps:
       - name: Check deploy enablement
         id: gate
@@ -89,19 +90,25 @@ jobs:
           REPO: ${{ github.repository }}
         run: |
           if [ "$EVENT_NAME" = "workflow_run" ]; then
-            echo "ci_run_id=$WF_RUN_ID" >> "$GITHUB_OUTPUT"
-            echo "commit_sha=$WF_RUN_SHA" >> "$GITHUB_OUTPUT"
+            CI_RUN_ID="$WF_RUN_ID"
+            SHA="$WF_RUN_SHA"
           else
             # workflow_dispatch: resolve the head SHA of the named CI run so the
             # Cloudflare deployment records the correct commit, not this run's SHA.
+            CI_RUN_ID="$INPUT_RUN_ID"
             SHA=$(gh api "repos/$REPO/actions/runs/$INPUT_RUN_ID" --jq .head_sha)
             if [ -z "$SHA" ]; then
               echo "::error::Could not resolve head_sha for CI run $INPUT_RUN_ID"
               exit 1
             fi
-            echo "ci_run_id=$INPUT_RUN_ID" >> "$GITHUB_OUTPUT"
-            echo "commit_sha=$SHA" >> "$GITHUB_OUTPUT"
           fi
+          # short_sha must match the runtime VITE_RELEASE format
+          # (`kassa-{pos,back-office}@<sha12>` derived in apps/{pos,back-office}/vite.config.ts)
+          # so Sentry source-map lookups land on the same release the browser tags events with.
+          SHORT_SHA="${SHA:0:12}"
+          echo "ci_run_id=$CI_RUN_ID" >> "$GITHUB_OUTPUT"
+          echo "commit_sha=$SHA" >> "$GITHUB_OUTPUT"
+          echo "short_sha=$SHORT_SHA" >> "$GITHUB_OUTPUT"
 
   deploy-pos:
     name: Deploy POS PWA → Cloudflare Pages
@@ -146,7 +153,7 @@ jobs:
       - name: Sentry release — POS
         uses: ./.github/actions/sentry-release
         with:
-          release: kassa-pos@${{ needs.preflight.outputs.commit_sha }}
+          release: kassa-pos@${{ needs.preflight.outputs.short_sha }}
           commit-sha: ${{ needs.preflight.outputs.commit_sha }}
           dist-path: dist
           repo: ${{ github.repository }}
@@ -201,7 +208,7 @@ jobs:
       - name: Sentry release — Back Office
         uses: ./.github/actions/sentry-release
         with:
-          release: kassa-back-office@${{ needs.preflight.outputs.commit_sha }}
+          release: kassa-back-office@${{ needs.preflight.outputs.short_sha }}
           commit-sha: ${{ needs.preflight.outputs.commit_sha }}
           dist-path: dist
           repo: ${{ github.repository }}
