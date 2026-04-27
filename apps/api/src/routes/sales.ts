@@ -1,9 +1,14 @@
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import {
   saleListQuery,
+  saleListResponse,
   saleRefundRequest,
+  saleRefundResponse,
+  saleResponse,
   saleSubmitRequest,
+  saleSubmitResponse,
   saleVoidRequest,
+  saleVoidResponse,
   type SaleListQuery,
   type SaleListResponse,
   type SaleRefundRequest,
@@ -16,6 +21,7 @@ import {
 } from "@kassa/schemas";
 import { z } from "zod";
 import { notImplemented, sendError } from "../lib/errors.js";
+import { errorBodySchema, notImplementedResponses } from "../lib/openapi.js";
 import { validate } from "../lib/validate.js";
 import { SalesError, type SalesService } from "../services/sales/index.js";
 
@@ -40,7 +46,30 @@ export function salesRoutes(deps: SalesRouteDeps) {
   return async function register(app: FastifyInstance): Promise<void> {
     app.post<{ Body: SaleSubmitRequest }>(
       "/submit",
-      { preHandler: validate({ body: saleSubmitRequest }) },
+      {
+        schema: {
+          tags: ["sales"],
+          summary: "Submit a sale",
+          description:
+            "Idempotent on `(merchantId, localSaleId)` — a replay returns 409 " +
+            "with the original sale envelope and an empty ledger. BOM lines " +
+            "are exploded server-side against the active BOM version at sale " +
+            "time. Body validation surfaces as 422 `validation_error`.",
+          response: {
+            201: saleSubmitResponse,
+            401: errorBodySchema,
+            404: errorBodySchema,
+            // 409 is dual-shape: idempotent replays of the same payload
+            // return `saleSubmitResponse` with an empty `ledger`; genuine
+            // conflicts (insufficient stock, idempotency mismatch) return
+            // the standard error envelope. The serializer compiler picks
+            // whichever branch matches the outgoing body.
+            409: z.union([saleSubmitResponse, errorBodySchema]),
+            422: errorBodySchema,
+          },
+        },
+        preHandler: validate({ body: saleSubmitRequest }),
+      },
       async (req, reply) => {
         const merchantId = deps.resolveMerchantId(req);
         if (!merchantId) {
@@ -116,7 +145,25 @@ export function salesRoutes(deps: SalesRouteDeps) {
 
     app.post<{ Params: SaleIdParam; Body: SaleVoidRequest }>(
       "/:saleId/void",
-      { preHandler: validate({ params: saleIdParam, body: saleVoidRequest }) },
+      {
+        schema: {
+          tags: ["sales"],
+          summary: "Void a sale",
+          description:
+            "Idempotent on `saleId` — a second void returns 200 with the " +
+            "originally recorded `voidedAt` and an empty ledger. The first " +
+            "call returns 201 with balancing ledger writes. Variance is " +
+            "owned by `voidBusinessDate`, not the original sale's date.",
+          response: {
+            200: saleVoidResponse,
+            201: saleVoidResponse,
+            401: errorBodySchema,
+            404: errorBodySchema,
+            422: errorBodySchema,
+          },
+        },
+        preHandler: validate({ params: saleIdParam, body: saleVoidRequest }),
+      },
       async (req, reply) => {
         const merchantId = deps.resolveMerchantId(req);
         if (!merchantId) {
@@ -149,7 +196,25 @@ export function salesRoutes(deps: SalesRouteDeps) {
 
     app.post<{ Params: SaleIdParam; Body: SaleRefundRequest }>(
       "/:saleId/refund",
-      { preHandler: validate({ params: saleIdParam, body: saleRefundRequest }) },
+      {
+        schema: {
+          tags: ["sales"],
+          summary: "Refund a sale",
+          description:
+            "Idempotent on `clientRefundId` — a replay returns 200 with the " +
+            "original refund body and an empty ledger. Refunded lines write " +
+            "balancing positive ledger rows with `reason=refund`.",
+          response: {
+            200: saleRefundResponse,
+            201: saleRefundResponse,
+            401: errorBodySchema,
+            404: errorBodySchema,
+            409: errorBodySchema,
+            422: errorBodySchema,
+          },
+        },
+        preHandler: validate({ params: saleIdParam, body: saleRefundRequest }),
+      },
       async (req, reply) => {
         const merchantId = deps.resolveMerchantId(req);
         if (!merchantId) {
@@ -188,7 +253,22 @@ export function salesRoutes(deps: SalesRouteDeps) {
 
     app.get<{ Querystring: SaleListQuery }>(
       "/",
-      { preHandler: validate({ query: saleListQuery }) },
+      {
+        schema: {
+          tags: ["sales"],
+          summary: "List sales for an outlet/business date",
+          description:
+            "Returns every sale (including voids and refunds) recorded for " +
+            "the (merchant, outletId, businessDate) bucket. No pagination — " +
+            "the bucket key caps cardinality at one outlet's daily volume.",
+          response: {
+            200: saleListResponse,
+            401: errorBodySchema,
+            422: errorBodySchema,
+          },
+        },
+        preHandler: validate({ query: saleListQuery }),
+      },
       async (req, reply) => {
         const merchantId = deps.resolveMerchantId(req);
         if (!merchantId) {
@@ -208,7 +288,22 @@ export function salesRoutes(deps: SalesRouteDeps) {
 
     app.get<{ Params: SaleIdParam }>(
       "/:saleId",
-      { preHandler: validate({ params: saleIdParam }) },
+      {
+        schema: {
+          tags: ["sales"],
+          summary: "Get one sale",
+          description:
+            "Returns the canonical sale envelope including void/refund state. " +
+            "404 when the sale is not found under the caller's merchant.",
+          response: {
+            200: saleResponse,
+            401: errorBodySchema,
+            404: errorBodySchema,
+            422: errorBodySchema,
+          },
+        },
+        preHandler: validate({ params: saleIdParam }),
+      },
       async (req, reply) => {
         const merchantId = deps.resolveMerchantId(req);
         if (!merchantId) {
@@ -228,8 +323,30 @@ export function salesRoutes(deps: SalesRouteDeps) {
 
     // Placeholder routes — `POST /sync` lands with the bulk sync push slice;
     // `POST /` (a non-idempotent "create" alias for /submit) is still a stub.
-    app.post("/", async (req, reply) => notImplemented(req, reply));
-    app.post("/sync", async (req, reply) => notImplemented(req, reply));
+    app.post(
+      "/",
+      {
+        schema: {
+          tags: ["sales"],
+          summary: "Create a sale (not implemented)",
+          description: "Reserved non-idempotent alias for `/submit`. Returns 501.",
+          response: notImplementedResponses,
+        },
+      },
+      async (req, reply) => notImplemented(req, reply),
+    );
+    app.post(
+      "/sync",
+      {
+        schema: {
+          tags: ["sales"],
+          summary: "Bulk sales sync (not implemented)",
+          description: "Reserved for the bulk outbox push slice. Returns 501.",
+          response: notImplementedResponses,
+        },
+      },
+      async (req, reply) => notImplemented(req, reply),
+    );
   };
 }
 

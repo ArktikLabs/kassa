@@ -53,11 +53,10 @@ describe("OpenAPI / Swagger UI", () => {
     });
 
     it("documents the auth placeholder routes still pending real handlers", () => {
-      // These four are the only routes that remain `notImplemented` after main
-      // landed real handlers for catalog / outlets / sales / stock / eod /
-      // payments. They keep their schema annotations so OpenAPI shows them as
-      // reserved endpoints. Re-decorating the now-implemented routes with
-      // schemas is tracked as a follow-up.
+      // These remain `notImplemented` placeholders even after the catalog /
+      // outlets / sales / stock / eod / payments routes were re-decorated
+      // (KASA-125). They keep their schema annotations so OpenAPI shows them
+      // as reserved endpoints.
       const placeholders: Array<[string, "get" | "post"]> = [
         ["/v1/auth/heartbeat", "post"],
         ["/v1/auth/pin/verify", "post"],
@@ -67,6 +66,40 @@ describe("OpenAPI / Swagger UI", () => {
       for (const [path, method] of placeholders) {
         const op = spec.paths[path]?.[method];
         expect(op, `missing ${method.toUpperCase()} ${path}`).toBeDefined();
+        expect(op?.summary, `${method.toUpperCase()} ${path} missing summary`).toBeTruthy();
+      }
+    });
+
+    it("documents the evolved data-plane routes (KASA-125)", () => {
+      // Each entry: [path, method, expected tag]. These are the routes that
+      // had real handlers but no `schema:` annotation prior to KASA-125.
+      const decorated: Array<[string, "get" | "post" | "patch" | "delete", string]> = [
+        ["/v1/catalog/items", "get", "catalog"],
+        ["/v1/catalog/items", "post", "catalog"],
+        ["/v1/catalog/items/{itemId}", "get", "catalog"],
+        ["/v1/catalog/items/{itemId}", "patch", "catalog"],
+        ["/v1/catalog/items/{itemId}", "delete", "catalog"],
+        ["/v1/catalog/boms", "get", "catalog"],
+        ["/v1/catalog/uoms", "get", "catalog"],
+        ["/v1/outlets/", "get", "outlets"],
+        ["/v1/sales/submit", "post", "sales"],
+        ["/v1/sales/{saleId}", "get", "sales"],
+        ["/v1/sales/{saleId}/void", "post", "sales"],
+        ["/v1/sales/{saleId}/refund", "post", "sales"],
+        ["/v1/sales/", "get", "sales"],
+        ["/v1/stock/snapshot", "get", "stock"],
+        ["/v1/stock/ledger", "get", "stock"],
+        ["/v1/eod/close", "post", "eod"],
+        ["/v1/payments/qris", "post", "payments"],
+        ["/v1/payments/qris/{orderId}/status", "get", "payments"],
+        ["/v1/payments/webhooks/midtrans", "post", "payments"],
+        ["/v1/admin/reconciliation/run", "post", "reconciliation"],
+        ["/v1/admin/reconciliation/match", "post", "reconciliation"],
+      ];
+      for (const [path, method, tag] of decorated) {
+        const op = spec.paths[path]?.[method];
+        expect(op, `missing ${method.toUpperCase()} ${path}`).toBeDefined();
+        expect(op?.tags, `${method.toUpperCase()} ${path} missing tag '${tag}'`).toContain(tag);
         expect(op?.summary, `${method.toUpperCase()} ${path} missing summary`).toBeTruthy();
       }
     });

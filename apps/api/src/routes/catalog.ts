@@ -7,8 +7,16 @@ import {
   type ItemListQuery,
   type ItemUpdateRequest,
 } from "@kassa/schemas/catalog";
-import { referencePullQuery, type ReferencePullQuery } from "@kassa/schemas";
+import {
+  bomPullResponse,
+  itemPullResponse,
+  itemRecord,
+  referencePullQuery,
+  uomPullResponse,
+  type ReferencePullQuery,
+} from "@kassa/schemas";
 import { notImplemented, sendError } from "../lib/errors.js";
+import { errorBodySchema, notImplementedResponses } from "../lib/openapi.js";
 import { validate } from "../lib/validate.js";
 import { makeMerchantScopedStaffPreHandler } from "../auth/staff-bootstrap.js";
 import {
@@ -107,7 +115,25 @@ export function catalogRoutes(deps: CatalogRouteDeps) {
     // GET /v1/catalog/items — merchant-scoped delta pull.
     app.get<{ Querystring: ItemListQuery }>(
       "/items",
-      { preHandler: [gatedPreHandler, validate({ query: itemListQuery })] },
+      {
+        schema: {
+          tags: ["catalog"],
+          summary: "Pull items (delta)",
+          description:
+            "Merchant-scoped delta pull. `updatedAfter` is the cursor returned " +
+            "by the previous response (`nextCursor`); `pageToken` is the opaque " +
+            "within-window page key. Body / query validation is handled by the " +
+            "`validate()` preHandler and surfaces as 422 `validation_error`.",
+          response: {
+            200: itemPullResponse,
+            400: errorBodySchema,
+            401: errorBodySchema,
+            422: errorBodySchema,
+            503: errorBodySchema,
+          },
+        },
+        preHandler: [gatedPreHandler, validate({ query: itemListQuery })],
+      },
       async (req, reply) => {
         const principal = requireStaffPrincipal(req, reply);
         if (!principal) return reply;
@@ -139,7 +165,22 @@ export function catalogRoutes(deps: CatalogRouteDeps) {
     // GET /v1/catalog/items/:itemId
     app.get<{ Params: { itemId: string } }>(
       "/items/:itemId",
-      { preHandler: gatedPreHandler },
+      {
+        schema: {
+          tags: ["catalog"],
+          summary: "Get one item",
+          description:
+            "Returns the canonical item record. Non-UUID `itemId` collapses to " +
+            "404 `item_not_found` to keep the response shape uniform.",
+          response: {
+            200: itemRecord,
+            401: errorBodySchema,
+            404: errorBodySchema,
+            503: errorBodySchema,
+          },
+        },
+        preHandler: gatedPreHandler,
+      },
       async (req, reply) => {
         const principal = requireStaffPrincipal(req, reply);
         if (!principal) return reply;
@@ -167,7 +208,26 @@ export function catalogRoutes(deps: CatalogRouteDeps) {
     // POST /v1/catalog/items — owner/manager only (KASA-26).
     app.post<{ Body: ItemCreateRequest }>(
       "/items",
-      { preHandler: [gatedWritePreHandler, validate({ body: itemCreateRequest })] },
+      {
+        schema: {
+          tags: ["catalog"],
+          summary: "Create an item",
+          description:
+            "Owner/manager-only. Cashier/read-only sessions get 403. Returns " +
+            "the persisted item record. 409 `item_code_conflict` when `code` " +
+            "collides with an existing item under the same merchant.",
+          response: {
+            201: itemRecord,
+            401: errorBodySchema,
+            403: errorBodySchema,
+            404: errorBodySchema,
+            409: errorBodySchema,
+            422: errorBodySchema,
+            503: errorBodySchema,
+          },
+        },
+        preHandler: [gatedWritePreHandler, validate({ body: itemCreateRequest })],
+      },
       async (req, reply) => {
         const principal = requireStaffPrincipal(req, reply);
         if (!principal) return reply;
@@ -199,7 +259,25 @@ export function catalogRoutes(deps: CatalogRouteDeps) {
     // PATCH /v1/catalog/items/:itemId — owner/manager only (KASA-26).
     app.patch<{ Params: { itemId: string }; Body: ItemUpdateRequest }>(
       "/items/:itemId",
-      { preHandler: [gatedWritePreHandler, validate({ body: itemUpdateRequest })] },
+      {
+        schema: {
+          tags: ["catalog"],
+          summary: "Update an item",
+          description:
+            "Owner/manager-only. Empty body is rejected with 422 since " +
+            "nothing-to-do is treated as a client error.",
+          response: {
+            200: itemRecord,
+            401: errorBodySchema,
+            403: errorBodySchema,
+            404: errorBodySchema,
+            409: errorBodySchema,
+            422: errorBodySchema,
+            503: errorBodySchema,
+          },
+        },
+        preHandler: [gatedWritePreHandler, validate({ body: itemUpdateRequest })],
+      },
       async (req, reply) => {
         const principal = requireStaffPrincipal(req, reply);
         if (!principal) return reply;
@@ -245,7 +323,22 @@ export function catalogRoutes(deps: CatalogRouteDeps) {
     // Owner/manager only (KASA-26).
     app.delete<{ Params: { itemId: string } }>(
       "/items/:itemId",
-      { preHandler: gatedWritePreHandler },
+      {
+        schema: {
+          tags: ["catalog"],
+          summary: "Soft-delete an item",
+          description:
+            "Owner/manager-only. Flips `isActive` to false; the row stays in " +
+            "the delta-pull stream so offline clients can reconcile.",
+          response: {
+            401: errorBodySchema,
+            403: errorBodySchema,
+            404: errorBodySchema,
+            503: errorBodySchema,
+          },
+        },
+        preHandler: gatedWritePreHandler,
+      },
       async (req, reply) => {
         const principal = requireStaffPrincipal(req, reply);
         if (!principal) return reply;
@@ -273,7 +366,24 @@ export function catalogRoutes(deps: CatalogRouteDeps) {
     // GET /v1/catalog/boms — merchant-scoped delta pull (KASA-122).
     app.get<{ Querystring: ReferencePullQuery }>(
       "/boms",
-      { preHandler: [gatedPreHandler, validate({ query: referencePullQuery })] },
+      {
+        schema: {
+          tags: ["catalog"],
+          summary: "Pull BOMs (delta)",
+          description:
+            "Merchant-scoped delta pull of bill-of-materials records. Same " +
+            "envelope as `GET /items` — see that endpoint for cursor / " +
+            "page-token semantics.",
+          response: {
+            200: bomPullResponse,
+            400: errorBodySchema,
+            401: errorBodySchema,
+            422: errorBodySchema,
+            503: errorBodySchema,
+          },
+        },
+        preHandler: [gatedPreHandler, validate({ query: referencePullQuery })],
+      },
       async (req, reply) => {
         const principal = requireStaffPrincipal(req, reply);
         if (!principal) return reply;
@@ -305,7 +415,23 @@ export function catalogRoutes(deps: CatalogRouteDeps) {
     // GET /v1/catalog/uoms — merchant-scoped delta pull (KASA-122).
     app.get<{ Querystring: ReferencePullQuery }>(
       "/uoms",
-      { preHandler: [gatedPreHandler, validate({ query: referencePullQuery })] },
+      {
+        schema: {
+          tags: ["catalog"],
+          summary: "Pull units of measure (delta)",
+          description:
+            "Merchant-scoped delta pull of UoM records. Same envelope as the " +
+            "other catalog pull endpoints.",
+          response: {
+            200: uomPullResponse,
+            400: errorBodySchema,
+            401: errorBodySchema,
+            422: errorBodySchema,
+            503: errorBodySchema,
+          },
+        },
+        preHandler: [gatedPreHandler, validate({ query: referencePullQuery })],
+      },
       async (req, reply) => {
         const principal = requireStaffPrincipal(req, reply);
         if (!principal) return reply;
@@ -334,6 +460,17 @@ export function catalogRoutes(deps: CatalogRouteDeps) {
       },
     );
 
-    app.get("/modifiers", async (req, reply) => notImplemented(req, reply));
+    app.get(
+      "/modifiers",
+      {
+        schema: {
+          tags: ["catalog"],
+          summary: "Pull modifiers (not implemented)",
+          description: "Reserved for the modifiers delta pull. Returns 501 until the slice lands.",
+          response: notImplementedResponses,
+        },
+      },
+      async (req, reply) => notImplemented(req, reply),
+    );
   };
 }

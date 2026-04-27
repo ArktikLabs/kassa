@@ -1,7 +1,8 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
-import { referencePullQuery, type ReferencePullQuery } from "@kassa/schemas";
+import { outletPullResponse, referencePullQuery, type ReferencePullQuery } from "@kassa/schemas";
 import { makeMerchantScopedStaffPreHandler } from "../auth/staff-bootstrap.js";
 import { sendError } from "../lib/errors.js";
+import { errorBodySchema, notImplementedResponses } from "../lib/openapi.js";
 import { validate } from "../lib/validate.js";
 import { OutletError, type OutletsService, toOutletResponse } from "../services/outlets/index.js";
 
@@ -49,7 +50,23 @@ export function outletsRoutes(deps: OutletsRouteDeps) {
     // GET /v1/outlets — merchant-scoped delta pull (KASA-122).
     app.get<{ Querystring: ReferencePullQuery }>(
       "/",
-      { preHandler: [gatedPreHandler, validate({ query: referencePullQuery })] },
+      {
+        schema: {
+          tags: ["outlets"],
+          summary: "Pull outlets (delta)",
+          description:
+            "Merchant-scoped delta pull. Mirrors the catalog pull envelope; " +
+            "see `GET /v1/catalog/items` for cursor / page-token semantics.",
+          response: {
+            200: outletPullResponse,
+            400: errorBodySchema,
+            401: errorBodySchema,
+            422: errorBodySchema,
+            503: errorBodySchema,
+          },
+        },
+        preHandler: [gatedPreHandler, validate({ query: referencePullQuery })],
+      },
       async (req, reply) => {
         const principal = requireStaffPrincipal(req, reply);
         if (!principal) return reply;
@@ -81,9 +98,23 @@ export function outletsRoutes(deps: OutletsRouteDeps) {
     // GET /v1/outlets/:outletId — single-outlet detail (KASA-122 follow-up
     // PRs may extend this; for now it remains 501 because the pull endpoint is
     // sufficient for KASA-68 and the detail shape is undefined).
-    app.get("/:outletId", async (_req, reply) => {
-      sendError(reply, 501, "not_implemented", "Outlet detail endpoint is not yet implemented.");
-      return reply;
-    });
+    app.get(
+      "/:outletId",
+      {
+        schema: {
+          tags: ["outlets"],
+          summary: "Get outlet detail (not implemented)",
+          description:
+            "Reserved for the per-outlet detail view. Returns 501 until the " +
+            "detail shape is defined; the delta-pull endpoint is sufficient " +
+            "for the KASA-68 acceptance flow.",
+          response: notImplementedResponses,
+        },
+      },
+      async (_req, reply) => {
+        sendError(reply, 501, "not_implemented", "Outlet detail endpoint is not yet implemented.");
+        return reply;
+      },
+    );
   };
 }
