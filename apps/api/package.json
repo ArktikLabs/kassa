@@ -61,7 +61,7 @@
     "@kassa/schemas": "workspace:*",
     "argon2": "^0.41.1",
     "bullmq": "^5.76.2",
-    "drizzle-orm": "^0.36.4",
+    "drizzle-orm": "^0.45.2",
     "fastify": "^5.1.0",
     "fastify-type-provider-zod": "^4.0.2",
     "ioredis": "^5.10.1",
@@ -71,7 +71,7 @@
   "devDependencies": {
     "@types/node": "^22.9.0",
     "@types/pg": "8.15.3",
-    "drizzle-kit": "0.31.5",
+    "drizzle-kit": "0.31.10",
     "pino-pretty": "^11.3.0",
     "tsx": "^4.19.2",
     "typescript": "^5.6.3",
