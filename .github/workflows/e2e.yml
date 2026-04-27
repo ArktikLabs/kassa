@@ -1,0 +1,99 @@
+name: E2E
+
+# KASA-139 — Playwright smoke gate.
+#
+# Runs the POS service-worker shell + tender-flow specs and the back-office
+# admin smoke spec against the production Vite preview bundles. Gates `main`:
+# a regression in either suite fails this workflow and (once branch protection
+# is wired separately) blocks subsequent merges.
+#
+# Posture
+# - Triggered on push to `main` and on `workflow_dispatch` only. NOT on
+#   pull_request — keeping it off the PR lane preserves PR latency
+#   (TECH-STACK.md §9). The matching branch-protection rule is filed as a
+#   follow-up Repo Admin step (out of scope for this workflow).
+# - Flake quarantine is not permitted on this lane (per KASA-68); the spec
+#   suites already use `retries: 2` in CI mode and that's the ceiling.
+#
+# Scope
+# - POS suite: `apps/pos/e2e/{offline,tender-cash,tender-qris}.spec.ts`. The
+#   `full-day-offline.spec.ts` acceptance suite has its own job in `ci.yml`
+#   and a dedicated config; the POS playwright config excludes it from the
+#   default `playwright test` invocation so it isn't double-run here.
+# - Back office suite: `apps/back-office/e2e/admin-smoke.spec.ts`.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: e2e-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  e2e:
+    name: Playwright (POS shell + tenders, back-office admin smoke)
+    runs-on: ubuntu-latest
+    # 10 min ceiling per acceptance criteria. A healthy run is closer to
+    # 5–7 min: ~15 s install (warm cache) + ~40 s build + ~30 s browser
+    # install + ~3 min for the two suites including retries.
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@fe02b34f77f8bc703788d5817da081398fad5dd2 # v4.0.0
+        with:
+          run_install: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # The back-office Playwright config runs `pnpm preview` directly
+      # without a preceding `pnpm build`, so the dist/ folders must be
+      # populated up-front. The pos config builds inside its webServer
+      # command but `pnpm -r build` here primes its dist/ too and surfaces
+      # build regressions before we sink time into the browser install.
+      - name: Build workspace
+        run: pnpm -r build
+
+      - name: Install Playwright browsers (chromium)
+        run: pnpm --filter @kassa/pos exec playwright install --with-deps chromium
+
+      - name: POS — Playwright smoke (offline shell + tender flows)
+        run: pnpm --filter @kassa/pos exec playwright test
+        env:
+          CI: "true"
+
+      - name: Back office — Playwright admin smoke
+        run: pnpm --filter @kassa/back-office exec playwright test
+        env:
+          CI: "true"
+
+      # Upload the HTML report + traces from BOTH apps on failure so a
+      # red main can be triaged without re-running the suite locally.
+      # `retain-on-failure` traces are produced by the configs in CI mode,
+      # so this only has bytes to upload when something actually broke.
+      - name: Upload Playwright report
+        if: failure()
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        with:
+          name: playwright-report
+          path: |
+            apps/pos/playwright-report
+            apps/pos/test-results
+            apps/back-office/playwright-report
+            apps/back-office/test-results
+          if-no-files-found: ignore
+          retention-days: 7

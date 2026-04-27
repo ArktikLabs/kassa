@@ -1,6 +1,6 @@
 # Kassa CI/CD Pipeline
 
-Status: v0 (CI + CD — POS / Back Office in Cloudflare Pages production, API in Fly.io staging on every green main, API production via manual gate; preview-per-PR deferred). Owner: DevOps. Source issues: [KASA-12](/KASA/issues/KASA-12) (pipeline), [KASA-17](/KASA/issues/KASA-17) (deployable build artifacts), [KASA-18](/KASA/issues/KASA-18) (production CD — static surfaces), [KASA-107](/KASA/issues/KASA-107) (staging CD — API), [KASA-19](/KASA/issues/KASA-19) (post-deploy smoke tests), [KASA-70](/KASA/issues/KASA-70) (production CD — API).
+Status: v0 (CI + CD — POS / Back Office in Cloudflare Pages production, API in Fly.io staging on every green main, API production via manual gate; preview-per-PR deferred). Owner: DevOps. Source issues: [KASA-12](/KASA/issues/KASA-12) (pipeline), [KASA-17](/KASA/issues/KASA-17) (deployable build artifacts), [KASA-18](/KASA/issues/KASA-18) (production CD — static surfaces), [KASA-107](/KASA/issues/KASA-107) (staging CD — API), [KASA-19](/KASA/issues/KASA-19) (post-deploy smoke tests), [KASA-70](/KASA/issues/KASA-70) (production CD — API), [KASA-139](/KASA/issues/KASA-139) (Playwright E2E gate on `main`).
 Companion docs: [TECH-STACK.md](./TECH-STACK.md), [ARCHITECTURE.md](./ARCHITECTURE.md), [ROADMAP.md](./ROADMAP.md), [RUNBOOK-DEPLOY.md](./RUNBOOK-DEPLOY.md).
 
 This is the authoritative description of how Kassa code moves from a contributor's branch into `main` and into production. v0 covers **CI** (lint/typecheck/test/build on every PR and every push to `main`, with compiled outputs preserved as workflow artifacts) and **CD** for four surfaces: the POS PWA and Back Office SPA deploy to Cloudflare Pages production and the API deploys to a Fly.io staging app on every successful CI run against `main`; the API ships to Fly.io production via a manual promotion gate (`deploy-prod.yml`) with required-reviewer approval. Preview-per-PR environments remain a follow-up ticket under M0. Operator playbook for production lives in [RUNBOOK-DEPLOY.md](./RUNBOOK-DEPLOY.md).
@@ -21,7 +21,7 @@ This is the authoritative description of how Kassa code moves from a contributor
 | Test              | Vitest (`pnpm -r test`)                 |
 | Build             | `tsc -p tsconfig.build.json` (packages) + Vite (apps) (`pnpm -r build`) |
 | Build artifacts   | `actions/upload-artifact` — one per deployable, 7-day retention (see §2.3) |
-| E2E (deferred)    | Playwright — separate workflow in a later ticket |
+| E2E gate          | Playwright — `e2e.yml` on push to `main` + `workflow_dispatch` (see §2.5); KASA-68 acceptance suite is its own job in `ci.yml` (see §2.6) |
 | CD orchestrator   | GitHub Actions (see [`cd.yml`](../.github/workflows/cd.yml)) |
 | CD targets (live) | Cloudflare Pages — `kassa-pos`, `kassa-back-office`; Fly.io — `kassa-api-staging` (`sin`); Fly.io — `kassa-api-prod` (`sin`, manual gate) |
 | CD targets (deferred) | Per-PR preview environments (KASA-108) |
@@ -54,7 +54,7 @@ Runs on the same ref cancel each other so only the newest PR push is executing. 
 5. **Lint (Biome)** — `pnpm lint --reporter=github`. Biome scans the whole tree from the repo root (see §2.4); the `github` reporter annotates violations on the PR diff. Runs before build because it has no artifacts dependency and fails fast on style/correctness regressions.
 6. **Build workspace** — `pnpm -r build`. `pnpm -r` is topology-aware, so `packages/*` (no internal deps) build before `apps/*` (which depend on them).
 7. **Typecheck** — `pnpm -r typecheck`.
-8. **Test** — `pnpm -r test` (Vitest only; Playwright E2E is deferred).
+8. **Test** — `pnpm -r test` (Vitest only; Playwright runs in `e2e.yml`, see §2.5).
 9. **Upload build artifacts** — `actions/upload-artifact` for each deployable. See §2.3.
 
 **Timeout**: 15 minutes. A healthy run is ~2 minutes today (see §4).
@@ -146,6 +146,48 @@ Biome is the single lint + format tool for the whole tree, per [TECH-STACK.md §
 **CI step.** `pnpm lint --reporter=github` in `ci.yml` (step 5 above). The `github` reporter emits `::error` annotations so violations render inline on the PR diff. The step fails the run on any violation — there is no warning tier.
 
 **Editing `biome.json`.** Any change to lint rule severity needs a quick justification in the PR description (why the rule is being loosened or tightened) and a `pnpm lint` run against `main` to confirm no pre-existing violations are hidden by the change.
+
+### 2.5 E2E gate ([`e2e.yml`](../.github/workflows/e2e.yml), [KASA-139](/KASA/issues/KASA-139))
+
+Playwright runs in its own workflow rather than as a step in `ci.yml` because (a) the browser install adds ~30–60 s that PR CI does not need to pay for and (b) the E2E lane has its own posture (push-only, retry policy, artifact retention) that does not match the `ci.yml` pipeline.
+
+**Triggers**
+
+- `push` to `main` — blocks the trunk on a regression.
+- `workflow_dispatch` — operator can run on demand against `main`, e.g. before kicking off `deploy-prod.yml`.
+
+It does **not** run on `pull_request`. Keeping E2E off the PR lane preserves PR latency per [TECH-STACK.md §9](./TECH-STACK.md). Branch-protection wiring to make this job a required check on `main` is a separate Repo Admin step.
+
+**Scope**
+
+| App         | Specs                                                        | Posture                |
+|:------------|:-------------------------------------------------------------|:-----------------------|
+| `apps/pos`  | `e2e/offline.spec.ts`, `e2e/tender-cash.spec.ts`, `e2e/tender-qris.spec.ts` | Service-worker shell + tender flows |
+| `apps/back-office` | `e2e/admin-smoke.spec.ts`                              | Owner sign-in + catalog create golden path |
+
+The POS `playwright.config.ts` excludes `e2e/full-day-offline.spec.ts` via `testIgnore` so the default `pnpm test:e2e` invocation skips it. That spec is the KASA-68 vision-metric acceptance suite and runs from `playwright.full-day-offline.config.ts` against an in-memory API harness — see §2.6 below.
+
+**Job order**
+
+1. Checkout, install pnpm, setup Node 22 with the pnpm cache.
+2. `pnpm install --frozen-lockfile`.
+3. `pnpm -r build` — primes `dist/` for the Vite preview servers (the back-office config does not run `pnpm build` inside its `webServer` command, so the dist must be there in advance).
+4. `pnpm --filter @kassa/pos exec playwright install --with-deps chromium` — only Chromium; both configs project to a single chromium target.
+5. `pnpm --filter @kassa/pos exec playwright test` — POS suite.
+6. `pnpm --filter @kassa/back-office exec playwright test` — back-office suite.
+7. Upload `playwright-report` artifact (HTML report + traces from both apps) on failure, 7-day retention.
+
+The two suites run sequentially rather than in parallel jobs so a single chromium install + warm pnpm cache cover both, keeping total wall-clock under the 10-minute budget set in the [KASA-139](/KASA/issues/KASA-139) acceptance criteria. A healthy run is closer to 5–7 minutes.
+
+**Retry posture**
+
+Each app's `playwright.config.ts` sets `retries: 2` when `CI=true`. This is the ceiling for this lane — flake quarantine is not permitted (per [KASA-68](/KASA/issues/KASA-68)). If a spec is genuinely flaky, the fix is to root-cause it before the next merge, not to silence it.
+
+### 2.6 KASA-68 acceptance suite (in `ci.yml`)
+
+The full-day offline acceptance suite (`apps/pos/e2e/full-day-offline.spec.ts`) is the v0 release-gate vision metric and ships under its own job (`acceptance-full-day-offline`) inside `ci.yml`, not in `e2e.yml`. It is informational on PR (`continue-on-error: true`) and blocking on `main`. The `deploy-prod.yml` production gate reads its conclusion separately and refuses to promote unless it was green on the cited CI run — see §3.11.
+
+`e2e.yml` and the acceptance job do not overlap: `playwright.config.ts` excludes the full-day-offline spec, and the acceptance job uses `playwright.full-day-offline.config.ts` which `testMatch`-restricts to that one spec.
 
 ---
 
@@ -433,7 +475,7 @@ The script exits 0 on success, 1 on any surface/version failure, 2 on bad usage.
 
 **Scope boundaries**
 
-- This job does **not** exercise authenticated paths, mutate data, or run E2E flows — those belong in the Playwright workflow (deferred). It is deliberately a "did the deploy land and is the right code serving" gate, nothing deeper.
+- This job does **not** exercise authenticated paths, mutate data, or run E2E flows — those belong in the Playwright workflow (`e2e.yml`, §2.5). It is deliberately a "did the deploy land and is the right code serving" gate, nothing deeper.
 - The script only checks the three surfaces `cd.yml` deploys. When production API (KASA-70) or per-PR preview environments (KASA-108) land, each adds its own invocation of the same script with different URLs rather than forking the checks.
 
 ### 3.10 Redis broker for the worker process group ([KASA-111](/KASA/issues/KASA-111))
@@ -559,7 +601,7 @@ These are non-negotiable:
 - **Pin action versions to full SHAs.** Tag-only references (`@v4`) are mutable and a supply-chain risk.
 - **Secrets never live in workflow YAML.** Use GitHub Secrets, reference via `${{ secrets.NAME }}`.
 - **`main` is always green.** If CI breaks `main`, the fix is the next PR — no stacking unrelated work.
-- **No E2E in the PR gate (for now).** Playwright adds ~2 min of browser install and has not earned its place as a blocker yet. It will run in its own workflow once the PWA is stable enough for E2E to be meaningful.
+- **No E2E in the PR gate.** Playwright runs in its own workflow (`e2e.yml`, §2.5) on push to `main` + `workflow_dispatch`. Keeping it off PRs preserves PR latency; the trade-off is that an E2E regression first surfaces on `main`, which is acceptable because the suite is fast (≤ 10 min) and the runbook for a red `main` is to revert and re-land.
 
 ---
 
@@ -575,7 +617,7 @@ These are out of scope for the initial CI + static-surface CD setup but are **pr
 6. **Preview-per-PR environments** — tracked in [KASA-108](/KASA/issues/KASA-108) (M0, unblocked by KASA-107). Cloudflare Pages preview deploys for both static surfaces, Fly.io staging redeploy for the API, Neon branch DB per PR, teardown on PR close.
 7. ~~**Worker queue broker + real workers**~~ — broker provisioning + BullMQ bootstrap landed via [KASA-111](/KASA/issues/KASA-111) (this section §3.10). The first real consumer (nightly reconciliation) is tracked in [KASA-120](/KASA/issues/KASA-120); subsequent per-feature consumers fan out from there.
 8. ~~**Production promotion gate**~~ — landed via [KASA-70](/KASA/issues/KASA-70) (`deploy-prod.yml`, §3.11): `workflow_dispatch` with environment protection rules (CEO + CTO required reviewers) on the `production-prod` env, gated on a green KASA-68 acceptance run.
-9. **Playwright E2E workflow** — nightly + on-merge run, not on PR.
+9. ~~**Playwright E2E workflow**~~ — landed via [KASA-139](/KASA/issues/KASA-139) (`e2e.yml`, §2.5). Branch-protection wiring to make the job a required check on `main` is a follow-up Repo Admin step.
 10. **Turborepo remote cache** — named in [TECH-STACK.md §10.3](./TECH-STACK.md); wire it once CI is live and we have a signal on cold vs warm install time.
 
 ---
