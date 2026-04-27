@@ -19,7 +19,9 @@ import type {
 
 /**
  * Postgres `SQLSTATE` for `unique_violation`. `pg` surfaces the wire code on
- * `err.code`, not a typed property.
+ * `err.code`, not a typed property. Since drizzle-orm 0.39 the pg session
+ * rethrows driver errors wrapped in `DrizzleQueryError` with the original
+ * `pg` error attached as `cause`, so we walk the cause chain (KASA-133).
  */
 const UNIQUE_VIOLATION = "23505";
 
@@ -39,17 +41,41 @@ const ITEMS_FK_TARGETS: Readonly<Record<string, ItemForeignKeyTarget>> = {
   items_bom_id_boms_id_fk: "bom_not_found",
 };
 
+/**
+ * Walks `err` and any nested `cause` to find the first object exposing a `pg`
+ * SQLSTATE on `.code` (a 5-character string). Returns the matched layer so the
+ * caller can also read `.constraint` from the same object.
+ *
+ * Handles both raw pg errors and `DrizzleQueryError`-wrapped errors.
+ */
+function findPgError(err: unknown): { code: string; constraint?: string } | null {
+  const seen = new Set<unknown>();
+  let cursor: unknown = err;
+  while (cursor !== null && cursor !== undefined && !seen.has(cursor)) {
+    seen.add(cursor);
+    if (typeof cursor === "object") {
+      const layer = cursor as { code?: unknown; constraint?: unknown; cause?: unknown };
+      if (typeof layer.code === "string" && layer.code.length === 5) {
+        return typeof layer.constraint === "string"
+          ? { code: layer.code, constraint: layer.constraint }
+          : { code: layer.code };
+      }
+      cursor = layer.cause;
+      continue;
+    }
+    break;
+  }
+  return null;
+}
+
 function isUniqueViolation(err: unknown): boolean {
-  return (
-    typeof err === "object" && err !== null && (err as { code?: unknown }).code === UNIQUE_VIOLATION
-  );
+  return findPgError(err)?.code === UNIQUE_VIOLATION;
 }
 
 function itemsForeignKeyTarget(err: unknown): ItemForeignKeyTarget | null {
-  if (typeof err !== "object" || err === null) return null;
-  const e = err as { code?: unknown; constraint?: unknown };
-  if (e.code !== FOREIGN_KEY_VIOLATION || typeof e.constraint !== "string") return null;
-  return ITEMS_FK_TARGETS[e.constraint] ?? null;
+  const pgErr = findPgError(err);
+  if (!pgErr || pgErr.code !== FOREIGN_KEY_VIOLATION || !pgErr.constraint) return null;
+  return ITEMS_FK_TARGETS[pgErr.constraint] ?? null;
 }
 
 /**

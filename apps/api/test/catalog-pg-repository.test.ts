@@ -29,6 +29,18 @@ function pgError(code: string, constraint?: string): PgError {
   return err;
 }
 
+/**
+ * Mirrors how drizzle-orm 0.39+ wraps pg-driver failures: a `DrizzleQueryError`
+ * with the original pg error attached as `cause`. KASA-133 — the repo must
+ * unwrap this so `.code === "23505"` still maps to ItemCodeConflictError.
+ */
+function wrapDrizzle(cause: PgError): Error {
+  const err = new Error(`drizzle wrapped ${cause.code}`);
+  err.name = "DrizzleQueryError";
+  (err as Error & { cause: unknown }).cause = cause;
+  return err;
+}
+
 function insertThrowing(err: unknown): Database {
   return {
     insert: () => ({
@@ -132,6 +144,42 @@ describe("PgItemsRepository.createItem error translation", () => {
         now: NOW,
       }),
     ).rejects.toBe(synthetic);
+  });
+
+  it("unwraps DrizzleQueryError-wrapped 23505 to ItemCodeConflictError", async () => {
+    const repo = new PgItemsRepository(insertThrowing(wrapDrizzle(pgError("23505"))));
+    await expect(
+      repo.createItem({
+        id: ITEM_ID,
+        merchantId: MERCHANT,
+        code: "SKU-1",
+        name: "Coffee",
+        priceIdr: 25_000,
+        uomId: UOM_ID,
+        now: NOW,
+      }),
+    ).rejects.toBeInstanceOf(ItemCodeConflictError);
+  });
+
+  it("unwraps DrizzleQueryError-wrapped 23503 to ItemForeignKeyError", async () => {
+    const repo = new PgItemsRepository(
+      insertThrowing(wrapDrizzle(pgError("23503", "items_uom_id_uoms_id_fk"))),
+    );
+    await expect(
+      repo.createItem({
+        id: ITEM_ID,
+        merchantId: MERCHANT,
+        code: "SKU-1",
+        name: "Coffee",
+        priceIdr: 25_000,
+        uomId: UOM_ID,
+        now: NOW,
+      }),
+    ).rejects.toMatchObject({
+      name: "ItemForeignKeyError",
+      target: "uom_not_found",
+      id: UOM_ID,
+    });
   });
 });
 
