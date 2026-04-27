@@ -77,6 +77,33 @@ jobs:
       - name: Test
         run: pnpm -r test
 
+      # KASA-140: every deployable artifact must carry source maps so the
+      # Sentry release uploaded by cd.yml / deploy-prod.yml can symbolicate
+      # production stack traces. Failing this step on PR catches a
+      # regression (vite.config sourcemap option flipped, tsconfig.build
+      # sourceMap dropped) before it lands on main and a deploy ships an
+      # un-symbolicatable bundle. Exit non-zero on any empty `.map` count.
+      - name: Verify source maps emitted
+        run: |
+          set -euo pipefail
+          fail=0
+          for target in \
+            "apps/pos/dist:**/*.js.map" \
+            "apps/back-office/dist:**/*.js.map" \
+            "apps/api/dist:**/*.js.map" \
+            "packages/payments/dist:**/*.js.map" \
+            "packages/schemas/dist:**/*.js.map"; do
+            dir="${target%%:*}"
+            count=$(find "$dir" -type f -name '*.js.map' 2>/dev/null | wc -l | tr -d ' ')
+            if [ "$count" -eq 0 ]; then
+              echo "::error title=Missing source maps::$dir produced no *.js.map files. Check the build config (vite.config.ts build.sourcemap or tsconfig.build.json sourceMap)."
+              fail=1
+            else
+              echo "$dir: $count source-map file(s) present."
+            fi
+          done
+          exit $fail
+
       # Deployable artifacts. Uploaded on every CI run so reviewers can inspect a
       # PR's compiled output and CD (future ticket) can consume the main-branch
       # artifact without rebuilding. api-dist bundles the workspace packages

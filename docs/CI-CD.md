@@ -102,6 +102,13 @@ After `pnpm -r build` succeeds, CI uploads one artifact per deployable so that:
 
 **Why `api-dist` ships the workspace scaffolding, not just `apps/api/dist/`.** The API imports from `@kassa/payments` and `@kassa/schemas` via `workspace:*`. A Fly.io runtime needs enough of the workspace to resolve those deps and run `pnpm install --prod --frozen-lockfile` before `node apps/api/dist/index.js`. Bundling the two packages' compiled `dist/` folders + `package.json` + the root lockfile and `pnpm-workspace.yaml` (and the root `package.json`, which pnpm requires to recognise the workspace) gives the deployer a self-contained artifact. Third-party runtime deps (fastify, drizzle-orm, argon2, etc.) are installed on the deploy side — they are intentionally not in the artifact because argon2 is a native addon and must be compiled for the deploy target's glibc/musl.
 
+**Source maps in artifacts** ([KASA-140](/KASA/issues/KASA-140)). All three artifact `dist/` trees carry `*.js.map` files alongside the emitted JS:
+
+- `apps/pos` and `apps/back-office` configure Vite with `build.sourcemap: 'hidden'`, which emits the maps **without** the `//# sourceMappingURL=` comment in the bundled JS — the public bundle never advertises a source-map URL even before the strip step in `cd.yml` runs. The two Vite configs also derive `VITE_RELEASE = kassa-{pos,back-office}@<sha12>` from the CI runner's `GITHUB_SHA` so `Sentry.init({ release })` tags every event with the same string the deploy job uploads source maps under.
+- `apps/api` and the workspace packages (`packages/payments`, `packages/schemas`) have `sourceMap: true` in their `tsconfig.build.json`, so `tsc` emits `.js.map` next to every `.js` file. The API's Fly container runs Node with `--enable-source-maps` (set in `apps/api/Dockerfile`) so server-side stack traces in pino logs are symbolicated locally — the maps stay in the deployed image (see §3.6, `strip-source-maps: false`).
+
+A dedicated CI step (`Verify source maps emitted` after `pnpm -r test`) walks each `dist/` tree and fails the run with `::error::` if any artifact has zero `*.js.map` files. This catches a regression on PR (a flipped `sourcemap` flag, a dropped `sourceMap` setting) before it lands on `main` and a deploy ships an un-symbolicatable bundle. PR runs do not upload to Sentry — that step lives in `cd.yml` / `deploy-prod.yml` and is gated on `SENTRY_AUTH_TOKEN` — but every PR run still proves the maps exist.
+
 The artifact also ships the Dockerfile and fly.toml from `apps/api/` so a rolled-back deploy replays the exact infra config the build shipped with — infra config is versioned alongside the bytes it deploys.
 
 **Settings shared by all three uploads**:
@@ -278,6 +285,33 @@ If the failing deploy is the most recent merge and the fix is trivially "undo th
 - **Do not manually edit the Pages deployment via the Cloudflare API** without a corresponding workflow run — the deployed bytes would not be reproducible from a CI artifact, defeating the provenance guarantee in §2.3.
 - **Do not disable CD by deleting the workflow file.** Flip `DEPLOY_ENABLED=false` instead; that leaves the YAML reviewable and re-enables with one variable flip.
 - **Do not skip the follow-up issue.** A rollback without a written root cause is how the same regression ships twice.
+
+### 3.5b Sentry release tagging + source-map upload ([KASA-140](/KASA/issues/KASA-140))
+
+Every CD deploy creates a Sentry release, attaches the source commit, uploads source maps, finalizes the release, and (for public surfaces only) deletes the `.map` files plus strips `//# sourceMappingURL=` references from the dist tree before the deploy step runs. This shape is shared across all three deploy paths via the `./.github/actions/sentry-release` composite action.
+
+**Release naming.** Each surface uses a per-Sentry-project release identifier so a single Sentry org can keep three independent release streams without collisions:
+
+| Surface     | Release name                          | Sentry project (variable)        |
+|:------------|:--------------------------------------|:---------------------------------|
+| POS PWA     | `kassa-pos@<sha12>`                   | `vars.SENTRY_PROJECT_POS`        |
+| Back Office | `kassa-back-office@<sha12>`           | `vars.SENTRY_PROJECT_BACK_OFFICE`|
+| API         | `kassa-api@<sha12>`                   | `vars.SENTRY_PROJECT_API`        |
+
+The SHA is the first 12 chars of `github.sha` for `cd.yml` (the CI run's head SHA via `workflow_run`) or the verified `head_sha` of the cited CI run for `deploy-prod.yml`. The same string is injected into the **runtime** `Sentry.init({ release })` call:
+
+- POS / Back Office: each Vite config writes `process.env.VITE_RELEASE = "kassa-{pos|back-office}@<sha12>"` from the CI runner's `GITHUB_SHA` before `defineConfig` runs, and `apps/{pos,back-office}/src/lib/sentry.ts` reads `import.meta.env.VITE_RELEASE`. Local `vite build` / `vite dev` leave `VITE_RELEASE` unset so events from a developer machine are not falsely attributed to a CI release.
+- API: the Fly deploy passes `--env KASSA_API_VERSION=prod-<sha12>` (and `staging-<sha12>` on `cd.yml`'s staging path); future `apps/api` Sentry init reads that env var. The release name on Sentry (`kassa-api@<sha12>`) and the runtime version (`prod-<sha12>` / `staging-<sha12>`) intentionally diverge — Sentry indexes events by the source commit; the runtime version reads back via `/health.version` and is what the smoke tests assert. The production tier prefix lets cross-tier filtering on Sentry distinguish events the staging deploy emits from the production deploy.
+
+**Composite action contract** (`.github/actions/sentry-release/action.yml`):
+
+1. Validate `dist-path` exists.
+2. If `SENTRY_AUTH_TOKEN`, `SENTRY_ORG`, and the project slug are all present, run `sentry-cli releases new` → `set-commits --commit owner/repo@<sha> --ignore-missing` → `sourcemaps inject` → `sourcemaps upload --release <name>` → `releases finalize`. If any of the three Sentry inputs is empty, emit a `::warning::` and skip the upload — the parent workflow stays green during the pre-provisioning window.
+3. **Always**, regardless of upload path:
+   - When `strip-source-maps: 'true'` (default for POS + Back Office), delete every `*.map` under `dist-path` and strip `//# sourceMappingURL=` references from `*.js`. This is the AC: deployed bundles never advertise source maps publicly. Sentry's Debug ID injected in step 2 is sufficient for symbolication, so once Sentry has the maps the public dist tree no longer needs them.
+   - When `strip-source-maps: 'false'` (only the API), leave the `.map` files in place. The API's Fly container runs Node with `--enable-source-maps`, which reads `*.js.map` next to `*.js` to symbolicate stack traces in pino logs. The container is never reachable as a CDN, so the maps staying in the image is an internal-only artefact.
+
+**Source-map provenance.** Source maps are emitted **at CI build time**, not at deploy time — so the bytes Sentry receives are the same bytes CI exercised in lint → build → typecheck → test. `apps/pos` / `apps/back-office` set Vite's `build.sourcemap: 'hidden'` (emit `.map` files but omit the `sourceMappingURL` comment in JS). `apps/api`, `packages/payments`, and `packages/schemas` set `sourceMap: true` in `tsconfig.build.json`. CI's `Verify source maps emitted` step (§2.3) fails the run if any artifact's `dist/` is missing `*.js.map`, so a config regression is caught on PR before main even sees it.
 
 ### 3.6 Secrets and variables (reference)
 

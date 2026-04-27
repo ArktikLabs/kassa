@@ -1,13 +1,18 @@
 name: Sentry release + source-map upload
 description: |
   Creates (or finds) a Sentry release for the given identifier, attaches the
-  source commit, injects + uploads source maps from the given dist path, and
-  finalizes the release. No-op (with a `::warning::`) when SENTRY_AUTH_TOKEN /
-  SENTRY_ORG / SENTRY_PROJECT are not all set so the parent workflow stays
-  green during the pre-provisioning window.
+  source commit, injects + uploads source maps from the given dist path,
+  finalizes the release, and then strips every `.map` file plus every
+  `//# sourceMappingURL=` reference from the dist tree so the deployed
+  bundles never advertise a public source-map URL (KASA-140 AC).
+
+  No-op (with a `::warning::`) when SENTRY_AUTH_TOKEN / SENTRY_ORG /
+  SENTRY_PROJECT are not all set so the parent workflow stays green during
+  the pre-provisioning window. In the no-op path the `.map` cleanup still
+  runs so PR / preview deploys never serve source maps either.
 
   Used by both .github/workflows/cd.yml (POS + Back Office surfaces) and
-  .github/workflows/deploy-prod.yml (API). KASA-70.
+  .github/workflows/deploy-prod.yml (API). KASA-70 / KASA-140.
 
 inputs:
   release:
@@ -34,6 +39,17 @@ inputs:
     description: Sentry project slug. Skip step when empty.
     required: false
     default: ""
+  strip-source-maps:
+    description: |
+      When 'true' (default), delete every .map file and strip every
+      `//# sourceMappingURL=` comment from .js files in `dist-path` after
+      upload — required for surfaces served on a public CDN (POS PWA, Back
+      Office SPA) so the maps live only in Sentry. Set 'false' for
+      server-side bundles that aren't reachable over public HTTP and rely
+      on the .map files locally for `--enable-source-maps` stack traces
+      (the API's Fly container).
+    required: false
+    default: "true"
 
 runs:
   using: composite
@@ -48,24 +64,41 @@ runs:
         COMMIT_SHA: ${{ inputs.commit-sha }}
         DIST_PATH: ${{ inputs.dist-path }}
         REPO: ${{ inputs.repo }}
+        STRIP_SOURCE_MAPS: ${{ inputs.strip-source-maps }}
       run: |
         set -euo pipefail
-        if [ -z "${SENTRY_AUTH_TOKEN:-}" ] || [ -z "${SENTRY_ORG:-}" ] || [ -z "${SENTRY_PROJECT:-}" ]; then
-          echo "::warning title=Sentry not configured::SENTRY_AUTH_TOKEN, SENTRY_ORG, or project slug is unset; skipping release '$RELEASE' + source-map upload from '$DIST_PATH'. Wire these per docs/RUNBOOK-DEPLOY.md §3 before the next release."
-          exit 0
-        fi
         if [ ! -d "$DIST_PATH" ]; then
           echo "::error::dist-path '$DIST_PATH' does not exist."
           exit 1
         fi
-        # Pinned to a known-good sentry-cli; bump deliberately when chasing
-        # a fix or a new SDK protocol.
-        SENTRY_CLI="npx --yes @sentry/cli@2.39.1"
-        $SENTRY_CLI releases new "$RELEASE"
-        # `--ignore-missing` lets set-commits fall through when the commit is
-        # ahead of what Sentry has indexed (CI run faster than Sentry's repo
-        # poll). The release still records the SHA on the release object.
-        $SENTRY_CLI releases set-commits "$RELEASE" --commit "${REPO}@${COMMIT_SHA}" --ignore-missing
-        $SENTRY_CLI sourcemaps inject "$DIST_PATH"
-        $SENTRY_CLI sourcemaps upload --release "$RELEASE" "$DIST_PATH"
-        $SENTRY_CLI releases finalize "$RELEASE"
+        if [ -z "${SENTRY_AUTH_TOKEN:-}" ] || [ -z "${SENTRY_ORG:-}" ] || [ -z "${SENTRY_PROJECT:-}" ]; then
+          echo "::warning title=Sentry not configured::SENTRY_AUTH_TOKEN, SENTRY_ORG, or project slug is unset; skipping release '$RELEASE' + source-map upload from '$DIST_PATH'. Wire these per docs/RUNBOOK-DEPLOY.md §3 before the next release."
+        else
+          # Pinned to a known-good sentry-cli; bump deliberately when chasing
+          # a fix or a new SDK protocol.
+          SENTRY_CLI="npx --yes @sentry/cli@2.39.1"
+          $SENTRY_CLI releases new "$RELEASE"
+          # `--ignore-missing` lets set-commits fall through when the commit is
+          # ahead of what Sentry has indexed (CI run faster than Sentry's repo
+          # poll). The release still records the SHA on the release object.
+          $SENTRY_CLI releases set-commits "$RELEASE" --commit "${REPO}@${COMMIT_SHA}" --ignore-missing
+          $SENTRY_CLI sourcemaps inject "$DIST_PATH"
+          $SENTRY_CLI sourcemaps upload --release "$RELEASE" "$DIST_PATH"
+          $SENTRY_CLI releases finalize "$RELEASE"
+        fi
+        # KASA-140 AC: deployed bundles never advertise source maps publicly.
+        # Sentry's Debug ID (injected by `sourcemaps inject`) is sufficient
+        # for symbolication, so once Sentry has the maps the public dist
+        # tree no longer needs them. Always run on opt-in surfaces — even
+        # on the Sentry no-op path — so PR/preview deploys and the
+        # pre-provisioning window also ship clean. Stripping is bounded
+        # to .js so source maps for .css are unaffected.
+        if [ "${STRIP_SOURCE_MAPS:-true}" = "true" ]; then
+          map_count=$(find "$DIST_PATH" -type f -name '*.map' | wc -l | tr -d ' ')
+          find "$DIST_PATH" -type f -name '*.js' -print0 \
+            | xargs -0 -r sed -i -E '/^[[:space:]]*\/\/[#@][[:space:]]*sourceMappingURL=.*$/d'
+          find "$DIST_PATH" -type f -name '*.map' -delete
+          echo "Stripped sourceMappingURL refs from $DIST_PATH and removed $map_count .map file(s)."
+        else
+          echo "strip-source-maps=false: leaving .map files in $DIST_PATH for runtime --enable-source-maps."
+        fi
