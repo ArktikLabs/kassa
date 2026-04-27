@@ -552,3 +552,67 @@ These are out of scope for the initial CI + static-surface CD setup but are **pr
 2. **Typecheck failure in `apps/*` citing `Cannot find module '@kassa/*'`** — the build step didn't run or was silently cancelled. Re-run the job; if it persists, check whether the package's `exports` field changed.
 3. **Vitest failure that only fails in CI** — 95% of the time this is `NODE_ENV=production` (React test-helpers require the dev build). The runner inherits no custom env, so this usually means the test itself sets `NODE_ENV` and forgets to reset it.
 4. **Flake on `actions/setup-node` cache restore** — rare, transient. Re-run. If it becomes a pattern, open an issue and bump the action pin.
+
+---
+
+## 8. Performance budgets ([KASA-141](/KASA/issues/KASA-141))
+
+The cross-milestone Performance budgets track in [ROADMAP.md](./ROADMAP.md) commits to `Bundle size, Lighthouse, and Web Vitals gates enforced in CI`. POS is the only surface gated here in v0 — back-office runs on the merchant's laptop and has a different SLO; the API is server-side and not bundle-budgeted.
+
+The two gates live in their own workflow, [`.github/workflows/perf-budgets.yml`](../.github/workflows/perf-budgets.yml), and run in parallel with `ci.yml` so they don't extend the critical-path PR latency.
+
+### 8.1 Lighthouse CI (apps/pos)
+
+`treosh/lighthouse-ci-action` (pinned to v11.4.0 SHA per §2.2 — v11 is the last Lighthouse line that scores the PWA category, which we keep so the PWA ≥ 90 contract from KASA-141 stays expressible without falling back to per-audit checks). Configured at [`apps/pos/lighthouserc.json`](../apps/pos/lighthouserc.json).
+
+Trigger: `pull_request` (and `workflow_dispatch`). Not on push-to-main — Lighthouse runs are noisy and the per-PR signal is what we use to catch regressions before they land.
+
+Asserts (mobile preset, simulated slow-4G, median of 3 runs):
+
+| Metric / category            | Threshold | Why                                                                                          |
+|:-----------------------------|:----------|:---------------------------------------------------------------------------------------------|
+| `categories:performance`     | ≥ 0.90    | Indonesian merchants run on entry-level Android tablets; sub-90 perf is a noticeable lag.    |
+| `categories:accessibility`   | ≥ 0.95    | The clerk operates the POS during every customer interaction; a11y regressions slow service. |
+| `categories:best-practices`  | ≥ 0.95    | Catches console errors, mixed-content, and deprecated APIs before they hit the field.        |
+| `categories:pwa`             | ≥ 0.90    | Installability + offline shell are core to the v0 product; a PWA regression is a P1.         |
+| `largest-contentful-paint`   | ≤ 2500 ms | Catalog browse must feel responsive on slow-4G; 2.5 s is Google's "good" threshold.          |
+| `total-blocking-time`        | ≤ 200 ms  | Tap-to-add latency budget — anything longer feels like the app froze on the tablet.          |
+| `cumulative-layout-shift`    | ≤ 0.1     | Buttons must not jump under the clerk's finger mid-tap.                                      |
+
+### 8.2 Bundle-size budget (apps/pos)
+
+`size-limit` (devDep on `@kassa/pos`) reads [`apps/pos/.size-limit.json`](../apps/pos/.size-limit.json). Trigger: `pull_request` and `push` to `main` (the latter records a trendline so we can see whether the trunk is drifting upward over time, even when individual PRs stay green).
+
+| Slice                                                  | Limit (gzip) | Why                                                                                          |
+|:-------------------------------------------------------|:-------------|:---------------------------------------------------------------------------------------------|
+| Initial route — main JS + main CSS chunks              | 200 KB       | What the browser parses before first paint on slow-4G; above 200 KB the cold-start lags.     |
+| Total route-loaded JS — every hashed JS chunk in `dist/assets/` | 350 KB | Caps post-paint lazy-load, including the workbox SW shim. Headroom for code-split routes.    |
+
+### 8.3 Posture: informational vs. blocking
+
+Both gates currently ship with `continue-on-error: true` on the workflow jobs. They surface a red check on the PR but do not block merge. This is deliberate — at the time KASA-141 landed, the apps/pos initial bundle is at ~206 KB gzip (above the 200 KB target by ~6 KB), so blocking would wedge unrelated PRs until the code-splitting work brings it back under budget.
+
+The gates flip to **blocking** the moment one of the following is true:
+
+1. The current main-branch build is at or under every budget for two consecutive `push: main` runs (i.e. the baseline is real, not a fluke).
+2. Or the budget itself is intentionally raised via the procedure in §8.4 below.
+
+Flip mechanism: delete the `continue-on-error: true` line from the relevant job in `perf-budgets.yml`. No workflow restructuring required.
+
+### 8.4 Procedure to raise (or lower) a budget
+
+Budgets are a contract with the user (Indonesian merchant on entry-level hardware). Bumping a number is allowed but never silent.
+
+1. Open a PR that edits the budget in `apps/pos/.size-limit.json` or `apps/pos/lighthouserc.json` and the matching row in §8.1 / §8.2 above.
+2. The PR description must include:
+   - **Before / after numbers** (e.g. "initial route 200 → 220 KB gzip").
+   - **What changed in the bundle** that justifies the bump (a new route, a vendored dep, an unavoidable polyfill).
+   - **SLO impact note** — projected effect on cold-start LCP on the target hardware (Android tablet on slow-4G). If unknown, run a manual Lighthouse against the preview from the PR's CI artifact and paste the numbers.
+3. PO sign-off comment on the PR ("budget bump approved") is required before merge — same gating rule as any other roadmap-level commitment change.
+4. Lowering a budget (tightening the gate) doesn't need PO sign-off, but must include a commit message that names the win that made the headroom possible (e.g. "post-route-split, initial bundle dropped to 140 KB; tighten budget to 160 KB").
+
+### 8.5 Out of scope
+
+- Real-device verification on physical Android / iOS hardware — tracked in [KASA-131](/KASA/issues/KASA-131) (v1).
+- Real-user Web Vitals collection (RUM) — no Sentry/GA performance SDK changes here.
+- `apps/back-office` budget — owner-side app, separate SLO; revisit if back-office cold-start ever shows up as a complaint.

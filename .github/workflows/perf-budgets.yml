@@ -1,0 +1,157 @@
+name: Perf budgets
+
+# Cross-milestone Performance budgets track from ROADMAP.md (M2 → M4) and
+# the KASA-141 acceptance.
+#
+# Two parallel gates against the apps/pos PWA:
+#   - Lighthouse CI (`treosh/lighthouse-ci-action`, pinned to v11.4.0 SHA per
+#     docs/CI-CD.md §2.2). v11 is the last Lighthouse line that scores the PWA
+#     category; we keep the PWA ≥ 90 contract from the acceptance instead of
+#     swapping to per-audit checks against Lighthouse 12.
+#   - `size-limit` (gzipped JS/CSS) for apps/pos initial route + total
+#     route-loaded JS, configured in apps/pos/.size-limit.json.
+#
+# Trigger posture:
+#   - PR: both gates run, currently informational (continue-on-error: true).
+#     Will flip to blocking once the perf baseline lands — see
+#     docs/CI-CD.md §8.3 for the procedure and budget rationale.
+#   - push to main: bundle-size runs to record the trendline (also
+#     informational so a regression doesn't break the trunk gate; the asserts
+#     in .size-limit.json are the source of truth for the budget).
+#   - workflow_dispatch: manual re-run for ops.
+#
+# Both jobs run in parallel with `ci.yml` (no `needs:`) so they don't extend
+# the critical-path PR latency. Each does its own pnpm install + apps/pos
+# build — duplicated work, but the install hits the setup-node pnpm cache
+# and the build is ~15 s, which keeps each job under 3 min wall-clock.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: perf-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  lighthouse:
+    name: Lighthouse CI (apps/pos)
+    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # Informational while the perf baseline lands. Flip to `false` (or remove
+    # this line) once the budgets in lighthouserc.json are met — see
+    # docs/CI-CD.md §8.3.
+    continue-on-error: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@fe02b34f77f8bc703788d5817da081398fad5dd2 # v4.0.0
+        with:
+          run_install: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Build only apps/pos (and its workspace deps via -F ...^@kassa/pos).
+      # The Lighthouse run targets the production PWA bundle; the dev server
+      # ships a different SW posture (devOptions.enabled is off).
+      - name: Build apps/pos
+        run: pnpm --filter @kassa/pos... build
+
+      # Background `vite preview` on the same port playwright.config.ts uses
+      # (4173). The wait-loop replaces a hardcoded sleep — bounded by the
+      # job timeout so a hung preview surfaces as a real failure.
+      - name: Start preview server
+        working-directory: apps/pos
+        run: |
+          pnpm exec vite preview --port 4173 --strictPort --host 127.0.0.1 \
+            > preview.log 2>&1 &
+          echo $! > preview.pid
+
+      - name: Wait for preview to be reachable
+        run: |
+          for i in $(seq 1 60); do
+            if curl -sf http://127.0.0.1:4173/ > /dev/null; then
+              echo "preview ready after ${i}s"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "preview never became reachable; dumping log:"
+          cat apps/pos/preview.log || true
+          exit 1
+
+      - name: Lighthouse CI
+        uses: treosh/lighthouse-ci-action@1b0e7c33270fbba31a18a0fbb1de7cc5256b6d39 # v11.4.0
+        with:
+          configPath: ./apps/pos/lighthouserc.json
+          uploadArtifacts: true
+          temporaryPublicStorage: true
+
+      - name: Stop preview server
+        if: always()
+        working-directory: apps/pos
+        run: |
+          if [ -f preview.pid ]; then
+            kill "$(cat preview.pid)" 2>/dev/null || true
+          fi
+
+      - name: Upload preview log
+        if: failure()
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        with:
+          name: pos-preview-log
+          path: apps/pos/preview.log
+          if-no-files-found: ignore
+          retention-days: 7
+
+  bundle-size:
+    name: Bundle-size budget (apps/pos)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # Informational while the perf baseline lands. The .size-limit.json
+    # numbers are the contractual budget; the gate just won't merge-block
+    # until we flip this off. See docs/CI-CD.md §8.3.
+    continue-on-error: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@fe02b34f77f8bc703788d5817da081398fad5dd2 # v4.0.0
+        with:
+          run_install: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build apps/pos
+        run: pnpm --filter @kassa/pos... build
+
+      # `size-limit` reads apps/pos/.size-limit.json and asserts gzip sizes
+      # against the budgets there. Process exit code is non-zero on overage
+      # so this step fails the job (visible on the PR check) without
+      # needing a separate threshold check.
+      - name: Check bundle size budgets
+        run: pnpm --filter @kassa/pos run size:check

@@ -1,0 +1,14 @@
+[
+  {
+    "name": "POS initial route — main JS + main CSS (gzip)",
+    "path": ["dist/assets/index-*.js", "dist/assets/index-*.css"],
+    "limit": "200 KB",
+    "gzip": true
+  },
+  {
+    "name": "POS total route-loaded JS — every hashed JS chunk (gzip)",
+    "path": ["dist/assets/*.js"],
+    "limit": "350 KB",
+    "gzip": true
+  }
+]
