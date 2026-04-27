@@ -190,6 +190,11 @@ jobs:
           sentry-auth-token: ${{ secrets.SENTRY_AUTH_TOKEN }}
           sentry-org: ${{ vars.SENTRY_ORG }}
           sentry-project: ${{ vars.SENTRY_PROJECT_API }}
+          # API bundle ships inside the Fly container and is never served
+          # over public HTTP; the .map files stay so Node's
+          # `--enable-source-maps` (set in apps/api/Dockerfile) symbolicates
+          # stack traces in pino logs.
+          strip-source-maps: "false"
 
       # Same shape as deploy-api-staging in cd.yml: artifact root is the
       # build context, --dockerfile points at the in-artifact Dockerfile,
