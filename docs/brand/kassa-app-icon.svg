@@ -16,8 +16,9 @@
     Color: #0D9488 (Kasir Teal — color.primary.600).
 
     Mark: filled slab K, white (#FFFFFF). Vertical bar x∈[160,212] width 52,
-    height 280. Diagonals meet the bar at y=244 (optical centre, slightly above
-    geometric centre — same balancing rule as the stroked mark).
+    height 280. Diagonals meet the bar in the waist region y∈[234,262]
+    (midpoint 248 — optical centre, slightly above geometric centre 256, same
+    balancing rule as the stroked mark).
 
     Re-exports:
       - apps/pos/public/icons/icon-512.svg        — same artwork, shipped at 512.

@@ -170,7 +170,7 @@ The two are not interchangeable. App surfaces use the app-icon glyph; brand and 
 - 512 × 512 canvas.
 - Plate: rounded square, **17% corner radius** (`rx=88` at 512 px; scales with size — `rx=32` at 192 px).
 - Fill: `color.primary.600`.
-- Glyph: filled slab K in `color.neutral.0`, vertical bar `x ∈ [160, 212]` (width 52), full glyph bbox `x ∈ [160, 382]`, `y ∈ [116, 396]`. Diagonals meet the vertical bar at `y = 244` — slightly above geometric centre, the same optical-balance rule used for the stroked mark.
+- Glyph: filled slab K in `color.neutral.0`, vertical bar `x ∈ [160, 212]` (width 52), full glyph bbox `x ∈ [160, 382]`, `y ∈ [116, 396]`. Diagonals meet the vertical bar in the waist region `y ∈ [234, 262]` (midpoint 248) — slightly above geometric centre (256), the same optical-balance rule used for the stroked mark.
 - No padding ring beyond the plate edge; the plate **is** the silhouette.
 
 **Construction — maskable variant (Android adaptive icons):**
@@ -192,7 +192,7 @@ The two are not interchangeable. App surfaces use the app-icon glyph; brand and 
 | Splash — tablet portrait | 1536 × 2048 | composed from the stacked lockup, see §4.2 |
 | Splash — tablet landscape | 2048 × 1536 | composed from the stacked lockup, see §4.2 |
 
-**Canonical sources.** [`docs/brand/kassa-app-icon.svg`](./brand/kassa-app-icon.svg) is the brand-side master for the default tile. The shipped SVG set under `apps/pos/public/icons/` is byte-faithful to that master at the size/variant axes (192 default, 512 default, 512 maskable). When the master changes, the shipped SVGs **must** be regenerated and the PNGs re-rasterized in the same PR — the brand source and the shipped assets ship together or not at all.
+**Canonical sources.** [`docs/brand/kassa-app-icon.svg`](./brand/kassa-app-icon.svg) is the brand-side master for the default tile. The shipped SVG set under `apps/pos/public/icons/` is design-faithful to that master at each size/variant axis: `icon-512.svg` is byte-equivalent (same artwork, shipped at 512), `icon-192.svg` is scaled to 192 with `rx` rounded to the integer grid (`rx=32`, still 17%), and `icon-maskable-512.svg` is full-bleed (no `rx`) with the glyph offset for the adaptive-mask safe zone (§4.1 maskable variant). When the master changes, the shipped SVGs **must** be regenerated and the PNGs re-rasterized in the same PR — the brand source and the shipped assets ship together or not at all.
 
 ### 4.2 Splash screen
 
