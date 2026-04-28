@@ -1,4 +1,5 @@
 import { expect, test, type Page, type Route } from "@playwright/test";
+import { seedEnrolledDevice as seedEnrolledDeviceShared } from "./helpers/seed.js";
 
 /*
  * KASA-63 acceptance tests for the dynamic QRIS tender flow.
@@ -15,82 +16,11 @@ const UOM_ID = "55555555-5555-7555-8555-555555555555";
 const QR_STRING = "00020101021226680013COM.MIDTRANS0118936009140000000000QRIS-TEST";
 
 async function seedEnrolledDevice(page: Page): Promise<void> {
-  await page.goto("/enrol");
-  await page.waitForFunction(async () => {
-    const reg = await navigator.serviceWorker.getRegistration();
-    return Boolean(reg?.active);
+  await seedEnrolledDeviceShared(page, {
+    outletId: OUTLET_ID,
+    itemId: ITEM_ID,
+    uomId: UOM_ID,
   });
-  await page.getByRole("heading", { name: /Enrol perangkat/ }).waitFor();
-  await page.evaluate(
-    async ({ outletId, itemId, uomId }) => {
-      async function openDb(): Promise<IDBDatabase> {
-        return new Promise((resolve, reject) => {
-          // Open without a version: the app schema is currently v2 and will
-          // bump again. Specifying a stale version triggers an upgrade with
-          // no handler and aborts the seed. Letting Dexie own the version
-          // means this test never lies about the schema shape.
-          const req = indexedDB.open("kassa-pos");
-          req.onsuccess = () => resolve(req.result);
-          req.onerror = () => reject(req.error);
-        });
-      }
-      async function put(
-        db: IDBDatabase,
-        store: string,
-        value: Record<string, unknown>,
-      ): Promise<void> {
-        return new Promise((resolve, reject) => {
-          const tx = db.transaction(store, "readwrite");
-          tx.objectStore(store).put(value);
-          tx.oncomplete = () => resolve();
-          tx.onerror = () => reject(tx.error);
-          tx.onabort = () => reject(tx.error);
-        });
-      }
-      const db = await openDb();
-      await put(db, "device_secret", {
-        id: "singleton",
-        deviceId: "11111111-1111-7111-8111-111111111111",
-        outletId,
-        outletName: "Warung Maju",
-        merchantId: "33333333-3333-7333-8333-333333333333",
-        merchantName: "Toko Maju",
-        apiKey: "pk",
-        apiSecret: "sk",
-        enrolledAt: "2026-04-23T00:00:00.000Z",
-      });
-      await put(db, "outlets", {
-        id: outletId,
-        code: "MAIN",
-        name: "Warung Maju",
-        timezone: "Asia/Jakarta",
-        updatedAt: "2026-04-23T00:00:00.000Z",
-      });
-      await put(db, "items", {
-        id: itemId,
-        code: "KP-001",
-        name: "Kopi Susu",
-        priceIdr: 25_000,
-        uomId,
-        bomId: null,
-        isStockTracked: true,
-        isActive: true,
-        updatedAt: "2026-04-23T00:00:00.000Z",
-      });
-      await put(db, "stock_snapshot", {
-        key: `${outletId}::${itemId}`,
-        outletId,
-        itemId,
-        onHand: 10,
-        updatedAt: "2026-04-23T00:00:00.000Z",
-      });
-      db.close();
-    },
-    { outletId: OUTLET_ID, itemId: ITEM_ID, uomId: UOM_ID },
-  );
-  await page.goto("/catalog");
-  await expect(page.getByRole("heading", { name: /Katalog/ })).toBeVisible();
-  await expect(page.getByTestId(`catalog-tile-${ITEM_ID}`)).toBeVisible();
 }
 
 async function addItemAndOpenQris(page: Page): Promise<void> {

@@ -16,9 +16,9 @@
  *    SW only ever takes control on a fresh document.
  */
 
-import { precacheAndRoute } from "workbox-precaching";
+import { createHandlerBoundToURL, precacheAndRoute } from "workbox-precaching";
 import { clientsClaim } from "workbox-core";
-import { registerRoute } from "workbox-routing";
+import { NavigationRoute, registerRoute } from "workbox-routing";
 import { CacheFirst, NetworkOnly } from "workbox-strategies";
 import { ExpirationPlugin } from "workbox-expiration";
 import { BackgroundSyncPlugin } from "workbox-background-sync";
@@ -36,6 +36,19 @@ self.addEventListener("message", (event) => {
 clientsClaim();
 
 precacheAndRoute(self.__WB_MANIFEST);
+
+// SPA navigation fallback. `precacheAndRoute` only matches the exact URLs
+// in the precache manifest, so a hard reload of `/enrol` (or any other
+// client-side route) while offline would otherwise miss the cache and
+// surface as `ERR_INTERNET_DISCONNECTED`. Routing every navigation to
+// the precached `index.html` lets the SPA boot from cache and the
+// router resolve the path on the client. API and SW asset paths are
+// denied so they keep their NetworkOnly / precache routes.
+registerRoute(
+  new NavigationRoute(createHandlerBoundToURL("/index.html"), {
+    denylist: [/^\/v1\//, /^\/api\//, /\/sw\.js$/, /\/workbox-.*\.js$/],
+  }),
+);
 
 // ExpirationPlugin's typed shape conflicts with workbox's WorkboxPlugin
 // under `exactOptionalPropertyTypes: true` (every optional field is
