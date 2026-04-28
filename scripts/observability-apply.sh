@@ -164,11 +164,19 @@ apply_better_stack() {
 }
 
 # ─── Sentry ─────────────────────────────────────────────────────────────────
+#
+# Two endpoint shapes share this manifest:
+#
+#   kind: issue   → POST /projects/{org}/{project}/rules/   (project-rule schema)
+#   kind: metric  → POST /organizations/{org}/alert-rules/  (metric-alert envelope)
+#
+# The metric-alert envelope expects `projects: [<slug>]` at the top level, plus
+# `triggers: [{ label, alertThreshold, actions: [...] }]` and the threshold/
+# window fields in camelCase. Sending the flat manifest body to the metric
+# endpoint produces a 400. This function builds the envelope by lifting
+# `project_slug` into `projects[]` and dropping local routing keys (`kind`,
+# `project_slug`, `organization_slug`) before POSTing. See KASA-153.
 apply_sentry() {
-  if [ -z "${SENTRY_AUTH_TOKEN:-}" ]; then
-    notice "Sentry apply skipped" "SENTRY_AUTH_TOKEN is unset; provision per infra/observability/README.md."
-    return 0
-  fi
   local org="${SENTRY_ORG:-kassa}"
 
   local manifest="infra/observability/sentry-alert-rules.json"
@@ -176,58 +184,80 @@ apply_sentry() {
     err "$manifest not found"; return 1
   fi
 
+  local has_token="false"
+  if [ -n "${SENTRY_AUTH_TOKEN:-}" ]; then
+    has_token="true"
+  else
+    notice "Sentry apply skipped" "SENTRY_AUTH_TOKEN is unset; printing the resolved payloads but making no network calls. Provision per infra/observability/README.md."
+  fi
+
   printf '\n== Sentry (%s) ==\n' "$(verb_for_apply)"
 
   local cleaned
   cleaned="$(jq 'walk(if type == "object" then with_entries(select(.key | startswith("_") | not)) else . end)' "$manifest")"
 
-  # Substitute ${SENTRY_*} variable references in project_slug fields.
+  # Substitute ${SENTRY_*} placeholders. Defaults match the runbook §3.1
+  # provisioning checklist; the integration / team IDs have no sane default,
+  # so an unset env var leaves a tagged sentinel that surfaces as a clear 400
+  # ("invalid integrationId: PROVISION_PER_RUNBOOK_3_1") rather than silent
+  # routing to the wrong destination.
   local resolved
   resolved="$(printf '%s' "$cleaned" \
     | sed \
         -e "s|\${SENTRY_ORG}|${SENTRY_ORG:-kassa}|g" \
         -e "s|\${SENTRY_PROJECT_API}|${SENTRY_PROJECT_API:-kassa-api}|g" \
         -e "s|\${SENTRY_PROJECT_POS}|${SENTRY_PROJECT_POS:-kassa-pos}|g" \
-        -e "s|\${SENTRY_PROJECT_BACK_OFFICE}|${SENTRY_PROJECT_BACK_OFFICE:-kassa-back-office}|g")"
+        -e "s|\${SENTRY_PROJECT_BACK_OFFICE}|${SENTRY_PROJECT_BACK_OFFICE:-kassa-back-office}|g" \
+        -e "s|\${SENTRY_SLACK_INTEGRATION_ID}|${SENTRY_SLACK_INTEGRATION_ID:-PROVISION_PER_RUNBOOK_3_1}|g" \
+        -e "s|\${SENTRY_ONCALL_TEAM_ID}|${SENTRY_ONCALL_TEAM_ID:-PROVISION_PER_RUNBOOK_3_1}|g")"
 
   printf '%s' "$resolved" | jq -c '.rules[]' | while read -r rule; do
-    local name kind project endpoint existing id
+    local name kind project create_endpoint list_endpoint update_endpoint_prefix payload existing id
     name="$(printf '%s' "$rule" | jq -r '.name')"
     kind="$(printf '%s' "$rule" | jq -r '.kind')"
     project="$(printf '%s' "$rule" | jq -r '.project_slug')"
 
     case "$kind" in
-      issue)  endpoint="https://sentry.io/api/0/projects/$org/$project/rules/" ;;
-      metric) endpoint="https://sentry.io/api/0/organizations/$org/alert-rules/" ;;
+      issue)
+        create_endpoint="https://sentry.io/api/0/projects/$org/$project/rules/"
+        list_endpoint="$create_endpoint"
+        update_endpoint_prefix="https://sentry.io/api/0/projects/$org/$project/rules/"
+        # Project-rule schema (kind: issue) is sent as-is — out of scope for
+        # KASA-153 — minus the local routing keys.
+        payload="$(printf '%s' "$rule" | jq 'del(.kind, .project_slug, .organization_slug)')"
+        ;;
+      metric)
+        create_endpoint="https://sentry.io/api/0/organizations/$org/alert-rules/"
+        # Org-scoped metric-alert listing; filter by project so we don't
+        # collide with same-named rules in sibling projects.
+        list_endpoint="https://sentry.io/api/0/organizations/$org/alert-rules/?project=$project"
+        update_endpoint_prefix="https://sentry.io/api/0/organizations/$org/alert-rules/"
+        # Lift project_slug into projects[]; drop local routing keys.
+        payload="$(printf '%s' "$rule" | jq --arg p "$project" 'del(.kind, .project_slug, .organization_slug) | . + {projects: [$p]}')"
+        ;;
       *) err "unknown rule kind: $kind"; continue ;;
     esac
 
+    if [ "$has_token" = "false" ]; then
+      printf '  [would-send] %-6s rule project=%s name=%s payload=\n' "$kind" "$project" "$name"
+      printf '%s\n' "$payload" | jq .
+      continue
+    fi
+
     existing="$(curl -fsS \
       -H "Authorization: Bearer $SENTRY_AUTH_TOKEN" \
-      "$endpoint" | jq --arg n "$name" '[.[] | select(.name == $n)]')"
+      "$list_endpoint" | jq --arg n "$name" '[.[] | select(.name == $n)]')"
     id="$(printf '%s' "$existing" | jq -r '.[0].id // ""')"
 
     if [ -n "$id" ]; then
       printf '  [update] %-6s rule project=%s name=%s id=%s\n' "$kind" "$project" "$name" "$id"
       if [ "$APPLY" = "true" ]; then
-        case "$kind" in
-          issue)
-            curl -fsS \
-              -X PUT \
-              -H "Authorization: Bearer $SENTRY_AUTH_TOKEN" \
-              -H "Content-Type: application/json" \
-              -d "$rule" \
-              "https://sentry.io/api/0/projects/$org/$project/rules/$id/" >/dev/null
-            ;;
-          metric)
-            curl -fsS \
-              -X PUT \
-              -H "Authorization: Bearer $SENTRY_AUTH_TOKEN" \
-              -H "Content-Type: application/json" \
-              -d "$rule" \
-              "https://sentry.io/api/0/organizations/$org/alert-rules/$id/" >/dev/null
-            ;;
-        esac
+        curl -fsS \
+          -X PUT \
+          -H "Authorization: Bearer $SENTRY_AUTH_TOKEN" \
+          -H "Content-Type: application/json" \
+          -d "$payload" \
+          "${update_endpoint_prefix}${id}/" >/dev/null
       fi
     else
       printf '  [create] %-6s rule project=%s name=%s\n' "$kind" "$project" "$name"
@@ -236,8 +266,8 @@ apply_sentry() {
           -X POST \
           -H "Authorization: Bearer $SENTRY_AUTH_TOKEN" \
           -H "Content-Type: application/json" \
-          -d "$rule" \
-          "$endpoint" >/dev/null
+          -d "$payload" \
+          "$create_endpoint" >/dev/null
       fi
     fi
   done

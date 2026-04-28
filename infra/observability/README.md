@@ -37,8 +37,13 @@ Required environment variables (kept out of the repo; provided by the operator's
 | `SENTRY_PROJECT_API`              | Repo variable. Default `kassa-api`.                                 |
 | `SENTRY_PROJECT_POS`              | Repo variable. Default `kassa-pos`.                                 |
 | `SENTRY_PROJECT_BACK_OFFICE`      | Repo variable. Default `kassa-back-office`.                         |
+| `SENTRY_SLACK_INTEGRATION_ID`     | Sentry → Settings → Integrations → Slack → integration ID. Required for the metric-alert Slack action target. No default — unset substitutes a sentinel that fails apply with a 400 rather than mis-routing. |
+| `SENTRY_ONCALL_TEAM_ID`           | Sentry → Settings → Teams → Kassa team that owns `oncall@kassa.id` → numeric team ID. Required for the metric-alert email action target. No default — same sentinel-on-unset behavior. |
 
-The apply script no-ops with a `::notice::` if either token is missing — same enablement-gate pattern as `cd.yml` / `deploy-prod.yml`.
+The apply script behavior on a missing token is asymmetric:
+
+- `BETTER_STACK_API_TOKEN` unset → Better Stack provider no-ops with a `::notice::` (no GET, no POST).
+- `SENTRY_AUTH_TOKEN` unset → Sentry provider prints the resolved payload bodies it would POST and skips network calls. This lets on-call sanity-check the metric-alert envelope shape before provisioning the token (KASA-153).
 
 ---
 

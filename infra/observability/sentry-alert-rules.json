@@ -1,41 +1,75 @@
 {
-  "_comment": "Sentry alert-rule definitions for the Kassa pilot. Owned by KASA-71; applied via scripts/observability-apply.sh. Schema is the Sentry v0 issue/metric alert-rule API (https://docs.sentry.io/api/alerts/). Names are idempotency keys — the apply script reconciles by `name` within `(organization, project)`. Do not rename rules without also renaming the Sentry record.",
+  "_comment": "Sentry alert-rule definitions for the Kassa pilot. Owned by KASA-71; applied via scripts/observability-apply.sh. Schema is the Sentry v0 alert-rule API (https://docs.sentry.io/api/alerts/). Names are idempotency keys — the apply script reconciles by `name` within `(organization, project)` for kind:issue and within `(organization, project_slug)` for kind:metric. Do not rename rules without also renaming the Sentry record. `kind` and `project_slug` are local routing keys; the apply script lifts `project_slug` into the metric-alert envelope's `projects: []` array and drops `kind` before sending. Placeholders in `${ALL_CAPS}` form are env-substituted by the apply script — see infra/observability/README.md for the variable list.",
   "rules": [
     {
       "name": "api-sales-submit-error-rate",
-      "organization_slug": "${SENTRY_ORG}",
-      "project_slug": "${SENTRY_PROJECT_API}",
       "kind": "metric",
-      "dataset": "transactions",
-      "query": "transaction:POST /v1/sales/submit event.type:transaction transaction.status:!ok",
-      "aggregate": "failure_rate()",
-      "time_window_minutes": 5,
-      "threshold_type": "above",
-      "trigger": {
-        "critical_threshold": 0.01,
-        "min_event_count_floor": 50
-      },
-      "environment": "production",
+      "project_slug": "${SENTRY_PROJECT_API}",
       "_severity": "P0",
-      "_runbook_anchor": "section-3-3-sentry-alert-rules"
+      "_runbook_anchor": "section-3-3-sentry-alert-rules",
+      "dataset": "transactions",
+      "eventTypes": ["transaction"],
+      "query": "transaction:POST /v1/sales/submit transaction.status:!ok",
+      "aggregate": "failure_rate()",
+      "timeWindow": 5,
+      "thresholdType": 0,
+      "resolveThreshold": null,
+      "comparisonDelta": null,
+      "environment": "production",
+      "triggers": [
+        {
+          "label": "critical",
+          "alertThreshold": 0.01,
+          "actions": [
+            {
+              "type": "slack",
+              "targetType": "specific",
+              "targetIdentifier": "#kassa-pilot-oncall",
+              "integrationId": "${SENTRY_SLACK_INTEGRATION_ID}"
+            },
+            {
+              "type": "email",
+              "targetType": "team",
+              "targetIdentifier": "${SENTRY_ONCALL_TEAM_ID}"
+            }
+          ]
+        }
+      ]
     },
     {
       "name": "api-eod-close-error-rate",
-      "organization_slug": "${SENTRY_ORG}",
-      "project_slug": "${SENTRY_PROJECT_API}",
       "kind": "metric",
-      "dataset": "transactions",
-      "query": "transaction:POST /v1/eod/close event.type:transaction transaction.status:!ok",
-      "aggregate": "failure_rate()",
-      "time_window_minutes": 5,
-      "threshold_type": "above",
-      "trigger": {
-        "critical_threshold": 0.01,
-        "min_event_count_floor": 10
-      },
-      "environment": "production",
+      "project_slug": "${SENTRY_PROJECT_API}",
       "_severity": "P0",
-      "_runbook_anchor": "section-3-3-sentry-alert-rules"
+      "_runbook_anchor": "section-3-3-sentry-alert-rules",
+      "dataset": "transactions",
+      "eventTypes": ["transaction"],
+      "query": "transaction:POST /v1/eod/close transaction.status:!ok",
+      "aggregate": "failure_rate()",
+      "timeWindow": 5,
+      "thresholdType": 0,
+      "resolveThreshold": null,
+      "comparisonDelta": null,
+      "environment": "production",
+      "triggers": [
+        {
+          "label": "critical",
+          "alertThreshold": 0.01,
+          "actions": [
+            {
+              "type": "slack",
+              "targetType": "specific",
+              "targetIdentifier": "#kassa-pilot-oncall",
+              "integrationId": "${SENTRY_SLACK_INTEGRATION_ID}"
+            },
+            {
+              "type": "email",
+              "targetType": "team",
+              "targetIdentifier": "${SENTRY_ONCALL_TEAM_ID}"
+            }
+          ]
+        }
+      ]
     },
     {
       "name": "api-unhandled-exception-spike",
