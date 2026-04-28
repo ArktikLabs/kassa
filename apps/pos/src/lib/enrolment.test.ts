@@ -156,6 +156,25 @@ describe("enrolment lib", () => {
     expect(meta).toBeDefined();
   });
 
+  it("toggles the kassa.enrolled localStorage flag for the LCP-skeleton gate", async () => {
+    // The flag is read by the inline script in `index.html` to suppress the
+    // enrol-screen LCP skeleton on enrolled cold launches (KASA-157). Only
+    // a non-secret bool lives in localStorage; the device secret stays in
+    // Dexie per ARCHITECTURE.md §2.1.
+    await hydrateEnrolment();
+    expect(localStorage.getItem("kassa.enrolled")).toBeNull();
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => mockFetchOk()),
+    );
+    await enrolDevice(VALID_CODE);
+    expect(localStorage.getItem("kassa.enrolled")).toBe("1");
+
+    await resetDevice();
+    expect(localStorage.getItem("kassa.enrolled")).toBeNull();
+  });
+
   it("reuses the persisted fingerprint across enrolment attempts", async () => {
     await hydrateEnrolment();
     const captured: Array<{ deviceFingerprint: string }> = [];

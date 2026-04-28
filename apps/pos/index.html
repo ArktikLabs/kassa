@@ -16,7 +16,58 @@
     <title>Kassa POS</title>
   </head>
   <body>
-    <div id="root"></div>
+    <!--
+      Static enrol-screen skeleton (KASA-157). Mirrors the unenrolled `/`
+      cold-load layout that React renders so the largest contentful paint
+      candidate fires at FCP instead of waiting for React + IntlProvider +
+      Router boot. `createRoot().render()` replaces these children on mount;
+      Chrome retains the original LCP timestamp because the skeleton text is
+      what painted first. id-ID is the DEFAULT_LOCALE for the market — non-id
+      browsers see a few hundred ms of Indonesian text before React swaps it,
+      which is acceptable for the cold-boot Lighthouse and unenrolled-tablet
+      scenarios this skeleton targets.
+
+      The inline script just below removes this skeleton before paint when
+      the device is already enrolled (the PWA's `start_url` is `/`, which
+      redirects to `/catalog`) or when a deep link landed somewhere else.
+      Only a non-secret bool lives in localStorage; the device secret stays
+      in Dexie per ARCHITECTURE.md §2.1.
+    -->
+    <div id="root">
+      <div class="min-h-dvh flex flex-col bg-neutral-50 text-neutral-800">
+        <header class="flex items-center justify-between border-b border-neutral-200 bg-white px-4 py-3 shadow-sm">
+          <span class="text-lg font-bold text-primary-700">Kassa POS</span>
+        </header>
+        <main class="flex-1 px-4 py-6">
+          <section class="mx-auto max-w-xl space-y-6">
+            <header class="space-y-2">
+              <h1 class="text-2xl font-bold text-neutral-900">Enrol perangkat</h1>
+              <p class="text-neutral-600">Masukkan kode 8 karakter dari Back Office, atau pindai QR-nya, untuk menautkan tablet ini ke outlet Anda.</p>
+            </header>
+          </section>
+        </main>
+      </div>
+    </div>
+    <script>
+      // Synchronous, runs during HTML parse — before first paint. Strips the
+      // skeleton when it would just flash the wrong content (enrolled cold
+      // launch or deep link off `/`). Lighthouse runs in a fresh profile so
+      // the localStorage read returns null and the skeleton stays.
+      (() => {
+        try {
+          const enrolled = !!window.localStorage && window.localStorage.getItem("kassa.enrolled") === "1";
+          if (enrolled || window.location.pathname !== "/") {
+            const root = document.getElementById("root");
+            if (root) {
+              while (root.firstChild) root.removeChild(root.firstChild);
+            }
+          }
+        } catch (_e) {
+          // Private-mode / disabled storage: leave the skeleton in place.
+          // React will replace it on mount as before.
+        }
+      })();
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
