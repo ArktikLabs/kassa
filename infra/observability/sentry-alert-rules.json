@@ -47,11 +47,13 @@
       "frequency_minutes": 5,
       "filters": [
         { "id": "sentry.rules.filters.environment.EnvironmentFilter", "value": "production" },
-        { "id": "sentry.rules.filters.event_count.EventFrequencyFilter", "value": 5, "interval": "5m" }
+        {
+          "id": "sentry.rules.filters.event_count.EventFrequencyFilter",
+          "value": 5,
+          "interval": "5m"
+        }
       ],
-      "conditions": [
-        { "id": "sentry.rules.conditions.first_seen_event.FirstSeenEventCondition" }
-      ],
+      "conditions": [{ "id": "sentry.rules.conditions.first_seen_event.FirstSeenEventCondition" }],
       "_severity": "P1",
       "_runbook_anchor": "section-3-3-sentry-alert-rules"
     },
@@ -66,10 +68,19 @@
       "filters": [
         { "id": "sentry.rules.filters.environment.EnvironmentFilter", "value": "production" },
         { "id": "sentry.rules.filters.issue_category.IssueCategoryFilter", "value": "error" },
-        { "id": "sentry.rules.filters.event_count.EventFrequencyFilter", "value": 10, "interval": "5m" }
+        {
+          "id": "sentry.rules.filters.event_count.EventFrequencyFilter",
+          "value": 10,
+          "interval": "5m"
+        }
       ],
       "conditions": [
-        { "id": "sentry.rules.conditions.event_attribute.EventAttributeCondition", "attribute": "exception.type", "match": "co", "value": "TypeError" }
+        {
+          "id": "sentry.rules.conditions.event_attribute.EventAttributeCondition",
+          "attribute": "exception.type",
+          "match": "co",
+          "value": "TypeError"
+        }
       ],
       "_severity": "P1",
       "_runbook_anchor": "section-3-3-sentry-alert-rules"
@@ -85,10 +96,19 @@
       "filters": [
         { "id": "sentry.rules.filters.environment.EnvironmentFilter", "value": "production" },
         { "id": "sentry.rules.filters.issue_category.IssueCategoryFilter", "value": "error" },
-        { "id": "sentry.rules.filters.event_count.EventFrequencyFilter", "value": 5, "interval": "5m" }
+        {
+          "id": "sentry.rules.filters.event_count.EventFrequencyFilter",
+          "value": 5,
+          "interval": "5m"
+        }
       ],
       "conditions": [
-        { "id": "sentry.rules.conditions.event_attribute.EventAttributeCondition", "attribute": "exception.type", "match": "co", "value": "TypeError" }
+        {
+          "id": "sentry.rules.conditions.event_attribute.EventAttributeCondition",
+          "attribute": "exception.type",
+          "match": "co",
+          "value": "TypeError"
+        }
       ],
       "_severity": "P2",
       "_runbook_anchor": "section-3-3-sentry-alert-rules"
