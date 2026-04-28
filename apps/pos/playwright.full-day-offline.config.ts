@@ -36,6 +36,12 @@ export default defineConfig({
   reporter: process.env.CI ? "github" : "list",
   use: {
     baseURL: POS_URL,
+    // Pin the browser locale to id-ID so `navigator.languages` matches the
+    // app's primary locale and merchants in CI see the same copy as in
+    // production. The acceptance spec uses role+level lookups so it stayed
+    // green under en-US, but the smoke specs running under the sibling
+    // config don't, and aligning both keeps the suites consistent.
+    locale: "id-ID",
     trace: "retain-on-failure",
   },
   webServer: [
