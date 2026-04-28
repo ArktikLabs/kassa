@@ -52,8 +52,29 @@ function toEnrolled(row: DeviceSecret): EnrolledDevice {
   };
 }
 
+// Non-secret bool flag read by the inline script in `index.html` to suppress
+// the enrol-screen LCP skeleton on enrolled cold launches (KASA-157). The
+// device secret itself stays in Dexie per ARCHITECTURE.md §2.1 — only the
+// boolean fact "this tablet has been enrolled" lands in localStorage.
+const ENROLLED_FLAG_KEY = "kassa.enrolled";
+
+function syncEnrolledFlag(state: EnrolmentSnapshot["state"]): void {
+  if (typeof window === "undefined") return;
+  try {
+    if (state === "enrolled") {
+      window.localStorage.setItem(ENROLLED_FLAG_KEY, "1");
+    } else if (state === "unenrolled") {
+      window.localStorage.removeItem(ENROLLED_FLAG_KEY);
+    }
+  } catch {
+    // Private mode / disabled storage: the flag is best-effort, the skeleton
+    // simply flashes once for these users on cold loads.
+  }
+}
+
 function publish(next: EnrolmentSnapshot): void {
   snapshot = next;
+  syncEnrolledFlag(next.state);
   for (const l of listeners) l(snapshot);
 }
 
@@ -144,6 +165,13 @@ export function _resetForTest(): void {
   snapshot = { state: "loading" };
   listeners.clear();
   hydration = null;
+  if (typeof window !== "undefined") {
+    try {
+      window.localStorage.removeItem(ENROLLED_FLAG_KEY);
+    } catch {
+      // ignore — same private-mode trap as syncEnrolledFlag
+    }
+  }
 }
 
 export { EnrolApiError };

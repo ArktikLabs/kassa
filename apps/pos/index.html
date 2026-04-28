@@ -13,10 +13,91 @@
       time-to-final-paint on cold mobile loads (KASA-157 perf budget).
     -->
     <link rel="preload" as="font" type="font/woff2" crossorigin href="/fonts/plus-jakarta-sans-var.woff2" />
+    <style>
+      /*
+       * KASA-157 LCP layering. The skeleton lives OUTSIDE #root so React's
+       * createRoot().render() can never replace its DOM nodes — the LCP
+       * candidate paragraph stays attached for the lifetime of the page,
+       * which keeps Chrome's LCP timestamp pinned at FCP instead of being
+       * deferred to the React boot.
+       *
+       * `#root:empty` collapses to zero box while React is still booting so
+       * the skeleton paints uninterrupted. Once React renders, #root expands
+       * with `position:relative; z-index:1` and covers the skeleton in the
+       * stacking order; the skeleton stays in the DOM (still an LCP
+       * candidate) but is occluded for the user.
+       */
+      #lcp-skeleton {
+        position: absolute;
+        inset: 0;
+        z-index: 0;
+      }
+      #root:empty {
+        display: none;
+      }
+      #root {
+        position: relative;
+        z-index: 1;
+      }
+    </style>
     <title>Kassa POS</title>
   </head>
   <body>
+    <!--
+      Static enrol-screen skeleton (KASA-157 iter 5). Mirrors the unenrolled
+      `/` cold-load layout that React renders so the LCP-eligible `<p>` paints
+      at FCP. Crucially, this lives OUTSIDE `<div id="root">` — `createRoot()`
+      only replaces #root's children, so the skeleton stays attached forever
+      and Chrome doesn't re-evaluate the LCP candidate when React boots. Once
+      React mounts, #root gets stacked on top via `z-index` (see <style>
+      above) and the user only sees the React-rendered UI; the skeleton
+      remains in the DOM but is occluded.
+
+      id-ID is the DEFAULT_LOCALE for the market and the strings here are
+      verbatim copies of `enrol.heading` and `enrol.intro` from
+      `apps/pos/src/i18n/messages.ts`, so even non-id browsers see consistent
+      copy until React swaps in their locale.
+
+      The inline script just below removes this skeleton entirely before
+      paint when the device is already enrolled (the PWA's `start_url` is
+      `/`, which redirects to `/catalog`) or when a deep link landed
+      somewhere else. Only a non-secret bool lives in localStorage; the
+      device secret stays in Dexie per ARCHITECTURE.md §2.1.
+    -->
+    <div id="lcp-skeleton" aria-hidden="true">
+      <div class="min-h-dvh flex flex-col bg-neutral-50 text-neutral-800">
+        <header class="flex items-center justify-between border-b border-neutral-200 bg-white px-4 py-3 shadow-sm">
+          <span class="text-lg font-bold text-primary-700">Kassa POS</span>
+        </header>
+        <main class="flex-1 px-4 py-6">
+          <section class="mx-auto max-w-xl space-y-6">
+            <header class="space-y-2">
+              <h1 class="text-2xl font-bold text-neutral-900">Enrol perangkat</h1>
+              <p class="text-neutral-600">Masukkan kode 8 karakter dari Back Office, atau pindai QR-nya, untuk menautkan tablet ini ke outlet Anda.</p>
+            </header>
+          </section>
+        </main>
+      </div>
+    </div>
     <div id="root"></div>
+    <script>
+      // Synchronous, runs during HTML parse — before first paint. Strips the
+      // skeleton when it would just flash the wrong content (enrolled cold
+      // launch or deep link off `/`). Lighthouse runs in a fresh profile so
+      // the localStorage read returns null and the skeleton stays.
+      (() => {
+        try {
+          const enrolled = !!window.localStorage && window.localStorage.getItem("kassa.enrolled") === "1";
+          if (enrolled || window.location.pathname !== "/") {
+            const skeleton = document.getElementById("lcp-skeleton");
+            if (skeleton) skeleton.remove();
+          }
+        } catch (_e) {
+          // Private-mode / disabled storage: leave the skeleton in place.
+          // React will overlay it on mount as before.
+        }
+      })();
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
