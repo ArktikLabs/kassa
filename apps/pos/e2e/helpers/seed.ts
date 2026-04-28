@@ -81,9 +81,7 @@ export async function seedEnrolledDevice(page: Page, item: SeedItem): Promise<vo
         const version = await readLiveVersion();
         return new Promise((resolve, reject) => {
           const req =
-            version != null
-              ? indexedDB.open("kassa-pos", version)
-              : indexedDB.open("kassa-pos");
+            version != null ? indexedDB.open("kassa-pos", version) : indexedDB.open("kassa-pos");
           req.onsuccess = () => resolve(req.result);
           req.onerror = () => reject(req.error);
           req.onblocked = () => reject(new Error("kassa-pos open blocked by another connection"));
