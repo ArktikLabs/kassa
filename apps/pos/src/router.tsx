@@ -36,13 +36,23 @@ const rootRoute = createRootRoute({
   ),
 });
 
+// The unenrolled cold-load case (Lighthouse's PWA boot scenario) renders
+// EnrolScreen in-place at `/` so the LCP heading paints on the first router
+// pass instead of after a `/` → `/enrol` navigation cycle. That redirect was
+// adding ~700 ms of FCP→LCP delay and pushing the median past the 2500 ms
+// budget (KASA-157). Enrolled devices still redirect to /catalog so the rest
+// of the workflow keeps a single canonical URL, and `/enrol` remains for the
+// admin-driven reset flow and direct deep links.
 const indexRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/",
   beforeLoad: async () => {
     await hydrateEnrolment();
-    throw redirect({ to: isEnrolled() ? "/catalog" : "/enrol" });
+    if (isEnrolled()) {
+      throw redirect({ to: "/catalog" });
+    }
   },
+  component: EnrolScreen,
 });
 
 // `/enrol`, `/catalog`, `/cart`, `/tender/cash`, and `/receipt/$id` are the

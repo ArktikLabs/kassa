@@ -1,5 +1,5 @@
 import { existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
-import { dirname, extname, join, resolve } from "node:path";
+import { dirname, extname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { gzipSync } from "node:zlib";
 import { defineConfig, type PluginOption } from "vite";
@@ -81,8 +81,18 @@ function previewServeGzipPlugin(): PluginOption {
         const rawUrl = req.url ?? "/";
         const queryStart = rawUrl.indexOf("?");
         let pathname = queryStart === -1 ? rawUrl : rawUrl.slice(0, queryStart);
+        try {
+          pathname = decodeURIComponent(pathname);
+        } catch {
+          return next();
+        }
         if (pathname === "" || pathname === "/") pathname = "/index.html";
-        const filePath = join(distDir, pathname);
+        // Resolve through node:path and confirm the result still lives under
+        // distDir before touching the filesystem. Drops `..` segments and
+        // rejects encoded escapes so a request for `/../package.json` cannot
+        // hand back a sibling file.
+        const filePath = resolve(distDir, `.${pathname}`);
+        if (filePath !== distDir && !filePath.startsWith(distDir + sep)) return next();
         const gzPath = `${filePath}.gz`;
         if (!existsSync(gzPath)) return next();
         const ext = extname(filePath).toLowerCase();

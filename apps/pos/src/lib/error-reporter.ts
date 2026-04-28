@@ -14,13 +14,29 @@ type ReportContext = {
 
 let cached: Promise<typeof import("./sentry")> | null = null;
 function loadSentryModule(): Promise<typeof import("./sentry")> {
-  if (!cached) cached = import("./sentry");
+  // Clear the cache on rejection so a transient offline failure does not poison
+  // the rest of the session — the next reportException call will retry the
+  // import once the chunk is reachable again.
+  if (!cached) {
+    const pending = import("./sentry");
+    pending.catch(() => {
+      if (cached === pending) cached = null;
+    });
+    cached = pending;
+  }
   return cached;
 }
 
 export function reportException(err: unknown, ctx?: ReportContext): void {
   void loadSentryModule()
-    .then((m) => m.reportException(err, ctx))
+    .then((m) => {
+      // Ensure the SDK is initialized before capturing — main.tsx schedules
+      // initSentry via requestIdleCallback, but a reportException call from
+      // SyncProvider can race ahead of that. initSentry is idempotent so
+      // calling it here is safe even after the deferred path has run.
+      m.initSentry();
+      m.reportException(err, ctx);
+    })
     .catch((loadErr) => {
       // The Sentry chunk can fail to load if the device is offline and the
       // chunk has not yet been precached. Don't crash the app over a failed
