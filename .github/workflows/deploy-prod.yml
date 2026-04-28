@@ -152,10 +152,15 @@ jobs:
       # when the workspace contains files but no `.git` (the post-download
       # state) it deletes everything before the sparse checkout — which
       # would wipe the freshly-downloaded `api-image/` artifact.
+      #
+      # fetch-depth: 0 is required for sentry-cli `releases set-commits`
+      # to walk git history between the prior release SHA and HEAD —
+      # default depth=1 makes that walk fail with libgit2 `Odb NotFound`.
       - name: Checkout (for composite action)
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           ref: ${{ needs.preflight.outputs.commit_sha }}
+          fetch-depth: 0
           sparse-checkout: .github/actions/sentry-release
           sparse-checkout-cone-mode: false
 
