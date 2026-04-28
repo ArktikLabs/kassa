@@ -48,7 +48,17 @@ test.describe("Service worker offline shell", () => {
     await expect(page.getByRole("link", { name: /Kassa POS/i })).toBeVisible();
     await waitForServiceWorker(page);
 
-    await context.setOffline(true);
+    // Simulate offline at the request-interception layer rather than
+    // `context.setOffline(true)`. Chromium ≥147 (which the CI gate runs)
+    // applies `Network.emulateNetworkConditions { offline: true }` in
+    // the URLLoader path *before* dispatching the navigation to the
+    // service worker, so the reload aborts in <10 ms with
+    // `ERR_INTERNET_DISCONNECTED` and the SW never gets a chance to
+    // serve the cached shell (KASA-160 trace evidence). `context.route`
+    // explicitly excludes SW-handled responses, so the SW intercepts
+    // first; only requests the SW falls through (e.g. its `fetch`
+    // fallback for a true cache miss) hit the abort.
+    await context.route("**", (route) => route.abort("internetdisconnected"));
     await page.reload({ waitUntil: "load" });
 
     // Header renders from precache; route content (heading) from precache too.

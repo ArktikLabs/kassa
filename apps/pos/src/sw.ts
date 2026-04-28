@@ -51,6 +51,12 @@ precacheAndRoute(self.__WB_MANIFEST);
 // some Playwright `context.setOffline(true)` reloads (KASA-159 root
 // cause B post-#84). `caches.match` is an explicit cache lookup with
 // no integrity-check / cache-name plumbing in between.
+//
+// The whole handler body is wrapped in try/catch so a rejected
+// `caches.match` (observed on a few Chromium builds — KASA-160) cannot
+// bubble out of `respondWith`. Falling back to a 503 keeps offline
+// reloads in a controlled failure mode instead of surfacing as a raw
+// `ERR_INTERNET_DISCONNECTED` to the renderer.
 registerRoute(
   ({ request, url }) => {
     if (request.mode !== "navigate") return false;
@@ -60,21 +66,27 @@ registerRoute(
     return true;
   },
   async ({ request }) => {
-    // `ignoreSearch` matters: Workbox stores revisioned precache
-    // entries under `<url>?__WB_REVISION__=<hash>` cache keys, so a
-    // bare `caches.match("/index.html")` misses without it.
-    const indexUrl = new URL("/index.html", self.location.href).href;
-    const cached = await caches.match(indexUrl, { ignoreSearch: true });
-    if (cached) return cached;
     try {
-      return await fetch(request);
+      // `ignoreSearch` matters: Workbox stores revisioned precache
+      // entries under `<url>?__WB_REVISION__=<hash>` cache keys, so a
+      // bare `caches.match("/index.html")` misses without it.
+      const indexUrl = new URL("/index.html", self.location.href).href;
+      const cached = await caches.match(indexUrl, { ignoreSearch: true });
+      if (cached) return cached;
+      try {
+        return await fetch(request);
+      } catch {
+        // fall through to the offline 503 below.
+      }
     } catch {
-      return new Response("Offline — app shell not yet cached.", {
-        status: 503,
-        statusText: "Service Unavailable",
-        headers: { "content-type": "text/plain; charset=utf-8" },
-      });
+      // `caches.match` rejection is unexpected but observed on a small
+      // slice of Chromium builds; treat it the same as a cache miss.
     }
+    return new Response("Offline — app shell not yet cached.", {
+      status: 503,
+      statusText: "Service Unavailable",
+      headers: { "content-type": "text/plain; charset=utf-8" },
+    });
   },
 );
 
