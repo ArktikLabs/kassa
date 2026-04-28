@@ -27,9 +27,11 @@ The pilot is one week, one merchant. Everything below is sized to that. Post-pil
 
 | Slot         | Primary             | Secondary | Hours (WIB)         |
 |:-------------|:--------------------|:----------|:--------------------|
-| Pilot week   | _TBD by CEO — KASA-71 interaction_ | CTO       | 24×7 for 7 days     |
+| Pilot week   | Engineer (Khaer)    | CTO       | 24×7 for 7 days     |
 
 **Handoff.** None for the pilot — single primary. If the primary becomes unavailable for >2 h, the secondary picks up and the CEO is notified by email.
+
+CEO confirmed the Engineer-primary / CTO-secondary assignment on 2026-04-28 in the KASA-71 thread. Post-pilot rotation is out of scope for this runbook revision.
 
 **On-call kit (primary keeps to hand):**
 
@@ -45,12 +47,24 @@ The pilot is one week, one merchant. Everything below is sized to that. Post-pil
 
 ### 3.1 Channel
 
-**(pilot only)** Single dedicated alert channel. The choice between Slack and email is **TBD by CEO** — the open KASA-71 interaction tracks the decision. Until the channel is named, alerts route to the on-call primary's personal email as a fallback (set at the Better Stack and Sentry user level).
+**(pilot only)** Two destinations, one policy. CEO confirmed on 2026-04-28:
 
-Once the channel is chosen:
+| Step | Destination                                | Wait before     | Purpose                                       |
+|:-----|:-------------------------------------------|:----------------|:----------------------------------------------|
+| 1    | Slack channel `#kassa-pilot-oncall`        | 0 (immediate)   | Primary signal — visible to the whole pilot pod |
+| 2    | Email alias `oncall@kassa.id`              | 15 min          | Escalation if Step 1 is unacknowledged (off-hours, missed Slack) |
 
-- Better Stack → "On-call notification rules" → add the channel as a primary destination for every monitor in the `kassa-pilot` group.
-- Sentry → "Alerts" → "Notification settings" → add the channel as the destination for the rules in §3.3.
+The `kassa-pilot-oncall` Better Stack on-call policy in [`infra/observability/better-stack-monitors.json`](../infra/observability/better-stack-monitors.json) encodes these two steps; the Sentry alert rules route to the same destinations via Sentry's Slack + email integrations.
+
+Provisioning checklist (one-time, by ops, before pilot day):
+
+- Better Stack → Integrations → Slack → install on the Kassa workspace; add `#kassa-pilot-oncall` as an integration target.
+- Better Stack → Account → Email aliases → add `oncall@kassa.id`.
+- Sentry → Settings → Integrations → Slack → install; in each project (`kassa-api`, `kassa-pos`, `kassa-back-office`) add `#kassa-pilot-oncall` as an alert action.
+- Sentry → per project → add `oncall@kassa.id` as an alert email destination.
+- Run the §3.4 dry-run end-to-end before the first pilot day.
+
+If Slack itself is the outage (rare, but Slack has gone down during pilot windows before), the email alias is the failover and §7 escalation table picks up at the 15 min mark.
 
 ### 3.2 Better Stack uptime monitors
 
@@ -124,21 +138,23 @@ This is the "what to do" table once you've decided to rollback. The full procedu
 
 **(pilot only)** During the pilot week we proactively notify the merchant when we trigger a rollback that changes their experience (data unavailability, app reload required). Do **not** notify on routine deploys or rollbacks that are merchant-invisible.
 
+CEO is filling in the values below in a follow-up commit before the first pilot day (confirmed 2026-04-28 — the data is in the CEO's merchant-relationship system and is not safe to copy via interaction payloads). On-call must verify this card is fully populated as part of the §3.4 dry-run on pilot day; if any row still reads `_pending CEO commit_`, treat it as a launch blocker.
+
 | Field                  | Value                                                |
 |:-----------------------|:-----------------------------------------------------|
-| Merchant name          | _TBD by CEO — KASA-71 interaction_                   |
-| Primary contact (name) | _TBD by CEO_                                         |
-| WhatsApp               | _TBD by CEO_                                         |
-| Email                  | _TBD by CEO_                                         |
-| Best contact window (WIB) | _TBD by CEO_                                      |
-| Outlets in pilot       | _TBD by CEO_ (count + names)                         |
-| Backup contact         | _TBD by CEO_                                         |
+| Merchant name          | _pending CEO commit_                                 |
+| Primary contact (name) | _pending CEO commit_                                 |
+| WhatsApp               | _pending CEO commit_                                 |
+| Email                  | _pending CEO commit_                                 |
+| Best contact window (WIB) | _pending CEO commit_                              |
+| Outlets in pilot       | _pending CEO commit_ (count + names)                 |
+| Backup contact         | _pending CEO commit_                                 |
 
 **Notification template (WhatsApp / email):**
 
 > Halo <name>, ini tim Kassa. Kami baru saja memulihkan layanan setelah issue singkat di [POS / pembayaran / EOD] pukul <HH:MM WIB>. Mohon **logout dan login ulang** di aplikasi POS sebelum transaksi berikutnya. Tidak ada data hilang dan EOD malam ini akan tetap berjalan normal. Terima kasih atas kesabarannya. — <oncall name>
 
-Update this card when CEO returns the data; do not commit names/numbers in any public-readable artifact other than this file under the private repo.
+Do not copy the merchant name, contact numbers, or email outside this file — the repo is private and that is the contract. Public artifacts (issue threads, PR descriptions, public dashboards) reference "the pilot merchant" only.
 
 ---
 
