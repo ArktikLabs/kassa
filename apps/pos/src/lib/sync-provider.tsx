@@ -17,7 +17,7 @@ import {
   type SyncStatusStore,
 } from "../data/sync/index.ts";
 import type { SyncParseError } from "../data/sync/errors.ts";
-import { Sentry } from "./sentry.ts";
+import { reportException } from "./error-reporter.ts";
 
 interface SyncContextValue {
   store: SyncStatusStore;
@@ -36,7 +36,7 @@ function readBaseUrl(): string {
 }
 
 function reportParseError(err: SyncParseError): void {
-  Sentry.captureException(err, {
+  reportException(err, {
     tags: { sync_table: err.table },
     extra: {
       issueSummary: err.issueSummary,
@@ -83,7 +83,7 @@ export function SyncProvider({ children }: { children: ReactNode }) {
         const secret = await database.repos.deviceSecret.get();
         if (secret) runner.start();
       } catch (err) {
-        Sentry.captureException(err);
+        reportException(err);
       }
     })();
     return () => {

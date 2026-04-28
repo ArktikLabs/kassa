@@ -112,5 +112,17 @@ export function initSentry(): void {
   });
 }
 
-export { Sentry };
+/**
+ * Forward an exception to Sentry from places that should not pull `@sentry/react`
+ * into their static import graph (the LCP-critical chunk). Callers should reach
+ * for `lib/error-reporter.ts` instead, which dynamic-imports this module so the
+ * Sentry SDK ends up in its own chunk.
+ */
+export function reportException(
+  err: unknown,
+  ctx?: { tags?: Record<string, string>; extra?: Record<string, unknown> },
+): void {
+  Sentry.captureException(err, ctx);
+}
+
 export const _scrubStringForTest = scrubString;

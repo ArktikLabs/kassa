@@ -7,6 +7,12 @@
     <meta name="description" content="Kasir offline-first untuk warung dan toko kecil di Indonesia." />
     <link rel="icon" type="image/svg+xml" href="/icons/icon-192.svg" />
     <link rel="apple-touch-icon" href="/icons/icon-192.png" />
+    <!--
+      Preload the brand font so it streams in parallel with the main JS bundle
+      instead of being discovered after the CSS parses. Cuts the LCP heading's
+      time-to-final-paint on cold mobile loads (KASA-157 perf budget).
+    -->
+    <link rel="preload" as="font" type="font/woff2" crossorigin href="/fonts/plus-jakarta-sans-var.woff2" />
     <title>Kassa POS</title>
   </head>
   <body>
