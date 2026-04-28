@@ -584,7 +584,7 @@ flyctl deploy . \
 
 **Auth path.**
 
-- AWS credentials via OIDC federation (`aws-actions/configure-aws-credentials@v4`) — no long-lived keys in GitHub. The IAM role's permissions are scoped to `s3:PutObject` + `s3:HeadObject` on `arn:aws:s3:::kassa-backups/prod/*`.
+- AWS credentials via OIDC federation (`aws-actions/configure-aws-credentials`, SHA-pinned to v4.3.1) — no long-lived keys in GitHub. The IAM role's permissions are scoped to `s3:PutObject` + `s3:HeadObject` on `arn:aws:s3:::kassa-backups/prod/*`.
 - Postgres credentials via the `BACKUP_DATABASE_URL` secret in the `production-prod` environment, scoped to a Neon read-only role (`GRANT pg_read_all_data`). A runner compromise must not be able to mutate prod.
 
 The `production-prod` environment also gates the deploy workflow, so the same approval/secret blast radius covers the credentials that can read prod data.

@@ -1,10 +1,14 @@
 #!/usr/bin/env bash
 # Nightly Postgres backup to S3 for Kassa production — KASA-70.
 #
-# Streams pg_dump of the production Neon branch to S3 in compressed custom
-# format. Intended to run from .github/workflows/backup-prod.yml on a daily
-# schedule, but also runnable locally for ad-hoc snapshots and disaster-
-# recovery rehearsals.
+# Streams pg_dump of the production Neon branch to S3 as plain SQL, gzip-
+# compressed (`--format=plain | gzip -c`). Intended to run from
+# .github/workflows/backup-prod.yml on a daily schedule, but also runnable
+# locally for ad-hoc snapshots and disaster-recovery rehearsals.
+#
+# Restore path is `aws s3 cp s3://<bucket>/<key> - | gunzip -c | psql ...`
+# (psql, not pg_restore — pg_restore rejects --format=plain dumps). See
+# .github/workflows/backup-prod.yml header for the full DR command.
 #
 # Streaming (pg_dump | gzip | aws s3 cp -) is deliberate: we never write the
 # dump to the runner's disk, so a 5 GB merchant DB does not require a runner
