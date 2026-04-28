@@ -34,3 +34,16 @@ export interface EodRepository {
   }): Promise<EodRecord | null>;
   insert(record: EodRecord): Promise<EodRecord>;
 }
+
+/**
+ * KASA-151 — write balancing `synthetic_eod_reconcile` ledger entries
+ * during EOD close so per-item stock for synthetic-tender (KASA-71 probe)
+ * sales nets to zero. Implementations must be idempotent on
+ * `(saleIds, occurredAt)` so a retried close never double-writes the
+ * balancing entries. The EOD service calls this once per close, before
+ * inserting the EOD record; in v0 the writes are sequential and the
+ * Postgres impl will run both inside the close transaction.
+ */
+export interface EodSyntheticReconciler {
+  reconcileSyntheticSales(input: { saleIds: readonly string[]; occurredAt: string }): Promise<void>;
+}

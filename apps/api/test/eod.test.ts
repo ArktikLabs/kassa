@@ -153,6 +153,7 @@ async function seedSale(
     voidBusinessDate: null,
     voidReason: null,
     refunds: [],
+    synthetic: false,
   };
   let ledgerCursor = 0;
   const persisted = await repository.recordSale({
@@ -450,6 +451,7 @@ describe("EodService — directly", () => {
     // own that surface), so we plug a fake SalesReader that returns hand-
     // crafted SaleRecord rows including a voided one.
     const active: SaleRecord = {
+      saleId: "01890abc-1234-7def-8000-0000000007a1",
       localSaleId: "01890abc-1234-7def-8000-000000000701",
       merchantId: MERCHANT_ID,
       outletId: OUTLET_ID,
@@ -462,9 +464,11 @@ describe("EodService — directly", () => {
       items: [],
       tenders: [{ method: "cash", amountIdr: 40_000, reference: null, verified: true }],
       voidedAt: null,
+      synthetic: false,
     };
     const voided: SaleRecord = {
       ...active,
+      saleId: "01890abc-1234-7def-8000-0000000007a2",
       localSaleId: "01890abc-1234-7def-8000-000000000702",
       totalIdr: 15_000,
       tenders: [{ method: "cash", amountIdr: 15_000, reference: null, verified: true }],

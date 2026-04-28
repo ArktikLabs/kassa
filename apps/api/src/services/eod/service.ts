@@ -1,6 +1,6 @@
 import type { EodMissingSalesDetails } from "@kassa/schemas/eod";
 import { uuidv7 } from "../../lib/uuid.js";
-import type { EodRepository, SalesReader } from "./repository.js";
+import type { EodRepository, EodSyntheticReconciler, SalesReader } from "./repository.js";
 import type { EodRecord, EodRecordBreakdown, SaleRecord, SaleTender } from "./types.js";
 
 /*
@@ -35,6 +35,15 @@ export class EodError extends Error {
 export interface EodServiceDeps {
   salesReader: SalesReader;
   eodRepository: EodRepository;
+  /**
+   * KASA-151 — writes balancing ledger entries for synthetic (KASA-71
+   * probe) sales during close. Optional: when omitted, synthetic sales
+   * are still excluded from the breakdown but no balancing entries are
+   * written — the missing entries leave per-item stock skewed, so this
+   * dependency must be provided in any environment that allows synthetic
+   * tenders.
+   */
+  syntheticReconciler?: EodSyntheticReconciler;
   now?: () => Date;
   generateEodId?: () => string;
 }
@@ -51,12 +60,14 @@ export interface CloseInput {
 export class EodService {
   private readonly salesReader: SalesReader;
   private readonly eodRepository: EodRepository;
+  private readonly syntheticReconciler: EodSyntheticReconciler | null;
   private readonly now: () => Date;
   private readonly generateEodId: () => string;
 
   constructor(deps: EodServiceDeps) {
     this.salesReader = deps.salesReader;
     this.eodRepository = deps.eodRepository;
+    this.syntheticReconciler = deps.syntheticReconciler ?? null;
     this.now = deps.now ?? (() => new Date());
     this.generateEodId = deps.generateEodId ?? uuidv7;
   }
@@ -94,8 +105,15 @@ export class EodService {
       );
     }
 
-    const breakdown = computeBreakdown(serverSales);
-    const expectedCashIdr = computeExpectedCash(serverSales);
+    // KASA-151: synthetic-tender (KASA-71 probe) sales never reach the
+    // merchant-facing breakdown / expected-cash / variance numbers.
+    // Filter them out once and feed the merchant view to the existing
+    // reducers; we'll reconcile their stock side-effects below.
+    const merchantSales = serverSales.filter((s) => !s.synthetic);
+    const syntheticSales = serverSales.filter((s) => s.synthetic);
+
+    const breakdown = computeBreakdown(merchantSales);
+    const expectedCashIdr = computeExpectedCash(merchantSales);
     const varianceIdr = input.countedCashIdr - expectedCashIdr;
 
     if (varianceIdr !== 0) {
@@ -108,12 +126,26 @@ export class EodService {
       }
     }
 
+    const closedAt = this.now().toISOString();
+
+    // KASA-151: balance every synthetic sale's stock movement before the
+    // EOD record lands. The reconciler is idempotent on (saleIds, occurredAt)
+    // so a retried close after a partial failure does not double-write the
+    // balancing entries. v0 in-memory runs sequentially; the future Postgres
+    // impl will scope both writes to one transaction.
+    if (syntheticSales.length > 0 && this.syntheticReconciler) {
+      await this.syntheticReconciler.reconcileSyntheticSales({
+        saleIds: syntheticSales.map((s) => s.saleId),
+        occurredAt: closedAt,
+      });
+    }
+
     const record: EodRecord = {
       id: this.generateEodId(),
       outletId: input.outletId,
       merchantId: input.merchantId,
       businessDate: input.businessDate,
-      closedAt: this.now().toISOString(),
+      closedAt,
       countedCashIdr: input.countedCashIdr,
       expectedCashIdr,
       varianceIdr,

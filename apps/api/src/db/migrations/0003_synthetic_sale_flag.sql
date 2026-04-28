@@ -1,0 +1,1 @@
+ALTER TABLE "sales" ADD COLUMN "synthetic" boolean DEFAULT false NOT NULL;

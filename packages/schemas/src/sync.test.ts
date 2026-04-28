@@ -191,4 +191,16 @@ describe("saleSubmitTender", () => {
     });
     expect(parsed.method).toBe("cash");
   });
+
+  // KASA-151: `synthetic` is reserved for the KASA-71 uptime probe. It must
+  // pass schema validation like any other tender so the probe exercises the
+  // real submit path; the POS UI is never expected to emit it.
+  it("accepts a synthetic tender (KASA-71 uptime probe)", () => {
+    const parsed = saleSubmitTender.parse({
+      method: "synthetic",
+      amountIdr: 1,
+      reference: null,
+    });
+    expect(parsed.method).toBe("synthetic");
+  });
 });

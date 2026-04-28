@@ -44,7 +44,8 @@ export class SalesError extends Error {
       | "refund_quantity_exceeds_remaining"
       | "refund_amount_exceeds_remaining"
       | "refund_idempotency_conflict"
-      | "invalid_page_token",
+      | "invalid_page_token"
+      | "synthetic_tender_mixed",
     message: string,
     readonly details?: unknown,
   ) {
@@ -98,6 +99,19 @@ export class SalesService {
   }
 
   async submit(input: SubmitSaleInput): Promise<SubmitSaleOutcome> {
+    // KASA-151: a sale is synthetic iff every tender on it is `synthetic`.
+    // Mixing synthetic with real tenders breaks the auto-reconcile contract
+    // (real cash/QRIS shouldn't be excluded from EOD totals), so we reject
+    // mixed payloads up front rather than persisting an inconsistent row.
+    const synthetic = input.tenders.every((t) => t.method === "synthetic");
+    const anySynthetic = input.tenders.some((t) => t.method === "synthetic");
+    if (anySynthetic && !synthetic) {
+      throw new SalesError(
+        "synthetic_tender_mixed",
+        "A sale cannot mix `synthetic` with non-synthetic tenders.",
+      );
+    }
+
     const existing = await this.repository.findSaleByLocalId(input.merchantId, input.localSaleId);
     if (existing) {
       if (!salesAgreeOnShape(existing, input)) {
@@ -309,6 +323,7 @@ export class SalesService {
       voidBusinessDate: null,
       voidReason: null,
       refunds: [],
+      synthetic,
     };
     sale.name = this.generateSaleName(sale);
 
@@ -515,26 +530,32 @@ export class SalesService {
   /**
    * Read-side accessor used by `GET /v1/sales/:saleId`. Returns null when the
    * sale does not exist or belongs to another merchant — the route maps both
-   * to 404 without leaking cross-tenant existence.
+   * to 404 without leaking cross-tenant existence. KASA-151: synthetic rows
+   * (KASA-71 probe) are merchant-invisible — surfaced as 404 here so the
+   * pilot POS can never inspect them.
    */
   async getSale(merchantId: string, saleId: string): Promise<Sale | null> {
-    return this.repository.findSaleById(merchantId, saleId);
+    const sale = await this.repository.findSaleById(merchantId, saleId);
+    if (!sale || sale.synthetic) return null;
+    return sale;
   }
 
   /**
    * Read-side accessor used by `GET /v1/sales?outletId=&businessDate=`. The
    * acceptance suite uses this to assert "all 50 sales are present
-   * server-side with matching totals" after the offline outbox drains, and
-   * EOD breakdown rollups consume the same shape via `SalesReader`. Returns
-   * an empty array when the bucket is empty or the outlet belongs to another
-   * merchant — the repository scopes by `merchantId` already.
+   * server-side with matching totals" after the offline outbox drains.
+   * KASA-151: synthetic rows are excluded from this merchant-facing list so
+   * the pilot merchant never sees probe transactions in their own report.
+   * The EOD breakdown reads through `SalesReader` → repository directly and
+   * still sees synthetic rows so it can reconcile them.
    */
   async listSalesByBusinessDate(
     merchantId: string,
     outletId: string,
     businessDate: string,
   ): Promise<readonly Sale[]> {
-    return this.repository.listSalesByBusinessDate(merchantId, outletId, businessDate);
+    const sales = await this.repository.listSalesByBusinessDate(merchantId, outletId, businessDate);
+    return sales.filter((s) => !s.synthetic);
   }
 
   /**

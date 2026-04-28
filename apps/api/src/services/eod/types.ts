@@ -4,7 +4,18 @@
  * map these to Postgres rows without changing the service contract.
  */
 
-export type SaleTenderMethod = "cash" | "qris_dynamic" | "qris_static" | "card" | "other";
+export type SaleTenderMethod =
+  | "cash"
+  | "qris_dynamic"
+  | "qris_static"
+  | "card"
+  | "other"
+  /**
+   * KASA-151 — the KASA-71 production probe pays with `synthetic`. Sales
+   * carrying this method are excluded from breakdown / expected-cash /
+   * variance and auto-reconciled at close (`synthetic_eod_reconcile`).
+   */
+  | "synthetic";
 
 export interface SaleTender {
   method: SaleTenderMethod;
@@ -27,6 +38,8 @@ export interface SaleItem {
 }
 
 export interface SaleRecord {
+  /** Server-canonical saleId — needed by EOD reconciliation to balance synthetic rows. */
+  saleId: string;
   localSaleId: string;
   merchantId: string;
   outletId: string;
@@ -39,6 +52,12 @@ export interface SaleRecord {
   items: readonly SaleItem[];
   tenders: readonly SaleTender[];
   voidedAt: string | null;
+  /**
+   * KASA-151 — `true` when the sale was paid with the `synthetic` tender
+   * (KASA-71 probe). EOD close excludes synthetic rows from the breakdown
+   * and writes balancing `synthetic_eod_reconcile` ledger entries.
+   */
+  synthetic: boolean;
 }
 
 export interface EodRecord {

@@ -148,6 +148,7 @@ export class InMemorySalesRepository implements SalesRepository {
       voidBusinessDate: input.sale.voidBusinessDate ?? null,
       voidReason: input.sale.voidReason ?? null,
       refunds: input.sale.refunds ?? [],
+      synthetic: input.sale.synthetic ?? false,
     };
     this.sales.set(stored.id, stored);
     this.saleIdByLocal.set(key, stored.id);
@@ -257,6 +258,44 @@ export class InMemorySalesRepository implements SalesRepository {
     }));
     for (const row of written) this.ledger.push(row);
     return { kind: "ok", sale: updated, ledger: written };
+  }
+
+  async reconcileSyntheticSales(input: {
+    saleIds: readonly string[];
+    occurredAt: string;
+    idGenerator: () => string;
+  }): Promise<StockLedgerEntry[]> {
+    const targetIds = new Set(input.saleIds);
+    if (targetIds.size === 0) return [];
+
+    // Skip sales that already have balancing entries — repeat calls (e.g. a
+    // retried EOD close after partial failure) must not double-write.
+    const alreadyReconciled = new Set<string>();
+    for (const row of this.ledger) {
+      if (row.reason === "synthetic_eod_reconcile" && row.refId && targetIds.has(row.refId)) {
+        alreadyReconciled.add(row.refId);
+      }
+    }
+
+    const written: StockLedgerEntry[] = [];
+    for (const row of this.ledger) {
+      if (row.reason !== "sale") continue;
+      if (!row.refId || !targetIds.has(row.refId)) continue;
+      if (alreadyReconciled.has(row.refId)) continue;
+      const balancing: StockLedgerEntry = {
+        id: input.idGenerator(),
+        outletId: row.outletId,
+        itemId: row.itemId,
+        delta: -row.delta,
+        reason: "synthetic_eod_reconcile",
+        refType: row.refType,
+        refId: row.refId,
+        occurredAt: input.occurredAt,
+      };
+      written.push(balancing);
+    }
+    for (const row of written) this.ledger.push(row);
+    return written;
   }
 
   async recordRefund(input: {

@@ -103,6 +103,21 @@ export interface SalesRepository {
    * return `{ kind: "already_refunded", sale, refund }` so the route can
    * answer 200 idempotently.
    */
+  /**
+   * KASA-151 — write balancing `synthetic_eod_reconcile` ledger entries for
+   * the given synthetic sale ids. Each balancing entry mirrors an existing
+   * `reason="sale"` row for that saleId with an inverted `delta`, so per-
+   * item stock nets to zero. Skips sales that already have balancing
+   * entries to keep the operation idempotent across replay/retry. Returns
+   * the entries this call wrote (an empty array when every sale was
+   * already reconciled). The caller stamps `occurredAt` so EOD-time and
+   * reconciliation-time match the close timestamp.
+   */
+  reconcileSyntheticSales(input: {
+    saleIds: readonly string[];
+    occurredAt: string;
+    idGenerator: () => string;
+  }): Promise<StockLedgerEntry[]>;
   recordRefund(input: {
     merchantId: string;
     saleId: string;

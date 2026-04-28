@@ -39,6 +39,7 @@ function toSaleRecord(sale: Sale): SaleRecord {
   }));
   const tenders: EodSaleTender[] = sale.tenders.map(toEodTender);
   return {
+    saleId: sale.id,
     localSaleId: sale.localSaleId,
     merchantId: sale.merchantId,
     outletId: sale.outletId,
@@ -50,8 +51,8 @@ function toSaleRecord(sale: Sale): SaleRecord {
     totalIdr: sale.totalIdr,
     items,
     tenders,
-    // The KASA-66 Sale shape has no void state today (voids land in KASA-69/70).
-    voidedAt: null,
+    voidedAt: sale.voidedAt,
+    synthetic: sale.synthetic,
   };
 }
 
@@ -81,12 +82,14 @@ function toEodTender(tender: SaleTender): EodSaleTender {
     case "cash":
     case "card":
     case "other":
+    case "synthetic":
       return {
         method: tender.method,
         amountIdr: tender.amountIdr,
         reference: tender.reference,
         // Non-QRIS tenders are server-vouched at submit time (cash drawer
-        // count, card terminal approval); they have no unverified window.
+        // count, card terminal approval, synthetic uptime probe); they
+        // have no unverified window.
         verified: true,
       };
   }
