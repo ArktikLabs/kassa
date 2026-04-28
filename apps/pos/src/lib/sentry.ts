@@ -65,9 +65,16 @@ export function initSentry(): void {
   const dsn = import.meta.env.VITE_SENTRY_DSN;
   if (!dsn) return;
 
+  // VITE_SENTRY_ENVIRONMENT separates prod from preview/staging events
+  // (KASA-150). MODE is `production` for any `vite build` regardless of
+  // deploy target, so per-environment Sentry alert rules need a build-time
+  // override. Falls back to MODE when unset so dev/test keep their existing
+  // tag (`development` / `test`).
+  const environment = import.meta.env.VITE_SENTRY_ENVIRONMENT || import.meta.env.MODE;
+
   Sentry.init({
     dsn,
-    environment: import.meta.env.MODE,
+    environment,
     release: import.meta.env.VITE_RELEASE,
     sendDefaultPii: false,
     tracesSampleRate: import.meta.env.PROD ? 0.05 : 0,
