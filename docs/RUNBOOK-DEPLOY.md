@@ -45,7 +45,13 @@ Before the production deploy pipeline can run, ops completes this list once. Aft
    flyctl secrets set --app kassa-api-prod \
      DATABASE_URL="postgres://...@<prod-neon-host>/...?sslmode=require"
    ```
-3. **Nightly `pg_dump` to S3.** Schedule a Neon scheduled job (or a Fly Machine cron) that runs `pg_dump $DATABASE_URL | gzip | aws s3 cp - s3://kassa-backups/prod/$(date -u +%F).sql.gz`. Verify the first dump appears in S3 and is `> 0 bytes`. Retention: 35 days (S3 lifecycle rule).
+3. **Nightly `pg_dump` to S3.** Provisioned via `.github/workflows/backup-prod.yml` (calls `scripts/db-backup.sh`). The workflow streams `pg_dump | gzip | aws s3 cp -` daily at 02:00 UTC (09:00 WIB) to `s3://kassa-backups/prod/<UTC-date>.sql.gz` and is also available as `workflow_dispatch` for ad-hoc / DR-rehearsal dumps. One-time setup:
+   - Provision an S3 bucket `kassa-backups` in `ap-southeast-1` with SSE-S3 (or KMS) at-rest encryption, Versioning ON, Public Access Block all on, and a lifecycle rule that expires `prod/*` after 35 days.
+   - Create a Neon read-only role on the production branch (`GRANT pg_read_all_data` to a dedicated role) and add its connection string as `BACKUP_DATABASE_URL` in the `production-prod` GitHub environment. Read-only is mandatory — a runner compromise must not be able to mutate prod.
+   - Create an AWS IAM role for OIDC federation (trust `token.actions.githubusercontent.com` for `repo:ArktikLabs/kassa:*`; permissions limited to `s3:PutObject` + `s3:HeadObject` on `arn:aws:s3:::kassa-backups/prod/*`). Add the role ARN as `AWS_BACKUP_ROLE_ARN` in the same environment.
+   - Set repository variable `BACKUP_PROD_ENABLED=true`.
+
+   Verify the first scheduled (or `workflow_dispatch`) run completes green and the object appears in S3 at the expected key with `> 0 bytes`. The workflow's final `aws s3api head-object` step asserts non-empty before exiting.
 4. **Production Redis broker** — `flyctl redis create --org kassa --name kassa-redis-prod --region sin --no-replicas --plan 3G`. Bind:
    ```sh
    flyctl secrets set --app kassa-api-prod REDIS_URL="redis://default:<token>@<host>:6379"

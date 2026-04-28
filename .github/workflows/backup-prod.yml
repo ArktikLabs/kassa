@@ -1,0 +1,145 @@
+name: Backup Prod (Neon → S3)
+
+# Nightly logical backup of the production Neon branch — KASA-70.
+#
+# Streams pg_dump → gzip → S3 via scripts/db-backup.sh. Mirror of the
+# `production-prod` deploy environment so the same approval/secret model that
+# gates prod deploys also gates the credentials that can read prod data.
+#
+# Trigger model:
+#   - schedule (cron):     02:00 UTC daily = 09:00 WIB (idle window for the
+#                          Indonesian pilot; well before merchant open).
+#   - workflow_dispatch:   ad-hoc backup, primarily for DR rehearsals or
+#                          before-migration safety dumps.
+#
+# Why GitHub Actions and not a Neon scheduled job / Fly Machine cron:
+#   - Same dashboard as deploys → operators see backup runs in one place.
+#   - Same notification channel as a failed deploy.
+#   - No new infra to provision; minutes are negligible (≈5 min × 30/month).
+# A Neon-side or Fly-side scheduler is a viable second copy if backup
+# durability ever becomes business-critical (M5+).
+#
+# Enablement (one-time, by ops):
+#   1. Provision an S3 bucket `kassa-backups` in `ap-southeast-1` with:
+#        - SSE-S3 (or SSE-KMS) at-rest encryption
+#        - Bucket Versioning ON
+#        - Public Access Block: all four flags true
+#        - Lifecycle rule: expire `prod/*` after 35 days (per
+#          RUNBOOK-DEPLOY.md §2 step 3 retention contract)
+#   2. Create a Neon read-only role on the production branch
+#      (`SET role <readonly>; … GRANT pg_read_all_data;`) and a connection
+#      string `BACKUP_DATABASE_URL` in the `production-prod` GH environment.
+#      Read-only is required so a runner compromise cannot mutate prod.
+#   3. Create an AWS IAM role for OIDC federation:
+#        - Trust policy: token.actions.githubusercontent.com,
+#          repo:ArktikLabs/kassa:ref:refs/heads/main (or :*).
+#        - Permissions: `s3:PutObject`, `s3:HeadObject` on
+#          `arn:aws:s3:::kassa-backups/prod/*`.
+#      Add the role ARN as `AWS_BACKUP_ROLE_ARN` in the `production-prod`
+#      environment.
+#   4. Set repository variable BACKUP_PROD_ENABLED=true.
+# Until BACKUP_PROD_ENABLED is flipped, preflight emits a notice and the
+# backup job is skipped — the workflow stays runnable but inert.
+#
+# Recovery: see docs/RUNBOOK-DEPLOY.md §4.4 (Drizzle-migration rollback) for
+# the schema-revert path; for full-DB restore, target a fresh Neon branch
+# with `aws s3 cp s3://kassa-backups/prod/<date>.sql.gz - | gunzip -c | psql
+# "$RESTORE_DATABASE_URL"` (psql, not pg_restore — the dump is plain SQL)
+# and cut over via `flyctl secrets set DATABASE_URL=...`.
+
+on:
+  schedule:
+    - cron: "0 2 * * *"
+  workflow_dispatch:
+    inputs:
+      label:
+        description: "Override <UTC-date> in the S3 key (default: today). Use for ad-hoc / DR-rehearsal dumps."
+        required: false
+        type: string
+
+concurrency:
+  # Serialize: only one backup in-flight. A scheduled run colliding with a
+  # workflow_dispatch is rare but should not double-stream.
+  group: backup-prod
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write # OIDC federation to AWS
+  actions: read
+
+jobs:
+  preflight:
+    name: Preflight (enablement)
+    runs-on: ubuntu-latest
+    outputs:
+      ready: ${{ steps.gate.outputs.ready }}
+    steps:
+      - name: Check backup enablement
+        id: gate
+        env:
+          BACKUP_PROD_ENABLED: ${{ vars.BACKUP_PROD_ENABLED }}
+        run: |
+          if [ "${BACKUP_PROD_ENABLED:-false}" != "true" ]; then
+            echo "::notice title=Prod backup disabled::Set repository variable BACKUP_PROD_ENABLED=true (and provision the production-prod env's BACKUP_DATABASE_URL + AWS_BACKUP_ROLE_ARN secrets) to activate. See .github/workflows/backup-prod.yml header."
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  backup:
+    name: pg_dump → S3
+    needs: preflight
+    if: needs.preflight.outputs.ready == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment:
+      name: production-prod
+    steps:
+      - name: Checkout (for scripts/db-backup.sh)
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          sparse-checkout: scripts
+          sparse-checkout-cone-mode: false
+
+      # Install postgresql-client-17 to match the Neon major version. apt-get
+      # ships an older client by default (15-ish on jammy); a newer server
+      # rejects an older client's --quote-all-identifiers semantic.
+      - name: Install postgresql-client-17
+        run: |
+          set -euo pipefail
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl -fsSL -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
+            https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          codename=$(. /etc/os-release && echo "$VERSION_CODENAME")
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt ${codename}-pgdg main" \
+            | sudo tee /etc/apt/sources.list.d/pgdg.list >/dev/null
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends postgresql-client-17
+          pg_dump --version
+
+      # SHA-pinned ahead of first real run so the pin is in place before the
+      # action ever sees production-prod credentials. v4.3.1 is the current
+      # head of v4.x; bump the SHA + comment together when upgrading.
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4.3.1
+        with:
+          role-to-assume: ${{ secrets.AWS_BACKUP_ROLE_ARN }}
+          aws-region: ap-southeast-1
+          role-session-name: kassa-backup-prod-${{ github.run_id }}
+
+      - name: Run pg_dump → S3
+        env:
+          DATABASE_URL: ${{ secrets.BACKUP_DATABASE_URL }}
+          LABEL: ${{ inputs.label }}
+        run: |
+          set -euo pipefail
+          args=(
+            --bucket kassa-backups
+            --prefix prod
+            --region ap-southeast-1
+          )
+          if [ -n "${LABEL:-}" ]; then
+            args+=(--label "$LABEL")
+          fi
+          bash scripts/db-backup.sh "${args[@]}"
