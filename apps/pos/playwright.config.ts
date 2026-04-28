@@ -24,6 +24,13 @@ export default defineConfig({
   reporter: process.env.CI ? "github" : "list",
   use: {
     baseURL: "http://127.0.0.1:4173",
+    // Pin the browser locale to id-ID so `navigator.languages` matches the
+    // app's primary locale (`apps/pos/src/i18n/messages.ts`). Without this,
+    // CI runners default to en-US and `negotiateLocale()` partial-matches
+    // "en", flipping every localized assertion (e.g. "Enrol perangkat"
+    // heading) to the English copy. Mirrors how the app boots on a real
+    // Indonesian merchant tablet.
+    locale: "id-ID",
     trace: "retain-on-failure",
   },
   webServer: {

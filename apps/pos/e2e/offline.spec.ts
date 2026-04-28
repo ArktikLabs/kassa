@@ -8,10 +8,19 @@ import { expect, test } from "@playwright/test";
  * render the brand chrome and the route content.
  */
 
+/*
+ * Wait until the SW is *controlling* the current document, not merely
+ * activated. `reg.active` flips truthy as soon as the worker reaches
+ * "activated", but `navigator.serviceWorker.controller` only populates
+ * after `clientsClaim()` adopts the document — and a reload while
+ * offline only resolves from precache when the document is controlled.
+ * Asserting both avoids the `ERR_INTERNET_DISCONNECTED` race the gate
+ * was hitting (KASA-158 root cause B).
+ */
 async function waitForServiceWorker(page: import("@playwright/test").Page) {
   await page.waitForFunction(async () => {
     const reg = await navigator.serviceWorker.getRegistration();
-    return Boolean(reg?.active);
+    return Boolean(reg?.active) && navigator.serviceWorker.controller != null;
   });
 }
 
@@ -34,12 +43,15 @@ test.describe("Service worker offline shell", () => {
     await page.goto("/enrol");
     await waitForServiceWorker(page);
 
-    // Sanity: the active SW responds to a non-SKIP_WAITING message
-    // without crashing — this exercises the message listener.
-    const dispatched = await page.evaluate(async () => {
-      const reg = await navigator.serviceWorker.getRegistration();
-      if (!reg?.active) return false;
-      reg.active.postMessage({ type: "PING_FROM_TEST" });
+    // Single evaluate so the controlling worker can't transition to
+    // `redundant` between fetching the registration and posting the
+    // message (KASA-158 root cause C). Using `controller` directly also
+    // sidesteps the `reg.active`-then-null race the previous two-step
+    // sequence was hitting.
+    const dispatched = await page.evaluate(() => {
+      const ctrl = navigator.serviceWorker.controller;
+      if (!ctrl) return false;
+      ctrl.postMessage({ type: "PING_FROM_TEST" });
       return true;
     });
     expect(dispatched).toBe(true);
