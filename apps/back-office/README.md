@@ -60,3 +60,13 @@ Bahasa Indonesia is the primary copy; English is a switchable secondary. All use
 ## Error tracking
 
 `src/lib/sentry.ts` mirrors the POS app's PII posture (ARCHITECTURE.md ADR-010) — `sendDefaultPii: false`, cookies/headers stripped, and a `beforeSend`/`beforeBreadcrumb` scrubber masks Indonesian phone numbers, emails, Jl./Gg./No. addresses, and 12+ digit runs. Session replay is disabled. Set `VITE_SENTRY_DSN` at build time to enable reporting.
+
+## Preview deployments
+
+Every pull request against `main` produces a back-office preview at `https://pr-<N>.kassa-back-office.pages.dev` via [`cd-preview.yml`](../../.github/workflows/cd-preview.yml). The preview alias is **public on `*.pages.dev`** — Cloudflare Pages does not gate preview URLs behind authentication. This is acceptable for M0 because the back-office shell carries no tenant data until a merchant is onboarded, but it means:
+
+- **Do not share preview URLs externally** until the real auth lands. Reviewers and the team are the audience.
+- **Do not seed the preview DB with realistic data.** The PR's Neon branch is parented off `main`, which itself only carries seeded fixtures pre-pilot; treat anything in the preview as throwaway.
+- **Static assets, source code, and bundle behaviour are observable.** Anyone with the URL can read the JS bundle. No new secret material should be embedded in the build (the `VITE_*` channel is build-time-public by Vite's design).
+
+When the staff-only auth surface lands, this caveat retires: the preview will require a login the same way production does, and the public URL becomes a non-issue.
