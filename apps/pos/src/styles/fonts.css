@@ -1,11 +1,21 @@
 /* Self-hosted brand stack. Binaries live at apps/pos/public/fonts/. */
 
+/*
+ * `font-display: optional` (KASA-157): on cold loads where the woff2 doesn't
+ * arrive within the ~100 ms block period, the browser sticks with the system
+ * fallback and never swaps. That keeps the LCP-candidate text stable from
+ * FCP onward — `swap` was bumping the median LCP past the 2500 ms budget by
+ * forcing a re-layout when the 60 kB Plus Jakarta Sans variable font landed
+ * after first paint on simulated mobile. From the second visit onward the
+ * font is in HTTP cache and renders within the block window, so warm loads
+ * still get the brand voice.
+ */
 @font-face {
   font-family: "Plus Jakarta Sans";
   src: url("/fonts/plus-jakarta-sans-var.woff2") format("woff2-variations");
   font-weight: 400 800;
   font-style: normal;
-  font-display: swap;
+  font-display: optional;
 }
 
 @font-face {
@@ -13,5 +23,5 @@
   src: url("/fonts/jetbrains-mono-var.woff2") format("woff2-variations");
   font-weight: 400 700;
   font-style: normal;
-  font-display: swap;
+  font-display: optional;
 }
