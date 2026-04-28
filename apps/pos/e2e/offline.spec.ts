@@ -20,7 +20,24 @@ import { expect, test } from "@playwright/test";
 async function waitForServiceWorker(page: import("@playwright/test").Page) {
   await page.waitForFunction(async () => {
     const reg = await navigator.serviceWorker.getRegistration();
-    return Boolean(reg?.active) && navigator.serviceWorker.controller != null;
+    if (!reg?.active) return false;
+    if (navigator.serviceWorker.controller != null) return true;
+    // First navigation can predate `clientsClaim()` adopting this document.
+    // Wait one `controllerchange` tick (Workbox fires it at claim time)
+    // before asking again.
+    await new Promise<void>((resolve) => {
+      const onChange = () => {
+        navigator.serviceWorker.removeEventListener("controllerchange", onChange);
+        resolve();
+      };
+      navigator.serviceWorker.addEventListener("controllerchange", onChange, { once: true });
+      // Bail after a short timeout so `waitForFunction` can re-poll.
+      setTimeout(() => {
+        navigator.serviceWorker.removeEventListener("controllerchange", onChange);
+        resolve();
+      }, 200);
+    });
+    return navigator.serviceWorker.controller != null;
   });
 }
 
@@ -45,11 +62,27 @@ test.describe("Service worker offline shell", () => {
 
     // Single evaluate so the controlling worker can't transition to
     // `redundant` between fetching the registration and posting the
-    // message (KASA-158 root cause C). Using `controller` directly also
-    // sidesteps the `reg.active`-then-null race the previous two-step
-    // sequence was hitting.
-    const dispatched = await page.evaluate(() => {
-      const ctrl = navigator.serviceWorker.controller;
+    // message (KASA-158 root cause C). If `controller` is transiently
+    // null after a `controllerchange` we wait for the next one (with a
+    // short bail timeout) and re-read — `waitForServiceWorker` already
+    // proved one populated, so this only papers over a between-tasks
+    // null read, never an actual missing controller.
+    const dispatched = await page.evaluate(async () => {
+      let ctrl = navigator.serviceWorker.controller;
+      if (!ctrl) {
+        await new Promise<void>((resolve) => {
+          const onChange = () => {
+            navigator.serviceWorker.removeEventListener("controllerchange", onChange);
+            resolve();
+          };
+          navigator.serviceWorker.addEventListener("controllerchange", onChange, { once: true });
+          setTimeout(() => {
+            navigator.serviceWorker.removeEventListener("controllerchange", onChange);
+            resolve();
+          }, 500);
+        });
+        ctrl = navigator.serviceWorker.controller;
+      }
       if (!ctrl) return false;
       ctrl.postMessage({ type: "PING_FROM_TEST" });
       return true;
