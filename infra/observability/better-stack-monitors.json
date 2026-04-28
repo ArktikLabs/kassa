@@ -1,0 +1,102 @@
+{
+  "_comment": "Better Stack monitor definitions for the Kassa pilot. Owned by KASA-71; applied via scripts/observability-apply.sh. Schema mirrors the Better Stack v2 monitors API (https://betterstack.com/docs/uptime/api/monitors/). Names are idempotency keys — the apply script reconciles by `pronounceable_name`. Do not rename monitors without also renaming the matching Better Stack record (or you will create a duplicate).",
+  "monitors": [
+    {
+      "pronounceable_name": "kassa-api-prod-health",
+      "url": "https://kassa-api-prod.fly.dev/health",
+      "monitor_type": "expected_status_code",
+      "expected_status_codes": [200],
+      "check_frequency": 60,
+      "request_timeout": 10,
+      "confirmation_period": 0,
+      "regions": ["sgp", "sea"],
+      "verify_ssl": true,
+      "follow_redirects": true,
+      "remember_cookies": false,
+      "domain_expiration": 14,
+      "ssl_expiration": 14,
+      "policy_pronounceable_name": "kassa-pilot-oncall",
+      "_severity": "P0",
+      "_alert_after_failures": 2,
+      "_runbook_anchor": "rollback-matrix-row-1"
+    },
+    {
+      "pronounceable_name": "kassa-pos-prod-shell",
+      "url": "https://app.kassa.id/",
+      "_url_fallback_until_custom_domain_lands": "https://kassa-pos.pages.dev/",
+      "monitor_type": "keyword",
+      "required_keyword": "<title>Kassa POS</title>",
+      "expected_status_codes": [200],
+      "check_frequency": 60,
+      "request_timeout": 10,
+      "confirmation_period": 0,
+      "regions": ["sgp", "sea"],
+      "verify_ssl": true,
+      "follow_redirects": true,
+      "remember_cookies": false,
+      "policy_pronounceable_name": "kassa-pilot-oncall",
+      "_severity": "P0",
+      "_alert_after_failures": 2,
+      "_runbook_anchor": "rollback-matrix-row-3"
+    },
+    {
+      "pronounceable_name": "kassa-back-office-prod-shell",
+      "url": "https://kassa-back-office.pages.dev/",
+      "monitor_type": "keyword",
+      "required_keyword": "<title>Kassa Back Office</title>",
+      "expected_status_codes": [200],
+      "check_frequency": 60,
+      "request_timeout": 10,
+      "confirmation_period": 0,
+      "regions": ["sgp"],
+      "verify_ssl": true,
+      "follow_redirects": true,
+      "remember_cookies": false,
+      "policy_pronounceable_name": "kassa-pilot-oncall",
+      "_severity": "P1",
+      "_alert_after_failures": 2,
+      "_runbook_anchor": "rollback-matrix-row-4"
+    }
+  ],
+  "heartbeats": [
+    {
+      "pronounceable_name": "kassa-synthetic-sale-heartbeat",
+      "period": 900,
+      "grace": 300,
+      "policy_pronounceable_name": "kassa-pilot-oncall",
+      "_severity": "P0",
+      "_pinged_by": ".github/workflows/synthetic-sale.yml",
+      "_runbook_anchor": "section-4-synthetic-test-sale"
+    }
+  ],
+  "policies": [
+    {
+      "pronounceable_name": "kassa-pilot-oncall",
+      "_comment": "Pilot-week single-rotation policy. CEO confirmed routing on 2026-04-28: Slack #kassa-pilot-oncall as the primary destination, email alias oncall@kassa.id as the >15 min escalation, CTO email as the >30 min secondary escalation. The integration targets (`_slack_integration_target`, `_email_integration_target`, `_secondary_email_integration_target`) are local annotations; the actual Slack workspace + channel and email alias must be wired in the Better Stack dashboard once before the first apply (Integrations → Slack → install on Kassa workspace; Account → Email aliases → add oncall@kassa.id).",
+      "incident_token": null,
+      "steps": [
+        {
+          "step_number": 1,
+          "step_type": "escalation",
+          "wait_before": 0,
+          "_destination": "Slack #kassa-pilot-oncall",
+          "_slack_integration_target": "kassa-pilot-oncall"
+        },
+        {
+          "step_number": 2,
+          "step_type": "escalation",
+          "wait_before": 900,
+          "_destination": "Email alias oncall@kassa.id",
+          "_email_integration_target": "oncall@kassa.id"
+        },
+        {
+          "step_number": 3,
+          "step_type": "escalation",
+          "wait_before": 1800,
+          "_destination": "Secondary (CTO) user-email",
+          "_secondary_email_integration_target": "cto@kassa.id"
+        }
+      ]
+    }
+  ]
+}

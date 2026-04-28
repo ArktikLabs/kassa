@@ -1,0 +1,117 @@
+{
+  "_comment": "Sentry alert-rule definitions for the Kassa pilot. Owned by KASA-71; applied via scripts/observability-apply.sh. Schema is the Sentry v0 issue/metric alert-rule API (https://docs.sentry.io/api/alerts/). Names are idempotency keys — the apply script reconciles by `name` within `(organization, project)`. Do not rename rules without also renaming the Sentry record.",
+  "rules": [
+    {
+      "name": "api-sales-submit-error-rate",
+      "organization_slug": "${SENTRY_ORG}",
+      "project_slug": "${SENTRY_PROJECT_API}",
+      "kind": "metric",
+      "dataset": "transactions",
+      "query": "transaction:POST /v1/sales/submit event.type:transaction transaction.status:!ok",
+      "aggregate": "failure_rate()",
+      "time_window_minutes": 5,
+      "threshold_type": "above",
+      "trigger": {
+        "critical_threshold": 0.01,
+        "min_event_count_floor": 50
+      },
+      "environment": "production",
+      "_severity": "P0",
+      "_runbook_anchor": "section-3-3-sentry-alert-rules"
+    },
+    {
+      "name": "api-eod-close-error-rate",
+      "organization_slug": "${SENTRY_ORG}",
+      "project_slug": "${SENTRY_PROJECT_API}",
+      "kind": "metric",
+      "dataset": "transactions",
+      "query": "transaction:POST /v1/eod/close event.type:transaction transaction.status:!ok",
+      "aggregate": "failure_rate()",
+      "time_window_minutes": 5,
+      "threshold_type": "above",
+      "trigger": {
+        "critical_threshold": 0.01,
+        "min_event_count_floor": 10
+      },
+      "environment": "production",
+      "_severity": "P0",
+      "_runbook_anchor": "section-3-3-sentry-alert-rules"
+    },
+    {
+      "name": "api-unhandled-exception-spike",
+      "organization_slug": "${SENTRY_ORG}",
+      "project_slug": "${SENTRY_PROJECT_API}",
+      "kind": "issue",
+      "action_match": "any",
+      "filter_match": "all",
+      "frequency_minutes": 5,
+      "filters": [
+        { "id": "sentry.rules.filters.environment.EnvironmentFilter", "value": "production" },
+        {
+          "id": "sentry.rules.filters.event_count.EventFrequencyFilter",
+          "value": 5,
+          "interval": "5m"
+        }
+      ],
+      "conditions": [{ "id": "sentry.rules.conditions.first_seen_event.FirstSeenEventCondition" }],
+      "_severity": "P1",
+      "_runbook_anchor": "section-3-3-sentry-alert-rules"
+    },
+    {
+      "name": "pos-frontend-typeerror-spike",
+      "organization_slug": "${SENTRY_ORG}",
+      "project_slug": "${SENTRY_PROJECT_POS}",
+      "kind": "issue",
+      "action_match": "any",
+      "filter_match": "all",
+      "frequency_minutes": 5,
+      "filters": [
+        { "id": "sentry.rules.filters.environment.EnvironmentFilter", "value": "production" },
+        { "id": "sentry.rules.filters.issue_category.IssueCategoryFilter", "value": "error" },
+        {
+          "id": "sentry.rules.filters.event_count.EventFrequencyFilter",
+          "value": 10,
+          "interval": "5m"
+        }
+      ],
+      "conditions": [
+        {
+          "id": "sentry.rules.conditions.event_attribute.EventAttributeCondition",
+          "attribute": "exception.type",
+          "match": "co",
+          "value": "TypeError"
+        }
+      ],
+      "_severity": "P1",
+      "_runbook_anchor": "section-3-3-sentry-alert-rules"
+    },
+    {
+      "name": "back-office-frontend-typeerror-spike",
+      "organization_slug": "${SENTRY_ORG}",
+      "project_slug": "${SENTRY_PROJECT_BACK_OFFICE}",
+      "kind": "issue",
+      "action_match": "any",
+      "filter_match": "all",
+      "frequency_minutes": 5,
+      "filters": [
+        { "id": "sentry.rules.filters.environment.EnvironmentFilter", "value": "production" },
+        { "id": "sentry.rules.filters.issue_category.IssueCategoryFilter", "value": "error" },
+        {
+          "id": "sentry.rules.filters.event_count.EventFrequencyFilter",
+          "value": 5,
+          "interval": "5m"
+        }
+      ],
+      "conditions": [
+        {
+          "id": "sentry.rules.conditions.event_attribute.EventAttributeCondition",
+          "attribute": "exception.type",
+          "match": "co",
+          "value": "TypeError"
+        }
+      ],
+      "_severity": "P2",
+      "_runbook_anchor": "section-3-3-sentry-alert-rules"
+    }
+  ]
+}
