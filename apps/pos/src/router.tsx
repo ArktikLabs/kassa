@@ -7,6 +7,11 @@ import {
   redirect,
 } from "@tanstack/react-router";
 import { RootLayout } from "./routes/__root";
+import { CartScreen } from "./routes/cart";
+import { CatalogScreen } from "./routes/catalog";
+import { EnrolScreen } from "./routes/enrol";
+import { ReceiptScreen } from "./routes/receipt.$id";
+import { TenderCashScreen } from "./routes/tender.cash";
 import { hydrateEnrolment, isEnrolled } from "./lib/enrolment";
 
 async function guardEnrolled(): Promise<void> {
@@ -40,32 +45,41 @@ const indexRoute = createRoute({
   },
 });
 
+// `/enrol`, `/catalog`, `/cart`, `/tender/cash`, and `/receipt/$id` are the
+// offline happy path exercised by the KASA-68 acceptance gate. They stay
+// eagerly imported so a clerk can still ring up cash sales after the
+// device drops the network — Playwright's `setOffline(true)` (and a real
+// dropped connection on a flaky 4G link) blocks the dynamic-import fetch
+// even when the chunk is precached, and `lazyRouteComponent` falls back
+// to a hard reload that also fails offline. KASA-156 only needs the
+// rarely-used routes (admin, eod, tender/qris, tender/qris.static, help)
+// split out to fit the 200 kB initial-route budget.
 const enrolRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/enrol",
   beforeLoad: guardUnenrolled,
-  component: lazyRouteComponent(() => import("./routes/enrol"), "EnrolScreen"),
+  component: EnrolScreen,
 });
 
 const catalogRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/catalog",
   beforeLoad: guardEnrolled,
-  component: lazyRouteComponent(() => import("./routes/catalog"), "CatalogScreen"),
+  component: CatalogScreen,
 });
 
 const cartRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/cart",
   beforeLoad: guardEnrolled,
-  component: lazyRouteComponent(() => import("./routes/cart"), "CartScreen"),
+  component: CartScreen,
 });
 
 const tenderCashRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/tender/cash",
   beforeLoad: guardEnrolled,
-  component: lazyRouteComponent(() => import("./routes/tender.cash"), "TenderCashScreen"),
+  component: TenderCashScreen,
 });
 
 const tenderQrisRoute = createRoute({
@@ -89,7 +103,7 @@ const receiptRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/receipt/$id",
   beforeLoad: guardEnrolled,
-  component: lazyRouteComponent(() => import("./routes/receipt.$id"), "ReceiptScreen"),
+  component: ReceiptScreen,
 });
 
 const adminRoute = createRoute({
