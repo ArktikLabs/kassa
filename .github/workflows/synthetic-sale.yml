@@ -1,0 +1,103 @@
+name: Synthetic sale (production)
+
+# Pilot-week synthetic probe — KASA-71.
+#
+# Rings up a 1 IDR sale against the production API every 15 min and pings a
+# Better Stack heartbeat URL on success. A missed heartbeat (no ping in 15
+# min + 5 min grace, see infra/observability/better-stack-monitors.json)
+# pages on-call per docs/RUNBOOK-ONCALL.md §3.2.
+#
+# **Backend prerequisite (not yet landed).** The probe POSTs a sale with
+# `tenders[].method = "synthetic"`. The API-side `synthetic` tender that
+# excludes itself from EOD totals (while still writing a balancing ledger
+# entry) is tracked under a child Engineer issue. Until that lands, this
+# workflow stays gated by `SYNTHETIC_PROBE_ENABLED` so it does not page
+# on-call with `tender_method_invalid` 422s.
+#
+# Enablement (one-time, by ops):
+#   1. Engineer ships the `synthetic` tender backend (child issue).
+#   2. Provision in the GitHub `production-prod` environment:
+#        KASSA_SYNTHETIC_DEVICE_TOKEN  — a long-lived device token bound to a
+#                                        synthetic-only outlet on the pilot
+#                                        merchant; rotated quarterly.
+#        KASSA_SYNTHETIC_OUTLET_ID     — UUIDv7 of the synthetic outlet.
+#        KASSA_SYNTHETIC_ITEM_ID       — UUIDv7 of a 1 IDR catalog item that
+#                                        bypasses BOM expansion.
+#        BETTER_STACK_HEARTBEAT_URL    — the heartbeat URL Better Stack
+#                                        printed when the heartbeat record
+#                                        was created.
+#   3. Set repository variable SYNTHETIC_PROBE_ENABLED=true.
+# Until SYNTHETIC_PROBE_ENABLED is flipped, the workflow runs but every job
+# is a `::notice::` no-op — main stays green and the heartbeat stays paused
+# on the Better Stack side.
+
+on:
+  schedule:
+    # Every 15 min. GitHub Actions cron is best-effort and can drift several
+    # minutes under platform load — the Better Stack heartbeat grace window
+    # (300 s) absorbs the routine drift.
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+concurrency:
+  # Serialize probes — if a previous run is still in flight (rare, but
+  # possible during a slow API), let it finish rather than stack a second
+  # POST that would 409 on idempotency.
+  group: synthetic-sale-prod
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  preflight:
+    name: Preflight (enablement)
+    runs-on: ubuntu-latest
+    outputs:
+      ready: ${{ steps.gate.outputs.ready }}
+    steps:
+      - name: Check synthetic-probe enablement
+        id: gate
+        env:
+          SYNTHETIC_PROBE_ENABLED: ${{ vars.SYNTHETIC_PROBE_ENABLED }}
+        run: |
+          if [ "${SYNTHETIC_PROBE_ENABLED:-false}" != "true" ]; then
+            echo "::notice title=Synthetic probe disabled::Set repository variable SYNTHETIC_PROBE_ENABLED=true (and provision the production-prod environment secrets) to activate. See .github/workflows/synthetic-sale.yml header."
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  probe:
+    name: Ring up synthetic sale + heartbeat
+    needs: preflight
+    if: needs.preflight.outputs.ready == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment:
+      name: production-prod
+      url: https://kassa-api-prod.fly.dev
+    steps:
+      # Sparse-checkout pulls only scripts/ — the runner does not need the
+      # rest of the tree, and a narrow checkout shaves seconds off cold
+      # cron starts.
+      - name: Checkout (scripts only)
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          sparse-checkout: scripts
+          sparse-checkout-cone-mode: false
+
+      - name: Ring up synthetic sale
+        env:
+          KASSA_SYNTHETIC_DEVICE_TOKEN: ${{ secrets.KASSA_SYNTHETIC_DEVICE_TOKEN }}
+          KASSA_SYNTHETIC_OUTLET_ID:    ${{ secrets.KASSA_SYNTHETIC_OUTLET_ID }}
+          KASSA_SYNTHETIC_ITEM_ID:      ${{ secrets.KASSA_SYNTHETIC_ITEM_ID }}
+          BETTER_STACK_HEARTBEAT_URL:   ${{ secrets.BETTER_STACK_HEARTBEAT_URL }}
+        run: |
+          set -euo pipefail
+          bash scripts/synthetic-sale.sh \
+            --api-url https://kassa-api-prod.fly.dev \
+            --device-token "$KASSA_SYNTHETIC_DEVICE_TOKEN" \
+            --outlet-id "$KASSA_SYNTHETIC_OUTLET_ID" \
+            --item-id "$KASSA_SYNTHETIC_ITEM_ID" \
+            --heartbeat-url "$BETTER_STACK_HEARTBEAT_URL"

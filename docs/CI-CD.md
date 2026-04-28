@@ -711,3 +711,22 @@ Budgets are a contract with the user (Indonesian merchant on entry-level hardwar
 - Real-device verification on physical Android / iOS hardware — tracked in [KASA-131](/KASA/issues/KASA-131) (v1).
 - Real-user Web Vitals collection (RUM) — no Sentry/GA performance SDK changes here.
 - `apps/back-office` budget — owner-side app, separate SLO; revisit if back-office cold-start ever shows up as a complaint.
+
+---
+
+## 9. Pilot-week observability ([KASA-71](/KASA/issues/KASA-71))
+
+The on-call runbook lives at [`docs/RUNBOOK-ONCALL.md`](./RUNBOOK-ONCALL.md). This section documents only the CI/CD-touching pieces of the observability lane.
+
+| Concern                       | Where it lives                                                          |
+|:------------------------------|:------------------------------------------------------------------------|
+| Better Stack monitor configs  | [`infra/observability/better-stack-monitors.json`](../infra/observability/better-stack-monitors.json) |
+| Sentry alert rule configs     | [`infra/observability/sentry-alert-rules.json`](../infra/observability/sentry-alert-rules.json) |
+| Apply / dry-run script        | [`scripts/observability-apply.sh`](../scripts/observability-apply.sh) |
+| Synthetic test sale (every 15 min) | [`.github/workflows/synthetic-sale.yml`](../.github/workflows/synthetic-sale.yml) |
+| Synthetic-sale probe script   | [`scripts/synthetic-sale.sh`](../scripts/synthetic-sale.sh) |
+| Severity / rollback / escalation | [`docs/RUNBOOK-ONCALL.md`](./RUNBOOK-ONCALL.md) |
+
+Both the apply script and the synthetic-sale workflow follow the same enablement-gate pattern as `cd.yml` / `deploy-prod.yml` — they run unconditionally but no-op with a `::notice::` until the corresponding repository variable (`SYNTHETIC_PROBE_ENABLED`) and environment secrets land. This keeps `main` green during the pre-pilot provisioning window.
+
+The synthetic sale depends on a backend `synthetic` tender method (excludes itself from EOD totals while still writing a balancing ledger entry) that is not yet implemented. That work is tracked under a child Engineer issue; the workflow stays gated until it lands.
