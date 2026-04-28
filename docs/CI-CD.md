@@ -714,7 +714,7 @@ The two gates live in their own workflow, [`.github/workflows/perf-budgets.yml`]
 
 Trigger: `pull_request` (and `workflow_dispatch`). Not on push-to-main — Lighthouse runs are noisy and the per-PR signal is what we use to catch regressions before they land.
 
-Asserts (mobile preset, simulated slow-4G, median of 3 runs):
+Asserts (mobile form factor with simulated slow-4G throttling, median of 3 runs — `@lhci/cli` only ships `perf` / `experimental` / `desktop` presets, so we set `formFactor: "mobile"` + `throttlingMethod: "simulate"` directly instead of a `preset:` shortcut):
 
 | Metric / category            | Threshold | Why                                                                                          |
 |:-----------------------------|:----------|:---------------------------------------------------------------------------------------------|

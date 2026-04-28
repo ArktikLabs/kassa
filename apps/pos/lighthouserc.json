@@ -4,7 +4,8 @@
       "url": ["http://127.0.0.1:4173/"],
       "numberOfRuns": 3,
       "settings": {
-        "preset": "mobile",
+        "formFactor": "mobile",
+        "throttlingMethod": "simulate",
         "chromeFlags": "--no-sandbox --headless=new --disable-dev-shm-usage"
       }
     },
