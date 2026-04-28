@@ -7,11 +7,7 @@ import {
   redirect,
 } from "@tanstack/react-router";
 import { RootLayout } from "./routes/__root";
-import { CartScreen } from "./routes/cart";
-import { CatalogScreen } from "./routes/catalog";
 import { EnrolScreen } from "./routes/enrol";
-import { ReceiptScreen } from "./routes/receipt.$id";
-import { TenderCashScreen } from "./routes/tender.cash";
 import { hydrateEnrolment, isEnrolled } from "./lib/enrolment";
 
 async function guardEnrolled(): Promise<void> {
@@ -55,15 +51,15 @@ const indexRoute = createRoute({
   component: EnrolScreen,
 });
 
-// `/enrol`, `/catalog`, `/cart`, `/tender/cash`, and `/receipt/$id` are the
-// offline happy path exercised by the KASA-68 acceptance gate. They stay
-// eagerly imported so a clerk can still ring up cash sales after the
-// device drops the network — Playwright's `setOffline(true)` (and a real
-// dropped connection on a flaky 4G link) blocks the dynamic-import fetch
-// even when the chunk is precached, and `lazyRouteComponent` falls back
-// to a hard reload that also fails offline. KASA-156 only needs the
-// rarely-used routes (admin, eod, tender/qris, tender/qris.static, help)
-// split out to fit the 200 kB initial-route budget.
+// `/enrol` is rendered in-place at `/` for unenrolled devices (see indexRoute
+// above) and is the LCP target for the cold-load Lighthouse scenario, so its
+// component stays eagerly imported. The rest of the offline happy path
+// (`/catalog`, `/cart`, `/tender/cash`, `/receipt/$id`) is split into per-route
+// chunks. The Workbox `injectManifest` precache (apps/pos/vite.config.ts
+// `globPatterns`) emits every output chunk into the install-time cache, so the
+// dynamic import resolves from cache when the clerk navigates offline — the
+// KASA-68 acceptance flow exercises that path. KASA-157 needs these out of
+// the initial chunk to clear the LCP budget.
 const enrolRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/enrol",
@@ -75,21 +71,21 @@ const catalogRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/catalog",
   beforeLoad: guardEnrolled,
-  component: CatalogScreen,
+  component: lazyRouteComponent(() => import("./routes/catalog"), "CatalogScreen"),
 });
 
 const cartRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/cart",
   beforeLoad: guardEnrolled,
-  component: CartScreen,
+  component: lazyRouteComponent(() => import("./routes/cart"), "CartScreen"),
 });
 
 const tenderCashRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/tender/cash",
   beforeLoad: guardEnrolled,
-  component: TenderCashScreen,
+  component: lazyRouteComponent(() => import("./routes/tender.cash"), "TenderCashScreen"),
 });
 
 const tenderQrisRoute = createRoute({
@@ -113,7 +109,7 @@ const receiptRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/receipt/$id",
   beforeLoad: guardEnrolled,
-  component: ReceiptScreen,
+  component: lazyRouteComponent(() => import("./routes/receipt.$id"), "ReceiptScreen"),
 });
 
 const adminRoute = createRoute({

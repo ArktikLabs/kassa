@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { FormattedMessage, useIntl } from "react-intl";
@@ -9,8 +9,15 @@ import {
   subscribe,
   type EnrolmentSnapshot,
 } from "../lib/enrolment";
-import { isBarcodeDetectorSupported, QrScanner } from "../components/QrScanner";
+import { isBarcodeDetectorSupported } from "../components/QrScannerSupport";
 import { showToast } from "../components/Toast";
+
+// QrScanner pulls in `getUserMedia` glue and the BarcodeDetector wrapper.
+// Defer it from the initial enrol-screen chunk (KASA-157) — it only mounts
+// after the clerk taps "Scan QR".
+const QrScanner = lazy(() =>
+  import("../components/QrScanner").then((m) => ({ default: m.QrScanner })),
+);
 
 const CODE_ALPHABET_RE = /^[A-HJ-NP-Z2-9]{8}$/;
 const BOOT_STATE: EnrolmentSnapshot = { state: "loading" };
@@ -204,7 +211,9 @@ export function EnrolScreen() {
       </form>
 
       {scannerOpen ? (
-        <QrScanner onDetected={handleScanned} onClose={() => setScannerOpen(false)} />
+        <Suspense fallback={null}>
+          <QrScanner onDetected={handleScanned} onClose={() => setScannerOpen(false)} />
+        </Suspense>
       ) : null}
     </section>
   );

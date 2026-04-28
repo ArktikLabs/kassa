@@ -6,7 +6,7 @@ import { getDatabase } from "../../data/db/index.ts";
 import type { EodClosure } from "../../data/db/types.ts";
 import { apiBaseUrl } from "../../data/api/config.ts";
 import { getSnapshot } from "../../lib/enrolment.ts";
-import { useSyncActions } from "../../lib/sync-provider.tsx";
+import { useSyncActions } from "../../lib/sync-context.tsx";
 import {
   closeEod,
   EodAlreadyClosedError,
