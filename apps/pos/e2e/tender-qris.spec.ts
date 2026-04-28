@@ -24,8 +24,14 @@ async function seedEnrolledDevice(page: Page): Promise<void> {
 }
 
 async function addItemAndOpenQris(page: Page): Promise<void> {
+  // Cart state lives in zustand (in-memory), so a hard `page.goto`
+  // resets it and the QRIS submit button stays disabled with
+  // "Keranjang kosong". Reach the QRIS route through the SPA — bottom
+  // nav → "Tunai" → in-page "Bayar QRIS" switcher — so the cart line
+  // survives the route transitions.
   await page.getByTestId(`catalog-tile-${ITEM_ID}`).click();
-  await page.goto("/tender/qris");
+  await page.getByRole("link", { name: /Tunai/ }).click();
+  await page.getByTestId("tender-cash-switch-qris").click();
   await expect(page.getByTestId("tender-qris")).toBeVisible();
 }
 
