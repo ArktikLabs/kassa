@@ -2,6 +2,7 @@ import type { PaymentProvider, SettlementReportFilter } from "@kassa/payments";
 import { Redis, type RedisOptions } from "ioredis";
 
 import { loadEnv } from "../config.js";
+import { initSentry, Sentry } from "../lib/sentry.js";
 import {
   InMemoryReconciliationRepository,
   ReconciliationService,
@@ -108,12 +109,28 @@ async function startBullMqWorker(redisUrl: string): Promise<RunningWorker> {
   });
   queue.worker.on("error", (err) => {
     emit("error", "bullmq worker error", { err: String(err) });
+    // Tag every captured event with the queue so Sentry can group worker
+    // errors by source even when the worker process group expands beyond
+    // reconciliation. captureException is a no-op when Sentry is not
+    // initialised (no DSN), so the worker still runs cleanly in dev / CI.
+    Sentry.captureException(err, {
+      tags: { component: "bullmq", queue: queue.queue.name, kind: "worker_error" },
+    });
   });
   queue.worker.on("failed", (job, err) => {
     emit("error", "bullmq job failed", {
       jobId: job?.id,
       name: job?.name,
       err: String(err),
+    });
+    Sentry.captureException(err, {
+      tags: {
+        component: "bullmq",
+        queue: queue.queue.name,
+        kind: "job_failed",
+        ...(job?.name ? { jobName: job.name } : {}),
+      },
+      ...(job?.id ? { extra: { jobId: job.id } } : {}),
     });
   });
 
@@ -154,6 +171,10 @@ function startIdleStub(): RunningWorker {
 }
 
 async function main(): Promise<void> {
+  // Init Sentry before loadEnv() so a config-validation throw is captured.
+  // No-op when SENTRY_DSN is unset.
+  initSentry();
+
   const env = loadEnv();
 
   const running = env.REDIS_URL ? await startBullMqWorker(env.REDIS_URL) : startIdleStub();
@@ -184,5 +205,6 @@ async function main(): Promise<void> {
 
 main().catch((err) => {
   emit("error", "worker fatal", { err: String(err) });
+  Sentry.captureException(err, { tags: { component: "worker", kind: "fatal" } });
   process.exit(1);
 });

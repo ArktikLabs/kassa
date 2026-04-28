@@ -59,6 +59,7 @@
     "@fastify/swagger-ui": "^5.2.6",
     "@kassa/payments": "workspace:*",
     "@kassa/schemas": "workspace:*",
+    "@sentry/node": "^8.50.0",
     "argon2": "^0.41.1",
     "bullmq": "^5.76.2",
     "drizzle-orm": "^0.45.2",

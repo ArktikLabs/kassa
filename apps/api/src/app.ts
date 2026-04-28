@@ -1,3 +1,4 @@
+import * as Sentry from "@sentry/node";
 import Fastify, {
   type FastifyError,
   type FastifyInstance,
@@ -115,6 +116,12 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   app.decorate("events", options.events ?? createDomainEventBus());
   app.decorate("webhookDedupe", options.webhookDedupe ?? createInMemoryDedupeStore());
   app.decorate("midtransProvider", options.midtransProvider ?? null);
+
+  // Wire Sentry's Fastify hooks so unhandled errors in route handlers reach
+  // Sentry tagged with the release set in initSentry(). No-op when Sentry is
+  // not configured (the SDK only attaches hooks when a client is initialised),
+  // so buildApp() still boots cleanly in dev / CI without a DSN.
+  Sentry.setupFastifyErrorHandler(app);
 
   // Wire fastify-type-provider-zod so route schemas authored as Zod are
   // both runtime-validated AND emitted to OpenAPI from the same definition.

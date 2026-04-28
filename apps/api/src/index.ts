@@ -2,6 +2,7 @@ import { createMidtransProvider, type PaymentProvider } from "@kassa/payments";
 import { buildApp } from "./app.js";
 import { loadEnv } from "./config.js";
 import { createDatabase, type DatabaseHandle } from "./db/client.js";
+import { initSentry } from "./lib/sentry.js";
 import { EnrolmentService, InMemoryEnrolmentRepository } from "./services/enrolment/index.js";
 import {
   InMemoryItemsRepository,
@@ -11,6 +12,10 @@ import {
 } from "./services/catalog/index.js";
 
 async function main(): Promise<void> {
+  // Sentry runs before buildApp() so the Fastify error handler picks up the
+  // initialised client. No-op when SENTRY_DSN is unset (dev / CI).
+  initSentry();
+
   const env = loadEnv();
 
   // Repository binding lands in KASA-21 (Postgres + Drizzle migrations); until
