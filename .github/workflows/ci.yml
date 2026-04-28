@@ -68,7 +68,18 @@ jobs:
         run: pnpm lint --reporter=github
 
       # Build before typecheck: workspace packages export types only from dist/.
+      #
+      # VITE_SENTRY_ENVIRONMENT (KASA-150) is baked into the POS + Back Office
+      # bundles here because cd.yml re-uses these artifacts byte-identically
+      # rather than rebuilding on the deploy runner. push-to-main artifacts
+      # are what cd.yml ships to Cloudflare Pages production, so they tag
+      # `production`; PR builds (consumed by KASA-108 preview-per-PR once it
+      # lands, and useful for reviewers inspecting compiled output) tag
+      # `staging`. The Vite source falls back to import.meta.env.MODE when
+      # this var is unset (dev/test).
       - name: Build workspace
+        env:
+          VITE_SENTRY_ENVIRONMENT: ${{ (github.event_name == 'push' && github.ref == 'refs/heads/main') && 'production' || 'staging' }}
         run: pnpm -r build
 
       - name: Typecheck

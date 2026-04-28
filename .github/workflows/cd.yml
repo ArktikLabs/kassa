@@ -15,6 +15,11 @@ name: CD
 #   - `workflow_run`: when CI finishes successfully on main, consume the CI run's
 #     `pos-dist` / `back-office-dist` / `api-dist` artifacts and deploy. No rebuild
 #     on the deploy runner — same byte-identical outputs that CI verified.
+#     Build-time env that must differ between prod and preview (notably
+#     `VITE_SENTRY_ENVIRONMENT`, KASA-150) is therefore set in ci.yml's build
+#     step gated on `push-to-main`, NOT here. The artifact this job downloads
+#     was built with `VITE_SENTRY_ENVIRONMENT=production` baked into the
+#     bundle.
 #   - `workflow_dispatch`: redeploy the artifacts from a prior CI run by id. This
 #     is the in-repo rollback path (Cloudflare Pages dashboard and `fly releases`
 #     are the provider-side rollback paths).

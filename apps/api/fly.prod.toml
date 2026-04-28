@@ -66,6 +66,10 @@ primary_region = "sin"
   HOST = "0.0.0.0"
   PORT = "8080"
   LOG_LEVEL = "info"
+  # Sentry environment tag (KASA-150). Read by `@sentry/node` once the
+  # runtime init lands (KASA-7c59dfe5); until then this is a stub that
+  # documents the contract. Sibling staging value lives in fly.toml.
+  SENTRY_ENVIRONMENT = "production"
 
 [http_service]
   internal_port = 8080

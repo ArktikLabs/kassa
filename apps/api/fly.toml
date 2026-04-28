@@ -42,6 +42,12 @@ primary_region = "sin"
   HOST = "0.0.0.0"
   PORT = "8080"
   LOG_LEVEL = "info"
+  # Sentry environment tag (KASA-150). Read by `@sentry/node` once the
+  # runtime init lands (KASA-7c59dfe5); until then this is a stub that
+  # documents the contract. NODE_ENV stays `production` because Fastify,
+  # pino, and the pg client all gate prod-only behaviour on it — they
+  # must not see `staging` and switch to dev defaults.
+  SENTRY_ENVIRONMENT = "staging"
 
 # HTTP fronting only the web process. Worker is background and has no HTTP.
 [http_service]

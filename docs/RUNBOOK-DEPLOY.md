@@ -25,6 +25,18 @@ For the day-in / day-out CI + staging pipeline see [CI-CD.md](./CI-CD.md). This 
 - **Static surfaces (POS + Back Office)** auto-deploy to Cloudflare Pages production on every successful CI run on `main` (`.github/workflows/cd.yml`). Sentry release + source maps are uploaded as part of the same job.
 - **API** is **manual-only** via `.github/workflows/deploy-prod.yml`. The operator picks an exact CI run id; the workflow re-verifies the run is on `main`, succeeded, and had a green `acceptance-full-day-offline` job; the GitHub `production-prod` environment then waits for required-reviewer approval (CEO + CTO) before the deploy job runs.
 
+**Sentry separation.** Production and staging events live in the same Sentry project per surface but are split by **two** tags so on-call alert rules and release-health dashboards can scope to one tier (KASA-150):
+
+| Surface         | Release tag (sha-pinned)        | Environment tag                 | Set by                                                     |
+|:----------------|:--------------------------------|:--------------------------------|:-----------------------------------------------------------|
+| POS PWA         | `kassa-pos@<sha12>`             | `production` / `staging`        | `VITE_SENTRY_ENVIRONMENT` baked at CI build time           |
+| Back Office SPA | `kassa-back-office@<sha12>`     | `production` / `staging`        | `VITE_SENTRY_ENVIRONMENT` baked at CI build time           |
+| API             | `kassa-api@<sha12>`             | `production` / `staging`        | `SENTRY_ENVIRONMENT` from `apps/api/fly{,.prod}.toml [env]` |
+
+The release ID alone is not enough to distinguish tiers — preview/staging deploys can replay the exact same SHA that prod ships, and `import.meta.env.MODE` is `production` for any `vite build` regardless of where it lands. CI's build step (`.github/workflows/ci.yml`) sets `VITE_SENTRY_ENVIRONMENT=production` on push-to-main and `staging` otherwise; cd.yml re-uses the artifact byte-identically rather than rebuilding, so the tag travels with the bundle. The API tag lives in the fly toml `[env]` block of each app and will be picked up once the `@sentry/node` runtime init lands (gated on KASA-7c59dfe5).
+
+When writing a Sentry alert rule that should only page on production, filter on **both** the project AND `environment:production`; the release tag alone matches every replay.
+
 ---
 
 ## 2. First-time provisioning checklist
