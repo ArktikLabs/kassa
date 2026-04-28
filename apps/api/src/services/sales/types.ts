@@ -74,7 +74,18 @@ export interface SaleLine {
   lineTotalIdr: number;
 }
 
-export type SaleTenderMethod = "cash" | "qris" | "qris_static" | "card" | "other";
+export type SaleTenderMethod =
+  | "cash"
+  | "qris"
+  | "qris_static"
+  | "card"
+  | "other"
+  /**
+   * KASA-151 — reserved for the KASA-71 production uptime probe. Sales paid
+   * with `synthetic` are flagged on the row and auto-reconciled at EOD; the
+   * POS UI must never emit this method.
+   */
+  | "synthetic";
 
 export interface SaleTender {
   method: SaleTenderMethod;
@@ -132,6 +143,14 @@ export interface Sale {
   voidReason: string | null;
   /** Booked refunds, ordered by `refundedAt` ascending. */
   refunds: readonly SaleRefund[];
+  /**
+   * KASA-151 — `true` when the sale was paid with the `synthetic` tender
+   * (KASA-71 production uptime probe). EOD close excludes synthetic rows
+   * from breakdown / expected-cash / variance and writes balancing
+   * `synthetic_eod_reconcile` ledger entries so per-item stock nets to
+   * zero. Default `false` for every merchant-facing sale.
+   */
+  synthetic: boolean;
 }
 
 export interface SubmitSaleInput {

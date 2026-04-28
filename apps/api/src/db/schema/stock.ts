@@ -12,6 +12,11 @@ export const stockLedgerReasonValues = [
   "transfer_in",
   "transfer_out",
   "reconcile",
+  // KASA-151 — balancing rows the EOD close writes for synthetic-tender
+  // sales (the KASA-71 production probe). Mirrors the original sale's
+  // negative deltas with positive ones so per-item stock nets to zero
+  // automatically; the merchant never sees synthetic transactions.
+  "synthetic_eod_reconcile",
 ] as const;
 export type StockLedgerReason = (typeof stockLedgerReasonValues)[number];
 

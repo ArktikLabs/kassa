@@ -155,7 +155,15 @@ export type SaleSubmitItem = z.infer<typeof saleSubmitItem>;
 
 export const saleSubmitTender = z
   .object({
-    method: z.enum(["cash", "qris", "qris_static", "card", "other"]),
+    /**
+     * Wire-level tender method. `synthetic` is reserved for the KASA-71
+     * production probe (15-minute uptime canary against `/v1/sales/submit`)
+     * and MUST NOT be exposed in the POS UI: synthetic sales are flagged on
+     * the row and auto-reconciled at EOD so the merchant never sees them
+     * in revenue or stock reports. Real merchant tenders are
+     * `cash | qris | qris_static | card | other`.
+     */
+    method: z.enum(["cash", "qris", "qris_static", "card", "other", "synthetic"]),
     amountIdr: rupiahAmount,
     reference: z.string().nullable(),
     /**
@@ -227,6 +235,10 @@ export const stockLedgerReason = z.enum([
   "transfer_in",
   "transfer_out",
   "reconcile",
+  // KASA-151 — balancing rows the EOD close writes for synthetic-tender
+  // sales (the KASA-71 production probe). Mirrors the original sale's
+  // negative deltas with positive ones so per-item stock nets to zero.
+  "synthetic_eod_reconcile",
 ]);
 export type StockLedgerReason = z.infer<typeof stockLedgerReason>;
 

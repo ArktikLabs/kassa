@@ -55,6 +55,15 @@ export const sales = pgTable(
     discountIdr: rupiah("discount_idr").notNull().default(0),
     totalIdr: rupiah("total_idr").notNull(),
     voidedAt: timestamp("voided_at", { withTimezone: true }),
+    /**
+     * KASA-151 — set when the row originated from the KASA-71 production
+     * uptime probe (see `synthetic` tender method). EOD close excludes
+     * `synthetic = true` rows from breakdown / expected-cash / variance and
+     * writes balancing `synthetic_eod_reconcile` ledger entries so per-item
+     * stock nets to zero. Default `false` — every existing and merchant-
+     * facing sale is non-synthetic.
+     */
+    synthetic: boolean("synthetic").notNull().default(false),
     createdAt: createdAtCol(),
     updatedAt: updatedAtCol(),
   },

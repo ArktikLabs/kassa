@@ -132,7 +132,8 @@ export function salesRoutes(deps: SalesRouteDeps) {
             if (
               err.code === "item_inactive" ||
               err.code === "outlet_merchant_mismatch" ||
-              err.code === "pricing_mismatch"
+              err.code === "pricing_mismatch" ||
+              err.code === "synthetic_tender_mixed"
             ) {
               sendError(reply, 422, err.code, err.message, err.details);
               return reply;

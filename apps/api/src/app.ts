@@ -31,6 +31,7 @@ import {
 import {
   EodService,
   InMemoryEodRepository,
+  SalesRepositoryEodSyntheticReconciler,
   SalesRepositorySalesReader,
 } from "./services/eod/index.js";
 import { InMemoryOutletsRepository, OutletsService } from "./services/outlets/index.js";
@@ -186,6 +187,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     service: new EodService({
       salesReader: new SalesRepositorySalesReader(salesRepository),
       eodRepository: new InMemoryEodRepository(),
+      syntheticReconciler: new SalesRepositoryEodSyntheticReconciler(salesRepository),
     }),
   };
   const resolveEodMerchantId = eod.resolveMerchantId ?? (() => BOOTSTRAP_MERCHANT_ID);
