@@ -193,15 +193,15 @@ The full-day offline acceptance suite (`apps/pos/e2e/full-day-offline.spec.ts`) 
 
 ## 3. CD workflow (`cd.yml`)
 
-v0 CD is **live for three surfaces**: the POS PWA and Back Office SPA ship to Cloudflare Pages production, and the API ships to the `kassa-api-staging` Fly.io app, on every successful CI run against `main`. Preview-per-PR environments and the production promotion gate for the API are tracked as follow-ups (see §6).
+v0 CD is **live for all four target environments**: the POS PWA and Back Office SPA ship to Cloudflare Pages production, the API ships to `kassa-api-staging` on Fly.io on every successful CI run against `main`, every PR gets its own Cloudflare Pages preview aliases plus a Fly staging redeploy against an ephemeral Neon branch, and the API ships to `kassa-api-prod` via a manually-gated promotion. The four workflows are siblings: [`cd.yml`](../.github/workflows/cd.yml) (auto on green main), [`cd-preview.yml`](../.github/workflows/cd-preview.yml) (per-PR previews), [`deploy-prod.yml`](../.github/workflows/deploy-prod.yml) (manual API prod gate), and [`backup-prod.yml`](../.github/workflows/backup-prod.yml) (nightly Neon → S3 backup).
 
-The workflow file is [`cd.yml`](../.github/workflows/cd.yml).
+The main-deploy workflow file is [`cd.yml`](../.github/workflows/cd.yml).
 
 ### 3.1 Target shape vs. v0 status
 
 | Environment | Target                                    | Trigger                                  | v0 status |
 |:------------|:------------------------------------------|:-----------------------------------------|:----------|
-| Preview     | Cloudflare Pages (PWA), Fly.io staging app (API), Neon branch DB | PR opened/updated            | Deferred ([KASA-108](/KASA/issues/KASA-108)) |
+| Preview     | Cloudflare Pages (PWA), Fly.io staging app (API), Neon branch DB | PR opened/updated/closed | **Live** ([KASA-108](/KASA/issues/KASA-108), this section §3.13) |
 | Staging — API       | Fly.io `kassa-api-staging` (`sin`)         | Successful CI run on `main`              | **Live** ([KASA-107](/KASA/issues/KASA-107), this section §3.7) |
 | Production — static | Cloudflare Pages (`kassa-pos`, `kassa-back-office`) | Successful CI run on `main`       | **Live** ([KASA-18](/KASA/issues/KASA-18), this section §3.2–§3.6) |
 | Production — API    | Fly.io `kassa-api-prod` + Neon production branch | Manual promotion via `deploy-prod.yml` (CEO/CTO required reviewer) | **Live** ([KASA-70](/KASA/issues/KASA-70), this section §3.11; runbook at [RUNBOOK-DEPLOY.md](./RUNBOOK-DEPLOY.md)) |
@@ -363,7 +363,10 @@ The SHA is the first 12 chars of `github.sha` for `cd.yml` (the CI run's head SH
 | `CLOUDFLARE_ACCOUNT_ID`      | Env: `production` (secret) | Cloudflare account scoping                      | Required for current CD |
 | `FLY_API_TOKEN`              | Env: `production` (secret) | `flyctl deploy` auth for `kassa-api-staging`    | Required for current CD |
 | `DEPLOY_ENABLED`             | Repo (variable)            | Master switch — `true` turns on deploy jobs     | Required for current CD |
-| `NEON_API_KEY`               | Env: `preview` (secret)    | Ephemeral Neon branch per PR                    | Deferred (KASA-108)      |
+| `NEON_API_KEY`               | Env: `preview` (secret)    | Ephemeral Neon branch per PR                    | Required for preview CD ([KASA-108](/KASA/issues/KASA-108)) |
+| `STAGING_NEON_URL`           | Env: `preview` (secret)    | Persistent staging Neon connection — fallback when PR-branch creation fails AND restore target on PR close | Required for preview CD ([KASA-108](/KASA/issues/KASA-108)) |
+| `NEON_PROJECT_ID`            | Repo (variable)            | Kassa Neon project id used by `neonctl` calls   | Required for preview CD ([KASA-108](/KASA/issues/KASA-108)) |
+| `PREVIEW_DEPLOY_ENABLED`     | Repo (variable)            | Master switch — `true` turns on preview deploys | Required for preview CD ([KASA-108](/KASA/issues/KASA-108)) |
 | `SENTRY_AUTH_TOKEN`          | Env: `production` + `production-prod` (secret) | Source map uploads on every prod deploy (POS, Back Office, API) | Required for current CD ([KASA-70](/KASA/issues/KASA-70)) |
 | `SENTRY_ORG`                 | Repo (variable)            | Sentry org slug used by all release uploads     | Required for current CD ([KASA-70](/KASA/issues/KASA-70)) |
 | `SENTRY_PROJECT_POS`         | Repo (variable)            | Sentry project slug for POS PWA releases        | Required for current CD ([KASA-70](/KASA/issues/KASA-70)) |
@@ -593,6 +596,55 @@ The `production-prod` environment also gates the deploy workflow, so the same ap
 
 **Provisioning checklist (S3 bucket + IAM role + Neon read-only role + GH secrets/vars)** lives in [RUNBOOK-DEPLOY.md §2 step 3](./RUNBOOK-DEPLOY.md). Restore path also lives in the runbook.
 
+### 3.13 Preview-per-PR environments ([KASA-108](/KASA/issues/KASA-108))
+
+Every pull request against `main` gets its own previewable surfaces and an ephemeral database, torn down on PR close. The workflow file is [`cd-preview.yml`](../.github/workflows/cd-preview.yml).
+
+**Trigger.** `pull_request` against `main`, types `[opened, synchronize, reopened, closed]`. PRs from forks are skipped at preflight (forks do not receive secrets). Disabled until the repo variable `PREVIEW_DEPLOY_ENABLED=true` is set — same enablement shape as `cd.yml` / `deploy-prod.yml`.
+
+**What gets provisioned per PR**:
+
+| Surface     | URL                                                              | Mechanism                                                                                  |
+|:------------|:-----------------------------------------------------------------|:-------------------------------------------------------------------------------------------|
+| POS PWA     | `https://pr-<N>.kassa-pos.pages.dev`                             | `wrangler pages deploy --branch=pr-<N>` against the existing `kassa-pos` Pages project.    |
+| Back Office | `https://pr-<N>.kassa-back-office.pages.dev`                     | `wrangler pages deploy --branch=pr-<N>` against the existing `kassa-back-office` project.  |
+| API         | `https://kassa-api-staging.fly.dev` (shared)                     | `flyctl deploy` redeploys the existing `kassa-api-staging` app with the PR's image.        |
+| Database    | Neon branch `pr-<N>` (parent: `main`)                            | `neonctl branches create --parent main`. Deleted on PR close.                              |
+
+**Workflow shape** (open / sync / reopen path):
+
+1. `preflight` — gates on `PREVIEW_DEPLOY_ENABLED`, fork status, computes `pr_number` / `branch_alias` / `commit_sha`.
+2. `build` — installs the workspace and runs `pnpm -r build`. Uploads `apps/pos/dist`, `apps/back-office/dist`, and a tarred API build context as artifacts. `GITHUB_SHA` is overridden to the PR head SHA so the Vite-injected `VITE_RELEASE` matches the deploy's image label.
+3. `neon-branch` (parallel with `build`) — `neonctl branches create --name=pr-<N> --parent=main` (idempotent — list first, create only if absent), then fetches the pooled connection string for the PR's Postgres role. `continue-on-error: true` so a Neon-side failure (rate limit, quota) doesn't fail the workflow; the resolved fallback path is below.
+4. `deploy-pos-preview` / `deploy-back-office-preview` — `wrangler pages deploy dist --project-name=kassa-{pos,back-office} --branch=pr-<N> --commit-hash=<sha>`.
+5. `deploy-api-preview` — stages `DATABASE_URL` (PR Neon branch URL if present, else `STAGING_NEON_URL`) on `kassa-api-staging` via `flyctl secrets set --stage`, then `flyctl deploy --image-label=preview-pr-<N>-<sha12> --env KASSA_API_VERSION=preview-pr-<N>-<sha12>`. Job-level `concurrency: cd-preview-fly-staging` (cancel-in-progress: false) serializes Fly redeploys across PRs so two simultaneous pushes can't race the rolling deploy.
+6. `pr-comment` (with `if: always()`) — upserts a sticky PR comment marked `<!-- kassa-preview-deploy -->` listing the three URLs, the Neon branch, the commit short SHA, and a per-surface deploy status. Subsequent pushes update the same comment in place.
+
+**Workflow shape** (closed path):
+
+1. `teardown-neon` — list-then-delete `neonctl branches delete pr-<N>`. `continue-on-error: true` so a stale branch (already deleted) doesn't fail PR close.
+2. `teardown-fly` — `flyctl secrets set DATABASE_URL=$STAGING_NEON_URL --detach` on `kassa-api-staging`, which restores the persistent staging connection string. Same `cd-preview-fly-staging` concurrency group as `deploy-api-preview` to avoid racing an in-flight rollout.
+3. `pr-comment-teardown` — replaces the sticky comment body with a teardown summary.
+
+**Trade-offs intentionally accepted at v0**:
+
+- **Single shared `kassa-api-staging` app.** Two PRs open at once means whichever PR pushed last "owns" which Neon branch the staging API reads from. The Pages preview URLs remain isolated per-PR, but the API URL is shared — reviewers must know that "API behaviour" reflects the most recent push across all open PRs. The acceptance criteria explicitly defers the per-PR Fly app design ("If cost becomes material, switch to one staging app per PR with auto-stop; revisit in a follow-up").
+- **Closed-PR Fly state.** On PR close, `DATABASE_URL` is restored to `STAGING_NEON_URL`, but the running image is whatever the last preview deploy shipped. The next merge to `main` triggers `cd.yml`'s `deploy-api-staging`, which redeploys the main bytes against the restored DB. We accept the brief window between close and next-main-merge where the staging app runs PR code against the staging DB.
+- **Pages preview retention.** `pr-<N>.kassa-{pos,back-office}.pages.dev` aliases auto-expire on Cloudflare's Pages retention schedule; the workflow does not actively delete them on PR close. They are never linked from the production deployment list once the PR closes.
+- **Public preview URLs.** Cloudflare Pages preview aliases under `pages.dev` are publicly accessible by default. The POS preview is fine to share (no tenant data in the shell). The Back Office is staff-only, so reviewers must not share its preview URL externally until the real auth lands; this is documented in [`apps/back-office/README.md`](../apps/back-office/README.md).
+- **Neon-creation fallback.** If `neonctl branches create` fails (rate limit, API key revoked, project misconfigured), the API deploy proceeds against `STAGING_NEON_URL` and the sticky comment surfaces a `⚠ Preview API is using the staging Neon branch` warning. The deploy never silently runs against production data because (a) `STAGING_NEON_URL` is the staging branch, not production, and (b) any usage outside that branch is loud.
+
+**Enablement (one-time, by the board / ops)**: covered in the workflow header. Summary:
+
+1. Reuse the existing `kassa-pos` and `kassa-back-office` Cloudflare Pages projects from KASA-18 — preview aliases use the same projects under `--branch=pr-<N>`. No additional Cloudflare provisioning is needed.
+2. Create a Neon API key with **Branch Admin** scope on the Kassa Neon project. Capture the Neon project id.
+3. In the GitHub `preview` environment (Settings → Environments → preview), provision the secrets listed in §3.6: `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, `FLY_API_TOKEN`, `NEON_API_KEY`, `STAGING_NEON_URL`. The first three are reuses of the `production` environment's secrets; the last two are net-new.
+4. Set repository variables `NEON_PROJECT_ID=<project-id>` and `PREVIEW_DEPLOY_ENABLED=true`.
+
+Until `PREVIEW_DEPLOY_ENABLED` is flipped, every PR's `cd-preview.yml` run emits a notice and skips all jobs — `main` stays green, the workflow stays reviewable.
+
+**Rollback**: there is no rollback for a preview deploy. A red preview is fixed forward by another push to the same PR (which retriggers the workflow), or by closing the PR (which tears the preview down). Production is unaffected by preview activity — `cd.yml` and `deploy-prod.yml` are entirely independent code paths.
+
 ---
 
 ## 4. Pipeline health (v0 baselines)
@@ -633,7 +685,7 @@ These are out of scope for the initial CI + static-surface CD setup but are **pr
 3. ~~**Production CD for static surfaces**~~ — landed via [KASA-18](/KASA/issues/KASA-18) (this section).
 4. ~~**API → Fly.io staging deploy**~~ — landed via [KASA-107](/KASA/issues/KASA-107) (this section §3.7–§3.8).
 5. ~~**API → Fly.io production deploy**~~ — landed via [KASA-70](/KASA/issues/KASA-70) (this section §3.11; runbook at [RUNBOOK-DEPLOY.md](./RUNBOOK-DEPLOY.md)). Production Fly app, Neon production branch, Sentry release tagging, manual promotion gate, Midtrans prod keys (provisioned out-of-band per RUNBOOK-DEPLOY.md §1).
-6. **Preview-per-PR environments** — tracked in [KASA-108](/KASA/issues/KASA-108) (M0, unblocked by KASA-107). Cloudflare Pages preview deploys for both static surfaces, Fly.io staging redeploy for the API, Neon branch DB per PR, teardown on PR close.
+6. ~~**Preview-per-PR environments**~~ — landed via [KASA-108](/KASA/issues/KASA-108) (`cd-preview.yml`, this section §3.13). Cloudflare Pages preview deploys for both static surfaces, Fly.io staging redeploy for the API, Neon branch DB per PR, sticky PR comment, teardown on PR close.
 7. ~~**Worker queue broker + real workers**~~ — broker provisioning + BullMQ bootstrap landed via [KASA-111](/KASA/issues/KASA-111) (this section §3.10). The first real consumer (nightly reconciliation) is tracked in [KASA-120](/KASA/issues/KASA-120); subsequent per-feature consumers fan out from there.
 8. ~~**Production promotion gate**~~ — landed via [KASA-70](/KASA/issues/KASA-70) (`deploy-prod.yml`, §3.11): `workflow_dispatch` with environment protection rules (CEO + CTO required reviewers) on the `production-prod` env, gated on a green KASA-68 acceptance run.
 9. ~~**Playwright E2E workflow**~~ — landed via [KASA-139](/KASA/issues/KASA-139) (`e2e.yml`, §2.5). Branch-protection wiring to make the job a required check on `main` is a follow-up Repo Admin step.

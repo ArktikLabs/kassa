@@ -1,0 +1,640 @@
+name: CD Preview (per-PR)
+
+# Per-pull-request preview environments — KASA-108.
+#
+# Sibling of cd.yml (production) and deploy-prod.yml (production API). This
+# workflow gives every PR three previewable surfaces and one ephemeral DB:
+#
+#   - POS PWA           → Cloudflare Pages branch alias `pr-<N>`     → https://pr-<N>.kassa-pos.pages.dev
+#   - Back Office SPA   → Cloudflare Pages branch alias `pr-<N>`     → https://pr-<N>.kassa-back-office.pages.dev
+#   - API               → kassa-api-staging Fly app, redeployed      → https://kassa-api-staging.fly.dev
+#                         with DATABASE_URL pointed at the PR's
+#                         Neon branch
+#   - Database          → Neon ephemeral branch `pr-<N>` (parent: main)
+#
+# Trigger model:
+#   - `pull_request` against `main`, types: opened | synchronize | reopened | closed.
+#     Open / sync / reopen → provision Neon, rebuild + deploy three surfaces, sticky comment.
+#     Closed (merged or not)  → teardown: delete Neon branch, restore staging DATABASE_URL,
+#                              update sticky comment.
+#
+# Trade-offs intentionally accepted at v0 (see docs/CI-CD.md §3.13):
+#   - Single shared `kassa-api-staging` app: redeploys are serialized across PRs (job-level
+#     concurrency below), but the LAST PR push wins on which Neon branch staging is reading.
+#     That "noisy neighbour" is the reviewer-ergonomics floor for M0; if cost permits later,
+#     switch to one Fly app per PR with auto-stop.
+#   - Pages preview aliases are public on `*.pages.dev` — back-office is staff-only, so
+#     reviewers must not share preview URLs externally until the real auth lands.
+#     Documented in apps/back-office/README.md.
+#   - Forks: PRs from forks do not receive secrets, so the deploy jobs no-op on
+#     `head.repo.fork == true` (preflight gate). Only same-repo PRs get previews.
+#
+# Enablement (one-time, by the board / ops):
+#   1. Cloudflare Pages: `kassa-pos` and `kassa-back-office` projects already exist
+#      from KASA-18; preview aliases use the same projects under `--branch=pr-<N>`.
+#      No additional Cloudflare provisioning needed.
+#   2. Neon: create an API key with Branch Admin scope on the Kassa project.
+#      Add it as `NEON_API_KEY` in the GitHub `preview` environment.
+#      Capture the Neon project id and add it as repo variable `NEON_PROJECT_ID`.
+#   3. GitHub `preview` environment (Settings → Environments → preview):
+#        CLOUDFLARE_API_TOKEN   (reuse from `production`)
+#        CLOUDFLARE_ACCOUNT_ID  (reuse from `production`)
+#        FLY_API_TOKEN          (reuse from `production` — same Deploy scope on kassa-api-staging)
+#        NEON_API_KEY           (Branch Admin scope on Kassa Neon project)
+#        STAGING_NEON_URL       (the persistent staging branch connection string —
+#                                used as the fallback when PR-branch creation fails AND
+#                                as the restore target on PR close)
+#   4. Repo variables:
+#        PREVIEW_DEPLOY_ENABLED=true  (master switch; default false keeps the workflow inert)
+#        NEON_PROJECT_ID=<project-id>
+# Until PREVIEW_DEPLOY_ENABLED is flipped, preflight emits a notice and all jobs are skipped.
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, closed]
+
+# Per-PR concurrency: a new push cancels in-flight builds for the SAME PR.
+# Different PRs run in parallel at the workflow level; the Fly redeploy is
+# serialized across PRs by the job-level concurrency in `deploy-api-preview`
+# below.
+concurrency:
+  group: cd-preview-pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  preflight:
+    name: Preflight (enablement + PR metadata)
+    runs-on: ubuntu-latest
+    outputs:
+      ready: ${{ steps.gate.outputs.ready }}
+      is_close: ${{ steps.meta.outputs.is_close }}
+      pr_number: ${{ steps.meta.outputs.pr_number }}
+      branch_alias: ${{ steps.meta.outputs.branch_alias }}
+      commit_sha: ${{ steps.meta.outputs.commit_sha }}
+      short_sha: ${{ steps.meta.outputs.short_sha }}
+    steps:
+      - name: Check enablement and PR origin
+        id: gate
+        env:
+          PREVIEW_DEPLOY_ENABLED: ${{ vars.PREVIEW_DEPLOY_ENABLED }}
+          IS_FORK: ${{ github.event.pull_request.head.repo.fork }}
+        run: |
+          set -euo pipefail
+          if [ "$IS_FORK" = "true" ]; then
+            echo "::notice title=Preview skipped::PRs from forks do not receive secrets; preview deploys are skipped. See cd-preview.yml header."
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ "${PREVIEW_DEPLOY_ENABLED:-false}" != "true" ]; then
+            echo "::notice title=Preview CD disabled::Set repository variable PREVIEW_DEPLOY_ENABLED=true (and provision the 'preview' environment + NEON_PROJECT_ID) to activate. See .github/workflows/cd-preview.yml header."
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Resolve PR metadata
+        id: meta
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          ACTION: ${{ github.event.action }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          IS_CLOSE=false
+          [ "$ACTION" = "closed" ] && IS_CLOSE=true
+          SHORT_SHA="${HEAD_SHA:0:12}"
+          echo "is_close=$IS_CLOSE" >> "$GITHUB_OUTPUT"
+          echo "pr_number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
+          echo "branch_alias=pr-$PR_NUMBER" >> "$GITHUB_OUTPUT"
+          echo "commit_sha=$HEAD_SHA" >> "$GITHUB_OUTPUT"
+          echo "short_sha=$SHORT_SHA" >> "$GITHUB_OUTPUT"
+
+  # ────────────────────────────────────────────────────────────────────────
+  # OPEN / SYNC / REOPEN PATH
+  # ────────────────────────────────────────────────────────────────────────
+
+  build:
+    name: Build (POS + Back Office + API)
+    needs: preflight
+    if: needs.preflight.outputs.ready == 'true' && needs.preflight.outputs.is_close == 'false'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout PR head
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ needs.preflight.outputs.commit_sha }}
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@fe02b34f77f8bc703788d5817da081398fad5dd2 # v4.0.0
+        with:
+          run_install: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Override GITHUB_SHA so Vite's release-tagging gate in apps/{pos,back-office}/vite.config.ts
+      # binds VITE_RELEASE to the PR HEAD SHA instead of the synthetic merge SHA the runner sets
+      # on `pull_request` events. Sentry events emitted from a preview tab then group under
+      # `kassa-{pos,back-office}@<head-sha12>` — matching the SHA the deploy is labelled with.
+      - name: Build workspace
+        env:
+          GITHUB_SHA: ${{ needs.preflight.outputs.commit_sha }}
+        run: pnpm -r build
+
+      # The Dockerfile expects the workspace layout produced by the api-dist
+      # CI artifact (root manifests + apps/api/{dist,…} + packages/*/dist).
+      # `pnpm -r build` already produces those dist trees; package the workspace
+      # subtree the runtime stage needs as a tarball so the API deploy job can
+      # restore it without re-running `pnpm install` + build.
+      - name: Pack API build context
+        run: |
+          set -euo pipefail
+          mkdir -p .preview-api-image
+          tar -cf .preview-api-image/api-image.tar \
+            pnpm-lock.yaml pnpm-workspace.yaml package.json \
+            apps/api/package.json apps/api/dist apps/api/Dockerfile apps/api/fly.toml \
+            packages/payments/package.json packages/payments/dist \
+            packages/schemas/package.json packages/schemas/dist
+
+      - name: Upload POS dist
+        uses: actions/upload-artifact@604373da6381bf24206979c74d06a550515601b9 # v4.4.1
+        with:
+          name: preview-pos-dist
+          path: apps/pos/dist
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Upload Back Office dist
+        uses: actions/upload-artifact@604373da6381bf24206979c74d06a550515601b9 # v4.4.1
+        with:
+          name: preview-back-office-dist
+          path: apps/back-office/dist
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Upload API build context
+        uses: actions/upload-artifact@604373da6381bf24206979c74d06a550515601b9 # v4.4.1
+        with:
+          name: preview-api-image
+          path: .preview-api-image/api-image.tar
+          if-no-files-found: error
+          retention-days: 7
+
+  neon-branch:
+    name: Provision Neon branch (pr-<N>)
+    needs: preflight
+    if: needs.preflight.outputs.ready == 'true' && needs.preflight.outputs.is_close == 'false'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment: preview
+    outputs:
+      database_url: ${{ steps.create.outputs.database_url }}
+      created: ${{ steps.create.outputs.created }}
+    env:
+      NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
+      NEON_PROJECT_ID: ${{ vars.NEON_PROJECT_ID }}
+      BRANCH_ALIAS: ${{ needs.preflight.outputs.branch_alias }}
+    steps:
+      - name: Setup Node.js (for neonctl)
+        uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version: "22"
+
+      - name: Create or reuse Neon branch
+        id: create
+        # `continue-on-error` because the AC tolerates a Neon failure (rate-limit,
+        # quota): the deploy proceeds against the persistent staging branch and
+        # the sticky comment surfaces the warning. Do not silently fall through —
+        # the `created` output flag drives that messaging downstream.
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          if [ -z "${NEON_API_KEY:-}" ] || [ -z "${NEON_PROJECT_ID:-}" ]; then
+            echo "::warning::Neon credentials missing; preview API will use STAGING_NEON_URL fallback."
+            echo "created=false" >> "$GITHUB_OUTPUT"
+            echo "database_url=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # Neon branch creation is idempotent only via "list then maybe create";
+          # neonctl returns non-zero on duplicate. Look the branch up first.
+          BRANCH_JSON=$(npx -y neonctl@2 branches list \
+            --project-id "$NEON_PROJECT_ID" \
+            --output json) || BRANCH_JSON='[]'
+          EXISTS=$(printf '%s' "$BRANCH_JSON" | jq -r --arg n "$BRANCH_ALIAS" \
+            '[.[] | select(.name == $n)] | length')
+
+          if [ "$EXISTS" = "0" ]; then
+            echo "Creating Neon branch $BRANCH_ALIAS (parent: main)…"
+            npx -y neonctl@2 branches create \
+              --project-id "$NEON_PROJECT_ID" \
+              --name "$BRANCH_ALIAS" \
+              --parent main \
+              --output json >/dev/null
+          else
+            echo "Reusing existing Neon branch $BRANCH_ALIAS."
+          fi
+
+          # Fetch the pooled connection string for the role the API uses.
+          # `--pooled` returns the PgBouncer endpoint; staging traffic always
+          # routes through the pool to keep machine-level connection counts low.
+          DB_URL=$(npx -y neonctl@2 connection-string \
+            --project-id "$NEON_PROJECT_ID" \
+            --branch "$BRANCH_ALIAS" \
+            --pooled)
+          if [ -z "$DB_URL" ]; then
+            echo "::warning::neonctl returned empty connection string for $BRANCH_ALIAS; falling back."
+            echo "created=false" >> "$GITHUB_OUTPUT"
+            echo "database_url=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # Mask before exposing as a job output.
+          echo "::add-mask::$DB_URL"
+          echo "created=true" >> "$GITHUB_OUTPUT"
+          echo "database_url=$DB_URL" >> "$GITHUB_OUTPUT"
+
+  deploy-pos-preview:
+    name: Deploy POS PWA → Pages preview alias
+    needs: [preflight, build]
+    if: needs.preflight.outputs.ready == 'true' && needs.preflight.outputs.is_close == 'false'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: preview
+      url: https://${{ needs.preflight.outputs.branch_alias }}.kassa-pos.pages.dev
+    steps:
+      - name: Download POS dist
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+        with:
+          name: preview-pos-dist
+          path: dist
+
+      - name: Deploy to Cloudflare Pages (kassa-pos, preview)
+        uses: cloudflare/wrangler-action@392082e81ffbcb9ebdde27400634aa004b35ea37 # v3.14.0
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: >-
+            pages deploy dist
+            --project-name=kassa-pos
+            --branch=${{ needs.preflight.outputs.branch_alias }}
+            --commit-hash=${{ needs.preflight.outputs.commit_sha }}
+
+  deploy-back-office-preview:
+    name: Deploy Back Office SPA → Pages preview alias
+    needs: [preflight, build]
+    if: needs.preflight.outputs.ready == 'true' && needs.preflight.outputs.is_close == 'false'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: preview
+      url: https://${{ needs.preflight.outputs.branch_alias }}.kassa-back-office.pages.dev
+    steps:
+      - name: Download Back Office dist
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+        with:
+          name: preview-back-office-dist
+          path: dist
+
+      - name: Deploy to Cloudflare Pages (kassa-back-office, preview)
+        uses: cloudflare/wrangler-action@392082e81ffbcb9ebdde27400634aa004b35ea37 # v3.14.0
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: >-
+            pages deploy dist
+            --project-name=kassa-back-office
+            --branch=${{ needs.preflight.outputs.branch_alias }}
+            --commit-hash=${{ needs.preflight.outputs.commit_sha }}
+
+  deploy-api-preview:
+    name: Deploy API → Fly staging (PR Neon branch)
+    needs: [preflight, build, neon-branch]
+    if: needs.preflight.outputs.ready == 'true' && needs.preflight.outputs.is_close == 'false'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: preview
+    # Serialize Fly redeploys across PRs so two simultaneous pushes do not race
+    # the rolling deploy on the shared kassa-api-staging app. cancel-in-progress
+    # is false so a queued PR finishes its rollout cleanly. The "last writer
+    # wins" trade-off on which Neon branch staging points at is documented in
+    # docs/CI-CD.md §3.13.
+    concurrency:
+      group: cd-preview-fly-staging
+      cancel-in-progress: false
+    env:
+      FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+    outputs:
+      using_main_db: ${{ steps.resolve.outputs.using_main_db }}
+    steps:
+      - name: Download API build context
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+        with:
+          name: preview-api-image
+          path: .
+
+      - name: Unpack API build context
+        run: |
+          set -euo pipefail
+          mkdir -p api-image
+          tar -xf api-image.tar -C api-image
+          rm api-image.tar
+
+      - name: Install flyctl
+        uses: superfly/flyctl-actions/setup-flyctl@fc53c09e1bc3be6f54706524e3b82c4f462f77be # 1.5
+        with:
+          version: 0.4.39
+
+      # Pick the connection string: PR Neon branch if creation succeeded,
+      # else the persistent staging URL. The fallback path is logged loudly
+      # so reviewers see in the run summary that the API is NOT pointing at
+      # the PR's data.
+      - name: Resolve DATABASE_URL for preview
+        id: resolve
+        env:
+          PR_DB_URL: ${{ needs.neon-branch.outputs.database_url }}
+          NEON_CREATED: ${{ needs.neon-branch.outputs.created }}
+          STAGING_NEON_URL: ${{ secrets.STAGING_NEON_URL }}
+        run: |
+          set -euo pipefail
+          if [ "$NEON_CREATED" = "true" ] && [ -n "$PR_DB_URL" ]; then
+            echo "::notice::Preview API will read from per-PR Neon branch."
+            echo "::add-mask::$PR_DB_URL"
+            echo "database_url=$PR_DB_URL" >> "$GITHUB_OUTPUT"
+            echo "using_main_db=false" >> "$GITHUB_OUTPUT"
+          else
+            if [ -z "${STAGING_NEON_URL:-}" ]; then
+              echo "::error::Neon branch creation failed AND STAGING_NEON_URL is unset; cannot deploy preview API."
+              exit 1
+            fi
+            echo "::warning::Neon branch creation failed; preview API will read from STAGING_NEON_URL fallback."
+            echo "::add-mask::$STAGING_NEON_URL"
+            echo "database_url=$STAGING_NEON_URL" >> "$GITHUB_OUTPUT"
+            echo "using_main_db=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Stage the secret without an immediate redeploy; the next `flyctl deploy`
+      # picks it up so we get a single rollout per PR push instead of two.
+      - name: Stage DATABASE_URL on kassa-api-staging
+        env:
+          DB_URL: ${{ steps.resolve.outputs.database_url }}
+        run: |
+          set -euo pipefail
+          flyctl secrets set --app kassa-api-staging --stage \
+            "DATABASE_URL=$DB_URL"
+
+      # Same shape as cd.yml deploy-api-staging, but with a preview image label
+      # so `flyctl releases` and Sentry can distinguish PR rollouts from main.
+      - name: Deploy to Fly (kassa-api-staging, PR Neon branch)
+        working-directory: api-image
+        env:
+          PR_NUMBER: ${{ needs.preflight.outputs.pr_number }}
+          SHORT_SHA: ${{ needs.preflight.outputs.short_sha }}
+        run: |
+          set -euo pipefail
+          IMAGE_LABEL="preview-pr-${PR_NUMBER}-${SHORT_SHA}"
+          flyctl deploy . \
+            --app kassa-api-staging \
+            --config apps/api/fly.toml \
+            --dockerfile apps/api/Dockerfile \
+            --local-only \
+            --image-label "$IMAGE_LABEL" \
+            --env "KASSA_API_VERSION=$IMAGE_LABEL" \
+            --strategy rolling \
+            --wait-timeout 300
+
+  pr-comment:
+    name: Sticky preview comment
+    needs: [preflight, neon-branch, deploy-pos-preview, deploy-back-office-preview, deploy-api-preview]
+    # `if: always()` so the comment posts even when one surface fails — the
+    # marker block tells the reviewer which surfaces are live and which are red.
+    if: always() && needs.preflight.outputs.ready == 'true' && needs.preflight.outputs.is_close == 'false'
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    permissions:
+      contents: read
+      pull-requests: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      REPO: ${{ github.repository }}
+      PR: ${{ needs.preflight.outputs.pr_number }}
+      ALIAS: ${{ needs.preflight.outputs.branch_alias }}
+      SHORT_SHA: ${{ needs.preflight.outputs.short_sha }}
+      POS_RESULT: ${{ needs.deploy-pos-preview.result }}
+      BACK_OFFICE_RESULT: ${{ needs.deploy-back-office-preview.result }}
+      API_RESULT: ${{ needs.deploy-api-preview.result }}
+      NEON_CREATED: ${{ needs.neon-branch.outputs.created }}
+      USING_MAIN_DB: ${{ needs.deploy-api-preview.outputs.using_main_db }}
+    steps:
+      - name: Upsert sticky comment
+        run: |
+          set -euo pipefail
+          MARKER="<!-- kassa-preview-deploy -->"
+          status() {
+            case "$1" in
+              success) echo "✅ live" ;;
+              skipped) echo "⏭ skipped" ;;
+              cancelled) echo "🟡 cancelled" ;;
+              "")    echo "❔ unknown" ;;
+              *)     echo "❌ failed" ;;
+            esac
+          }
+          POS_LINE="| POS PWA | https://${ALIAS}.kassa-pos.pages.dev | $(status "$POS_RESULT") |"
+          BO_LINE="| Back Office | https://${ALIAS}.kassa-back-office.pages.dev | $(status "$BACK_OFFICE_RESULT") |"
+          API_LINE="| API | https://kassa-api-staging.fly.dev | $(status "$API_RESULT") |"
+
+          NEON_LINE="- Neon branch: \`${ALIAS}\` (parent: main)"
+          if [ "$NEON_CREATED" != "true" ]; then
+            NEON_LINE="- Neon branch: ⚠ creation failed; preview API is reading from the persistent staging branch. Investigate Neon quota / API key."
+          fi
+
+          DB_WARNING=""
+          if [ "$USING_MAIN_DB" = "true" ]; then
+            DB_WARNING=$'\n> **⚠ Preview API is using the staging Neon branch, not '"\`${ALIAS}\`"'.** Data writes will mutate shared staging.'
+          fi
+
+          BODY=$(cat <<EOF
+          ${MARKER}
+          ## Preview deployment
+
+          | Surface | URL | Status |
+          | --- | --- | --- |
+          ${POS_LINE}
+          ${BO_LINE}
+          ${API_LINE}
+
+          ${NEON_LINE}
+          - Commit: \`${SHORT_SHA}\`
+          - Updated: $(date -u +%FT%TZ) (UTC)
+          ${DB_WARNING}
+
+          <sub>Auto-managed by [\`cd-preview.yml\`](../blob/main/.github/workflows/cd-preview.yml). Pushed updates re-deploy this comment in place. PR close tears down Neon and restores staging.</sub>
+          EOF
+          )
+
+          # Find an existing comment by marker and update it; else post a new one.
+          EXISTING=$(gh api "repos/${REPO}/issues/${PR}/comments" --paginate \
+            --jq "[.[] | select(.body | contains(\"${MARKER}\"))] | .[0].id // empty")
+          if [ -n "$EXISTING" ]; then
+            gh api "repos/${REPO}/issues/comments/${EXISTING}" \
+              --method PATCH \
+              --field body="$BODY" >/dev/null
+            echo "Updated sticky comment id=$EXISTING."
+          else
+            gh api "repos/${REPO}/issues/${PR}/comments" \
+              --method POST \
+              --field body="$BODY" >/dev/null
+            echo "Posted new sticky comment."
+          fi
+
+  # ────────────────────────────────────────────────────────────────────────
+  # CLOSED PATH (teardown)
+  # ────────────────────────────────────────────────────────────────────────
+
+  teardown-neon:
+    name: Teardown Neon branch (pr-<N>)
+    needs: preflight
+    if: needs.preflight.outputs.ready == 'true' && needs.preflight.outputs.is_close == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment: preview
+    env:
+      NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
+      NEON_PROJECT_ID: ${{ vars.NEON_PROJECT_ID }}
+      BRANCH_ALIAS: ${{ needs.preflight.outputs.branch_alias }}
+    steps:
+      - name: Setup Node.js (for neonctl)
+        uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version: "22"
+
+      - name: Delete Neon branch (idempotent)
+        # Idempotent: list-then-maybe-delete avoids a hard fail when the branch
+        # was already deleted (e.g. PR re-closed, ops cleanup). We never block
+        # PR close on infra cleanup.
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          if [ -z "${NEON_API_KEY:-}" ] || [ -z "${NEON_PROJECT_ID:-}" ]; then
+            echo "::warning::Neon credentials missing; nothing to teardown."
+            exit 0
+          fi
+          BRANCH_JSON=$(npx -y neonctl@2 branches list \
+            --project-id "$NEON_PROJECT_ID" \
+            --output json) || BRANCH_JSON='[]'
+          EXISTS=$(printf '%s' "$BRANCH_JSON" | jq -r --arg n "$BRANCH_ALIAS" \
+            '[.[] | select(.name == $n)] | length')
+          if [ "$EXISTS" = "0" ]; then
+            echo "Neon branch $BRANCH_ALIAS already gone; nothing to do."
+            exit 0
+          fi
+          npx -y neonctl@2 branches delete "$BRANCH_ALIAS" \
+            --project-id "$NEON_PROJECT_ID"
+
+  teardown-fly:
+    name: Restore staging DATABASE_URL
+    needs: preflight
+    if: needs.preflight.outputs.ready == 'true' && needs.preflight.outputs.is_close == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment: preview
+    # Same serialization group as deploy-api-preview to avoid racing a still-
+    # in-flight PR rollout when this PR closes.
+    concurrency:
+      group: cd-preview-fly-staging
+      cancel-in-progress: false
+    env:
+      FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+      STAGING_NEON_URL: ${{ secrets.STAGING_NEON_URL }}
+    steps:
+      - name: Install flyctl
+        uses: superfly/flyctl-actions/setup-flyctl@fc53c09e1bc3be6f54706524e3b82c4f462f77be # 1.5
+        with:
+          version: 0.4.39
+
+      # `flyctl secrets set` (without --stage) triggers an immediate Fly
+      # rollout that picks up the restored DATABASE_URL. The image stays
+      # whatever the last preview deploy shipped — that is acceptable
+      # because (a) the PR is closed and no reviewer is reading from it,
+      # and (b) the next merge to main triggers cd.yml's deploy-api-staging,
+      # which redeploys the main bytes against the restored DB. Documented
+      # in docs/CI-CD.md §3.13.
+      - name: Restore DATABASE_URL on kassa-api-staging
+        run: |
+          set -euo pipefail
+          if [ -z "${STAGING_NEON_URL:-}" ]; then
+            echo "::warning::STAGING_NEON_URL is unset; staging DATABASE_URL was not restored. The next main merge will re-bind it."
+            exit 0
+          fi
+          flyctl secrets set --app kassa-api-staging --detach \
+            "DATABASE_URL=$STAGING_NEON_URL"
+
+  pr-comment-teardown:
+    name: Sticky teardown comment
+    needs: [preflight, teardown-neon, teardown-fly]
+    if: always() && needs.preflight.outputs.ready == 'true' && needs.preflight.outputs.is_close == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    permissions:
+      contents: read
+      pull-requests: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      REPO: ${{ github.repository }}
+      PR: ${{ needs.preflight.outputs.pr_number }}
+      ALIAS: ${{ needs.preflight.outputs.branch_alias }}
+      NEON_RESULT: ${{ needs.teardown-neon.result }}
+      FLY_RESULT: ${{ needs.teardown-fly.result }}
+    steps:
+      - name: Upsert teardown comment
+        run: |
+          set -euo pipefail
+          MARKER="<!-- kassa-preview-deploy -->"
+          status() {
+            case "$1" in
+              success) echo "✅ done" ;;
+              skipped) echo "⏭ skipped" ;;
+              cancelled) echo "🟡 cancelled" ;;
+              "")    echo "❔ unknown" ;;
+              *)     echo "❌ failed (manual cleanup may be needed)" ;;
+            esac
+          }
+          NEON_LINE="- Neon branch \`${ALIAS}\` deleted: $(status "$NEON_RESULT")"
+          FLY_LINE="- staging DATABASE_URL restored: $(status "$FLY_RESULT")"
+
+          BODY=$(cat <<EOF
+          ${MARKER}
+          ## Preview teardown
+
+          ${NEON_LINE}
+          ${FLY_LINE}
+          - Pages preview aliases (\`${ALIAS}.kassa-{pos,back-office}.pages.dev\`) auto-expire on Cloudflare's retention schedule; not actively deleted.
+          - Updated: $(date -u +%FT%TZ) (UTC)
+
+          <sub>Auto-managed by [\`cd-preview.yml\`](../blob/main/.github/workflows/cd-preview.yml). The next merge to \`main\` redeploys the main bytes to \`kassa-api-staging\`.</sub>
+          EOF
+          )
+
+          EXISTING=$(gh api "repos/${REPO}/issues/${PR}/comments" --paginate \
+            --jq "[.[] | select(.body | contains(\"${MARKER}\"))] | .[0].id // empty")
+          if [ -n "$EXISTING" ]; then
+            gh api "repos/${REPO}/issues/comments/${EXISTING}" \
+              --method PATCH \
+              --field body="$BODY" >/dev/null
+          else
+            gh api "repos/${REPO}/issues/${PR}/comments" \
+              --method POST \
+              --field body="$BODY" >/dev/null
+          fi
