@@ -16,9 +16,9 @@
  *    SW only ever takes control on a fresh document.
  */
 
-import { createHandlerBoundToURL, precacheAndRoute } from "workbox-precaching";
+import { precacheAndRoute } from "workbox-precaching";
 import { clientsClaim } from "workbox-core";
-import { NavigationRoute, registerRoute } from "workbox-routing";
+import { registerRoute } from "workbox-routing";
 import { CacheFirst, NetworkOnly } from "workbox-strategies";
 import { ExpirationPlugin } from "workbox-expiration";
 import { BackgroundSyncPlugin } from "workbox-background-sync";
@@ -40,14 +40,42 @@ precacheAndRoute(self.__WB_MANIFEST);
 // SPA navigation fallback. `precacheAndRoute` only matches the exact URLs
 // in the precache manifest, so a hard reload of `/enrol` (or any other
 // client-side route) while offline would otherwise miss the cache and
-// surface as `ERR_INTERNET_DISCONNECTED`. Routing every navigation to
-// the precached `index.html` lets the SPA boot from cache and the
-// router resolve the path on the client. API and SW asset paths are
-// denied so they keep their NetworkOnly / precache routes.
+// surface as `ERR_INTERNET_DISCONNECTED`. We resolve every same-origin
+// navigation against any cache that has `index.html` (the precache cache
+// is `workbox-precache-v2-<origin>` but `caches.match` searches all),
+// fall through to network when online, and only return a generic 503
+// when the document has never been precached.
+//
+// Hand-rolled rather than `NavigationRoute(createHandlerBoundToURL(...))`
+// because the Workbox precache strategy was returning network errors on
+// some Playwright `context.setOffline(true)` reloads (KASA-159 root
+// cause B post-#84). `caches.match` is an explicit cache lookup with
+// no integrity-check / cache-name plumbing in between.
 registerRoute(
-  new NavigationRoute(createHandlerBoundToURL("/index.html"), {
-    denylist: [/^\/v1\//, /^\/api\//, /\/sw\.js$/, /\/workbox-.*\.js$/],
-  }),
+  ({ request, url }) => {
+    if (request.mode !== "navigate") return false;
+    const path = url.pathname;
+    if (path.startsWith("/v1/") || path.startsWith("/api/")) return false;
+    if (path === "/sw.js" || /^\/workbox-.*\.js$/.test(path)) return false;
+    return true;
+  },
+  async ({ request }) => {
+    // `ignoreSearch` matters: Workbox stores revisioned precache
+    // entries under `<url>?__WB_REVISION__=<hash>` cache keys, so a
+    // bare `caches.match("/index.html")` misses without it.
+    const indexUrl = new URL("/index.html", self.location.href).href;
+    const cached = await caches.match(indexUrl, { ignoreSearch: true });
+    if (cached) return cached;
+    try {
+      return await fetch(request);
+    } catch {
+      return new Response("Offline — app shell not yet cached.", {
+        status: 503,
+        statusText: "Service Unavailable",
+        headers: { "content-type": "text/plain; charset=utf-8" },
+      });
+    }
+  },
 );
 
 // ExpirationPlugin's typed shape conflicts with workbox's WorkboxPlugin
