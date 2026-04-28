@@ -1,32 +1,20 @@
-import {
-  createContext,
-  useCallback,
-  useContext,
-  useEffect,
-  useMemo,
-  useRef,
-  useSyncExternalStore,
-  type ReactNode,
-} from "react";
+import { useCallback, useEffect, useMemo, useRef, type ReactNode } from "react";
 import { getDatabase, type Database } from "../data/db/index.ts";
 import {
   createSyncRunner,
   createSyncStatusStore,
   type SyncRunner,
-  type SyncStatus,
   type SyncStatusStore,
 } from "../data/sync/index.ts";
 import type { SyncParseError } from "../data/sync/errors.ts";
-import { Sentry } from "./sentry.ts";
+import { reportException } from "./error-reporter.ts";
+import { SyncContext, type SyncContextValue } from "./sync-context.tsx";
 
-interface SyncContextValue {
-  store: SyncStatusStore;
-  runner: SyncRunner | null;
-  triggerRefresh: () => Promise<void>;
-  triggerPush: () => Promise<void>;
-}
-
-const SyncContext = createContext<SyncContextValue | null>(null);
+// Hooks (`useSyncStatus`, `useSyncActions`) and the React context now live in
+// `./sync-context.tsx` so RootLayout / admin / eod can pull them statically
+// without dragging Dexie + sync runner into the initial chunk. This file
+// (the heavy provider) is dynamic-imported from `main.tsx` after first paint
+// (KASA-157).
 
 function readBaseUrl(): string {
   const envUrl = import.meta.env.VITE_API_BASE_URL;
@@ -36,7 +24,7 @@ function readBaseUrl(): string {
 }
 
 function reportParseError(err: SyncParseError): void {
-  Sentry.captureException(err, {
+  reportException(err, {
     tags: { sync_table: err.table },
     extra: {
       issueSummary: err.issueSummary,
@@ -83,7 +71,7 @@ export function SyncProvider({ children }: { children: ReactNode }) {
         const secret = await database.repos.deviceSecret.get();
         if (secret) runner.start();
       } catch (err) {
-        Sentry.captureException(err);
+        reportException(err);
       }
     })();
     return () => {
@@ -111,30 +99,4 @@ export function SyncProvider({ children }: { children: ReactNode }) {
     [store, triggerRefresh, triggerPush],
   );
   return <SyncContext.Provider value={value}>{children}</SyncContext.Provider>;
-}
-
-const DEFAULT_STATUS: SyncStatus = {
-  phase: { kind: "idle", lastSuccessAt: null, lastError: null },
-  needsAttentionCount: 0,
-};
-
-export function useSyncStatus(): SyncStatus {
-  const ctx = useContext(SyncContext);
-  const store = ctx?.store ?? null;
-  return useSyncExternalStore(
-    (listener) => (store ? store.subscribe(listener) : () => {}),
-    () => (store ? store.get() : DEFAULT_STATUS),
-    () => DEFAULT_STATUS,
-  );
-}
-
-export function useSyncActions(): {
-  triggerRefresh: () => Promise<void>;
-  triggerPush: () => Promise<void>;
-} {
-  const ctx = useContext(SyncContext);
-  return {
-    triggerRefresh: ctx?.triggerRefresh ?? (async () => {}),
-    triggerPush: ctx?.triggerPush ?? (async () => {}),
-  };
 }

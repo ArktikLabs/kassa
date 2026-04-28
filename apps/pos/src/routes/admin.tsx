@@ -10,7 +10,7 @@ import {
   type EnrolmentSnapshot,
 } from "../lib/enrolment";
 import { showToast } from "../components/Toast";
-import { useSyncActions, useSyncStatus } from "../lib/sync-provider";
+import { useSyncActions, useSyncStatus } from "../lib/sync-context";
 import { usePaperWidthStore, type PaperWidth } from "../features/receipt/paperWidth";
 import { getDatabase, type Database } from "../data/db/index.ts";
 import type { PendingSale } from "../data/db/types.ts";

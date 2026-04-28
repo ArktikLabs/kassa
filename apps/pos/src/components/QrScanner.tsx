@@ -7,25 +7,9 @@
  */
 import { useEffect, useRef, useState } from "react";
 import { useIntl } from "react-intl";
+import { getBarcodeDetectorCtor } from "./QrScannerSupport";
 
-interface BarcodeDetectorCtor {
-  new (options?: {
-    formats?: string[];
-  }): {
-    detect(source: CanvasImageSource): Promise<Array<{ rawValue: string }>>;
-  };
-}
-
-function getBarcodeDetectorCtor(): BarcodeDetectorCtor | null {
-  if (typeof globalThis === "undefined") return null;
-  const candidate = (globalThis as unknown as { BarcodeDetector?: BarcodeDetectorCtor })
-    .BarcodeDetector;
-  return typeof candidate === "function" ? candidate : null;
-}
-
-export function isBarcodeDetectorSupported(): boolean {
-  return getBarcodeDetectorCtor() !== null;
-}
+export { isBarcodeDetectorSupported } from "./QrScannerSupport";
 
 interface QrScannerProps {
   onDetected: (value: string) => void;

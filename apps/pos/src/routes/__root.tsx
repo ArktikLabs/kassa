@@ -4,7 +4,7 @@ import { FormattedMessage } from "react-intl";
 import { ConnectionPill, type ConnectionState } from "../components/ConnectionPill";
 import { ToastViewport } from "../components/Toast";
 import { UpdatePrompt } from "../components/UpdatePrompt";
-import { useSyncActions, useSyncStatus } from "../lib/sync-provider";
+import { useSyncActions, useSyncStatus } from "../lib/sync-context";
 import type { SyncPhase } from "../data/sync/index.ts";
 
 function mapPhase(

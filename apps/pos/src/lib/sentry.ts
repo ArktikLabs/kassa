@@ -61,9 +61,13 @@ function scrub<T>(value: T): T {
   return value;
 }
 
+let sentryInitialized = false;
+
 export function initSentry(): void {
+  if (sentryInitialized) return;
   const dsn = import.meta.env.VITE_SENTRY_DSN;
   if (!dsn) return;
+  sentryInitialized = true;
 
   // VITE_SENTRY_ENVIRONMENT separates prod from preview/staging events
   // (KASA-150). MODE is `production` for any `vite build` regardless of
@@ -112,5 +116,17 @@ export function initSentry(): void {
   });
 }
 
-export { Sentry };
+/**
+ * Forward an exception to Sentry from places that should not pull `@sentry/react`
+ * into their static import graph (the LCP-critical chunk). Callers should reach
+ * for `lib/error-reporter.ts` instead, which dynamic-imports this module so the
+ * Sentry SDK ends up in its own chunk.
+ */
+export function reportException(
+  err: unknown,
+  ctx?: { tags?: Record<string, string>; extra?: Record<string, unknown> },
+): void {
+  Sentry.captureException(err, ctx);
+}
+
 export const _scrubStringForTest = scrubString;

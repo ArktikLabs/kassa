@@ -12,13 +12,24 @@
  * subscribers whenever the secret changes.
  */
 
-import { getDatabase } from "../data/db/index";
 import type { DeviceSecret } from "../data/db/index";
 import {
   EnrolApiError,
   enrolDevice as enrolDeviceApi,
   type EnrolledDevice,
 } from "../data/api/enrolment";
+
+// Dexie + the data/db schema is the largest single block in the unenrolled
+// cold-load bundle. Static-importing `getDatabase` from this module pulled
+// the whole thing into the initial chunk because `enrolment.ts` is on the
+// router's boot path. Dynamic-import keeps `data/db` out of the initial
+// chunk; the first call resolves before TanStack Router's first redirect
+// (KASA-157).
+let dbModulePromise: Promise<typeof import("../data/db/index")> | null = null;
+function loadDbModule(): Promise<typeof import("../data/db/index")> {
+  if (!dbModulePromise) dbModulePromise = import("../data/db/index");
+  return dbModulePromise;
+}
 
 export type EnrolmentSnapshot =
   | { state: "loading" }
@@ -56,6 +67,7 @@ export function hydrateEnrolment(): Promise<EnrolmentSnapshot> {
   if (hydration) return hydration;
   hydration = (async () => {
     try {
+      const { getDatabase } = await loadDbModule();
       const { repos } = await getDatabase();
       const row = await repos.deviceSecret.get();
       const next: EnrolmentSnapshot = row
@@ -95,6 +107,7 @@ export function subscribe(listener: Listener): () => void {
  * `EnrolledDevice` for toast copy; errors are re-thrown as `EnrolApiError`.
  */
 export async function enrolDevice(code: string): Promise<EnrolledDevice> {
+  const { getDatabase } = await loadDbModule();
   const { repos } = await getDatabase();
   const deviceFingerprint = await repos.deviceMeta.ensureFingerprint();
   const device = await enrolDeviceApi({ code: code.trim().toUpperCase(), deviceFingerprint });
@@ -117,6 +130,7 @@ export async function enrolDevice(code: string): Promise<EnrolledDevice> {
  * on the same tablet remains correlatable to its prior audit log entry.
  */
 export async function resetDevice(): Promise<void> {
+  const { getDatabase } = await loadDbModule();
   const { repos } = await getDatabase();
   await repos.deviceSecret.clear();
   publish({ state: "unenrolled" });
