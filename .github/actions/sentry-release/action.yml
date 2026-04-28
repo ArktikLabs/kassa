@@ -78,10 +78,26 @@ runs:
           # a fix or a new SDK protocol.
           SENTRY_CLI="npx --yes @sentry/cli@2.39.1"
           $SENTRY_CLI releases new "$RELEASE"
-          # `--ignore-missing` lets set-commits fall through when the commit is
-          # ahead of what Sentry has indexed (CI run faster than Sentry's repo
-          # poll). The release still records the SHA on the release object.
-          $SENTRY_CLI releases set-commits "$RELEASE" --commit "${REPO}@${COMMIT_SHA}" --ignore-missing
+          # `--ignore-missing` covers the Sentry-side miss (commit ahead of
+          # what Sentry's repo poll has indexed). It does NOT cover the
+          # local-git-side miss: `releases set-commits` still walks libgit2
+          # over the local clone to compute the commit list, and that walk
+          # can throw `error: object not found … class=Odb code=NotFound (-3)`
+          # on objects that aren't reachable from HEAD even with
+          # `fetch-depth: 0` (e.g., merge-commit second-parent that's been
+          # pruned upstream, or rebased commits referenced by a stale Sentry
+          # release).
+          #
+          # set-commits is metadata: the commit list shows up in Sentry's
+          # Releases UI for blame, but symbolication only needs the upload
+          # below. So make it non-fatal — emit a warning, keep going. If the
+          # org wires up Sentry's GitHub integration (Settings → Integrations
+          # → GitHub), Sentry resolves the commit list server-side from its
+          # own repo index and this fallback never trips.
+          if ! $SENTRY_CLI releases set-commits "$RELEASE" \
+               --commit "${REPO}@${COMMIT_SHA}" --ignore-missing; then
+            echo "::warning title=Sentry set-commits failed::release $RELEASE shipped without commit list (non-fatal — symbolication still works). Wire Sentry's GitHub integration to resolve commits server-side and avoid the local-git walk."
+          fi
           $SENTRY_CLI sourcemaps inject "$DIST_PATH"
           $SENTRY_CLI sourcemaps upload --release "$RELEASE" "$DIST_PATH"
           $SENTRY_CLI releases finalize "$RELEASE"
