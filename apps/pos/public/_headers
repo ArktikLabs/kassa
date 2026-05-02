@@ -1,0 +1,28 @@
+# Cloudflare Pages security headers for the Kassa POS PWA (KASA-180).
+#
+# The hash in script-src covers the inline LCP-skeleton remover in index.html
+# (KASA-157). Recompute with:
+#   python3 -c "import hashlib,base64,re,pathlib; \
+#     h=hashlib.sha256(re.search(r'<script(?![^>]*\\bsrc=)[^>]*>(.*?)</script>', \
+#     pathlib.Path('apps/pos/index.html').read_text(), re.S).group(1).encode()).digest(); \
+#     print('sha256-'+base64.b64encode(h).decode())"
+# and update the value below whenever the inline block changes.
+#
+# Midtrans is intentionally NOT in connect-src: the POS only talks to the
+# same-origin API, which proxies QRIS create/status to Midtrans server-side
+# (apps/pos/src/data/api/qris.ts).
+#
+# style-src keeps 'unsafe-inline' because React renders style={{}} as inline
+# attribute styles (CartLineRow, QrSvg, ReceiptPreview, tender panels). CSS
+# attributes cannot execute script, so this is a deliberate, scoped relaxation.
+
+/*
+  Content-Security-Policy: default-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; object-src 'none'; script-src 'self' 'sha256-FyL8eIcwlfUIu0cz7ejNSKshoSFbXoPEIO4HC88AzQk='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self' https://*.sentry.io; worker-src 'self'; manifest-src 'self'; frame-src 'none'; upgrade-insecure-requests
+  Permissions-Policy: accelerometer=(), autoplay=(), bluetooth=(), camera=(self), display-capture=(), encrypted-media=(), fullscreen=(self), geolocation=(), gyroscope=(), hid=(), magnetometer=(), microphone=(), midi=(), payment=(), publickey-credentials-get=(), screen-wake-lock=(self), serial=(), usb=(), xr-spatial-tracking=()
+  Cross-Origin-Opener-Policy: same-origin
+  Cross-Origin-Embedder-Policy: credentialless
+  Cross-Origin-Resource-Policy: same-origin
+  Referrer-Policy: strict-origin-when-cross-origin
+  Strict-Transport-Security: max-age=31536000; includeSubDomains
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: DENY
