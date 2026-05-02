@@ -8,6 +8,14 @@ export default defineConfig({
   reporter: "list",
   use: {
     baseURL: "http://localhost:4174",
+    // Pin the browser locale to id-ID so `navigator.languages` matches the
+    // app's primary locale (`apps/back-office/src/i18n/messages.ts`). Without
+    // this, CI runners default to en-US and `negotiateLocale()` partial-matches
+    // "en", flipping every localized assertion (e.g. the "Kata sandi" password
+    // label, "Masuk" submit button, "Outlet"/"Katalog" headings) to the
+    // English copy. Mirrors how the app boots on a real Indonesian merchant
+    // laptop, and matches the same pin already in the POS config.
+    locale: "id-ID",
     trace: "on-first-retry",
   },
   webServer: {
