@@ -645,6 +645,54 @@ Until `PREVIEW_DEPLOY_ENABLED` is flipped, every PR's `cd-preview.yml` run emits
 
 **Rollback**: there is no rollback for a preview deploy. A red preview is fixed forward by another push to the same PR (which retriggers the workflow), or by closing the PR (which tears the preview down). Production is unaffected by preview activity — `cd.yml` and `deploy-prod.yml` are entirely independent code paths.
 
+### 3.14 PWA security headers ([KASA-180](/KASA/issues/KASA-180))
+
+The POS PWA ships with a strict CSP, a deny-by-default Permissions-Policy, and cross-origin isolation headers via [`apps/pos/public/_headers`](../apps/pos/public/_headers). Cloudflare Pages reads `_headers` from the deploy root; Vite copies anything under `public/` to `dist/_headers` byte-for-byte at build time, so the file rides along on every `wrangler pages deploy` (§3.3) without a separate publish step.
+
+Verify after deploy:
+
+```bash
+curl -sI https://kassa-pos.pages.dev/ | grep -iE 'content-security-policy|permissions-policy|cross-origin-(opener|embedder|resource)-policy|strict-transport-security|x-(content-type-options|frame-options)|referrer-policy'
+```
+
+Each header should appear once. If a value is missing, the `_headers` file did not make it into `dist/` — check the build artifact (`apps/pos/dist/_headers`).
+
+**What the policy allows and why:**
+
+| Directive                  | Value                                                                                          | Rationale                                                                                              |
+|:---------------------------|:-----------------------------------------------------------------------------------------------|:-------------------------------------------------------------------------------------------------------|
+| `default-src`              | `'self'`                                                                                       | Fail-closed baseline. Every other directive narrows from here.                                         |
+| `script-src`               | `'self' 'sha256-…'`                                                                            | Same-origin Vite bundles + the inline LCP-skeleton remover in `index.html` (KASA-157), pinned by hash. |
+| `style-src`                | `'self' 'unsafe-inline'`                                                                       | Tailwind bundle + inline `<style>` block + React `style={{}}` attributes. CSS cannot execute script.   |
+| `connect-src`              | `'self' https://*.sentry.io`                                                                   | Same-origin API (default `VITE_API_BASE_URL=""`) + Sentry ingest. Midtrans is server-proxied.          |
+| `img-src`                  | `'self' data: blob:`                                                                           | App icons + receipt/export blobs.                                                                      |
+| `font-src`                 | `'self'`                                                                                       | Self-hosted Plus Jakarta Sans + JetBrains Mono woff2 in `apps/pos/public/fonts/`.                      |
+| `worker-src`, `manifest-src` | `'self'`                                                                                     | Workbox SW (bundled) + Vite-PWA-emitted `manifest.webmanifest`.                                        |
+| `frame-src`, `object-src`  | `'none'`                                                                                       | POS embeds no third-party frames or plugins.                                                           |
+| `frame-ancestors`          | `'none'` (+ legacy `X-Frame-Options: DENY`)                                                    | Clickjacking defense — POS must never render inside another origin.                                    |
+| `Permissions-Policy`       | `camera=(self)`, all of `geolocation=()` / `microphone=()` / `payment=()` plus other sensors denied | QR scanner (`apps/pos/src/components/QrScanner.tsx`) needs camera; nothing else.                       |
+| `Cross-Origin-Opener-Policy` | `same-origin`                                                                                | Window isolation. Compatible with the same-origin SW registration in `apps/pos/src/lib/pwa.ts`.        |
+| `Cross-Origin-Embedder-Policy` | `credentialless`                                                                           | Cross-origin isolation in supporting browsers without forcing CORP on every Sentry response. iOS Safari ignores the unknown value and falls back to `unsafe-none`, which we accept — POS uses no `SharedArrayBuffer`. |
+| `Cross-Origin-Resource-Policy` | `same-origin`                                                                              | Defense-in-depth: our shell assets cannot be embedded by third-party origins.                          |
+| `Strict-Transport-Security`| `max-age=31536000; includeSubDomains`                                                          | Cloudflare Pages is HTTPS-only; the header makes the upgrade sticky for one year.                      |
+
+**Adding an exception** (the supported workflow):
+
+1. **Identify the directive** that blocked the resource. Open DevTools → Console — Chromium logs `Refused to … because it violates the following Content Security Policy directive: "<directive>"`. The directive name (e.g. `connect-src`) is the field to widen.
+2. **Edit `apps/pos/public/_headers`** and add the smallest origin that unblocks the resource. Prefer host-only allowlists (`https://example.com`) over wildcards; prefer per-directive (`connect-src`) over `default-src`.
+3. **If the new resource is an inline `<script>` or `<style>` block**, recompute the hash with the snippet in the comment at the top of `_headers` and replace the existing `'sha256-…'` token. **Never** add `'unsafe-inline'` to `script-src` — that defeats the purpose of the policy.
+4. **If the new resource is a third-party iframe** (e.g. a Midtrans Snap host, payment redirect), add it to `frame-src` AND review whether `Cross-Origin-Embedder-Policy: credentialless` will strip the credentials the iframe needs — switch to `unsafe-none` for that path if so.
+5. **Verify locally** with `pnpm --filter @kassa/pos build && pnpm --filter @kassa/pos preview` and a `curl -I` against the preview port — Vite preview does not honour `_headers`, so production verification still requires a Cloudflare Pages preview deploy.
+6. **Run the offline E2E** (`pnpm --filter @kassa/pos test:e2e -- offline.spec.ts`) to confirm the SW shell still installs, and `tender-qris.spec.ts` to confirm QRIS create + status polling still work end-to-end against the harness.
+7. **Re-run Lighthouse** (`apps/pos/lighthouserc.json`, §8.1) — Best-Practices score must stay ≥ 0.95.
+8. **Document the exception** in the PR description: which origin, which directive, and the user-visible feature it unblocks.
+
+**What `_headers` does not cover:**
+
+- Back-office app — separate Cloudflare Pages project (`kassa-back-office`), separate `_headers` (not in scope for KASA-180).
+- WAF / Cloudflare bot rules / rate-limiting — managed in the Cloudflare dashboard, not in this repo.
+- API responses — Hono-side security headers live in `apps/api/src/app.ts` and follow a separate review track.
+
 ---
 
 ## 4. Pipeline health (v0 baselines)
