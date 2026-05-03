@@ -24,6 +24,10 @@
       "types": "./dist/eod.d.ts",
       "import": "./dist/eod.js"
     },
+    "./errors": {
+      "types": "./dist/errors.d.ts",
+      "import": "./dist/errors.js"
+    },
     "./payments": {
       "types": "./dist/payments.d.ts",
       "import": "./dist/payments.js"

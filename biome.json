@@ -21,7 +21,8 @@
       "!**/pnpm-lock.yaml",
       "!**/*.min.*",
       "!apps/pos/public/fonts",
-      "!apps/back-office/public/fonts"
+      "!apps/back-office/public/fonts",
+      "!apps/api/test/__contract__/openapi.snapshot.json"
     ]
   },
   "formatter": {

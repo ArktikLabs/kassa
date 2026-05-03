@@ -141,6 +141,15 @@ const uuidV7Typed = z.string().regex(uuidV7Regex, "must be a UUIDv7");
 const rupiahAmount = z.number().int().nonnegative();
 const businessDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 
+/**
+ * Path parameters for sale-scoped endpoints (`/v1/sales/:saleId`,
+ * `/v1/sales/:saleId/void`, `/v1/sales/:saleId/refund`). Lives here so
+ * the wire shape stays declarative and the contract gate (KASA-179) can
+ * trace the route's params back to a `@kassa/schemas` export.
+ */
+export const saleIdParam = z.object({ saleId: uuidV7Typed }).strict();
+export type SaleIdParam = z.infer<typeof saleIdParam>;
+
 export const saleSubmitItem = z
   .object({
     itemId: uuidV7Typed,
@@ -433,3 +442,25 @@ export type StockLedgerPullQuery = z.infer<typeof stockLedgerPullQuery>;
 
 export const stockLedgerPullResponse = envelope(stockLedgerEntry);
 export type StockLedgerPullResponse = z.infer<typeof stockLedgerPullResponse>;
+
+/*
+ * `GET /v1/stock/snapshot?outlet=&updatedAfter=&pageToken=` — KASA-122
+ * read-side stock projection. `outlet` (NOT `outletId`) is the historic
+ * query name, kept here so the PWA's existing callers don't break.
+ *
+ * `updatedAfter` and `pageToken` are accepted but currently ignored by
+ * the server: the route always returns the full on-hand projection.
+ * They live in the schema because the response sets `nextCursor: <now>`
+ * (the watermark a future delta-aware pull will use) and the shared
+ * sync runner round-trips that cursor on every cycle. Without them the
+ * second-cycle pull dropped to a 422 and aborted the cycle before the
+ * outbox push could drain (KASA-68 acceptance regression).
+ */
+export const stockSnapshotQuery = z
+  .object({
+    outlet: z.string().min(1),
+    updatedAfter: isoTimestamp.optional(),
+    pageToken: z.string().min(1).max(512).optional(),
+  })
+  .strict();
+export type StockSnapshotQuery = z.infer<typeof stockSnapshotQuery>;

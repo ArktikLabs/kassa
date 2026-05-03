@@ -1,5 +1,6 @@
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import {
+  saleIdParam,
   saleListQuery,
   saleListResponse,
   saleRefundRequest,
@@ -9,6 +10,7 @@ import {
   saleSubmitResponse,
   saleVoidRequest,
   saleVoidResponse,
+  type SaleIdParam,
   type SaleListQuery,
   type SaleListResponse,
   type SaleRefundRequest,
@@ -24,12 +26,6 @@ import { notImplemented, sendError } from "../lib/errors.js";
 import { errorBodySchema, notImplementedResponses } from "../lib/openapi.js";
 import { validate } from "../lib/validate.js";
 import { SalesError, type SalesService } from "../services/sales/index.js";
-
-const uuidV7Regex = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const saleIdParam = z
-  .object({ saleId: z.string().regex(uuidV7Regex, "saleId must be a UUIDv7") })
-  .strict();
-type SaleIdParam = z.infer<typeof saleIdParam>;
 
 export interface SalesRouteDeps {
   service: SalesService;

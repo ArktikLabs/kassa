@@ -189,6 +189,41 @@ The full-day offline acceptance suite (`apps/pos/e2e/full-day-offline.spec.ts`) 
 
 `e2e.yml` and the acceptance job do not overlap: `playwright.config.ts` excludes the full-day-offline spec, and the acceptance job uses `playwright.full-day-offline.config.ts` which `testMatch`-restricts to that one spec.
 
+### 2.7 Schema-drift contract gate ([KASA-179](/KASA/issues/KASA-179))
+
+The `Contract gate (KASA-179)` step in `ci.yml` defends the bet that `@kassa/schemas` stays the single source of request/response Zod schemas across the API, the PWA, and the back office. The bet is in [ROADMAP.md §Risk register #5](./ROADMAP.md), and prior incidents (KASA-121 wire-shape gap, KASA-125 OpenAPI redecoration) confirmed drift can land without a structural guard.
+
+The gate is a vitest suite at [`apps/api/test/contract-gate.test.ts`](../apps/api/test/contract-gate.test.ts) and runs in two places: bundled into `pnpm -r test`, then re-run as a named `Contract gate (KASA-179)` step so a drift failure surfaces as a distinct red-X in the GitHub UI.
+
+It enforces three assertions:
+
+1. **Static — no inline Zod in route files.** A regex sweep of `apps/api/src/routes/*.ts` forbids `const xxx = z.<method>(...)` declarations outside the `health.ts` allowlist. Inline `z.union([…])` composition over already-imported schemas is tolerated; bare inline `const itemSchema = z.object({...})` is not.
+
+2. **Identity — every route schema is a `@kassa/schemas` export.** The suite boots the API via the `onCreate` test seam in `buildApp`, installs an `onRoute` Fastify hook that captures every registered route, and asserts each Zod schema attached to `schema.body | querystring | params | response.<code>` is *reference-equal* to a schema exported by `@kassa/schemas`. A route that re-declares a wire shape inline produces a fresh Zod instance that is not in the exported set, and the gate fails.
+
+3. **Drift — OpenAPI surface matches the committed snapshot.** The rendered OpenAPI document at `/docs/json` is normalised (volatile `info.version` + `servers` stripped) and compared against [`apps/api/test/__contract__/openapi.snapshot.json`](../apps/api/test/__contract__/openapi.snapshot.json). Any schema-shape change (renamed field, new endpoint, dropped status code) trips the test until the snapshot is refreshed.
+
+#### Running locally
+
+```sh
+# Just the gate:
+pnpm --filter @kassa/api test contract-gate
+
+# After an intentional schema change, refresh the OpenAPI snapshot and review the diff:
+UPDATE_OPENAPI_SNAPSHOT=1 pnpm --filter @kassa/api test contract-gate
+```
+
+#### What a failure looks like
+
+| Failure mode                                    | Gate that fires                                              | Fix |
+|:------------------------------------------------|:-------------------------------------------------------------|:----|
+| New route declares `const x = z.object(...)`    | §1 static — `Inline Zod schemas in route files`              | Move the schema into `packages/schemas/src/<module>.ts`, export it, and import the named export from the route. |
+| Route hands an inline Zod to `schema.response`  | §2 identity — `Zod schemas not sourced from @kassa/schemas`  | Same as above; the assertion lists `<METHOD> <url> schema.response.<code>` so the offending operation is obvious. |
+| Field added to an existing schema               | §3 drift — `OpenAPI surface drifted from the committed snapshot` | Refresh the snapshot with `UPDATE_OPENAPI_SNAPSHOT=1` and commit the diff. The PR review then sees the wire surface change. |
+| New endpoint added                              | §3 drift — same as above                                     | Refresh the snapshot. Confirm the new endpoint imports its schemas from `@kassa/schemas`; otherwise §1/§2 will also fire. |
+
+The snapshot diff is the review surface — drift doesn't get rubber-stamped on a refresh because the diff itself shows the wire-contract change.
+
 ---
 
 ## 3. CD workflow (`cd.yml`)

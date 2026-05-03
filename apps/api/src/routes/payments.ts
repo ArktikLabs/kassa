@@ -1,11 +1,11 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
-import { z } from "zod";
 import {
   type NormalizedWebhookEvent,
   PaymentProviderError,
   WebhookSignatureError,
 } from "@kassa/payments";
 import {
+  midtransWebhookAck,
   qrisCreateOrderRequest,
   qrisCreateOrderResponse,
   qrisOrderStatusResponse,
@@ -18,14 +18,6 @@ import type { DeviceAuthPreHandler } from "../auth/device-auth.js";
 import { sendError } from "../lib/errors.js";
 import { errorBodySchema } from "../lib/openapi.js";
 import { validate } from "../lib/validate.js";
-
-const midtransWebhookAck = z
-  .object({
-    ok: z.literal(true),
-    duplicate: z.boolean(),
-  })
-  .strict()
-  .describe("Webhook ack envelope. `duplicate` flags a deduped redelivery.");
 
 export function paymentsRoutes(requireDevice: DeviceAuthPreHandler) {
   return async function register(app: FastifyInstance): Promise<void> {

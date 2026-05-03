@@ -2,34 +2,12 @@ import type { FastifyInstance } from "fastify";
 import fastifySwagger from "@fastify/swagger";
 import fastifySwaggerUi from "@fastify/swagger-ui";
 import { jsonSchemaTransform } from "fastify-type-provider-zod";
-import { z } from "zod";
 
-/**
- * Shared error envelope. Mirrors `ApiErrorBody` in `./errors.ts` and is the
- * single source of truth for the OpenAPI spec — keep them in lockstep.
- */
-export const errorBodySchema = z
-  .object({
-    error: z
-      .object({
-        code: z.string().describe("Machine-readable error code, snake_case."),
-        message: z.string().describe("Human-readable error message."),
-        details: z.unknown().optional().describe("Optional structured detail payload."),
-      })
-      .strict(),
-  })
-  .strict()
-  .describe("Standard Kassa API error envelope.");
-
-export type ErrorBody = z.infer<typeof errorBodySchema>;
-
-/**
- * Standard 501 response used by every placeholder endpoint. The handler is
- * `notImplemented` in `./errors.ts`.
- */
-export const notImplementedResponses = {
-  501: errorBodySchema.describe("Endpoint is reserved but not yet implemented."),
-} as const;
+// Re-export the wire-level error envelope from `@kassa/schemas` so routes can
+// keep importing `errorBodySchema` / `notImplementedResponses` from this
+// module while the canonical Zod definition lives in the shared package
+// (KASA-179 contract gate).
+export { errorBodySchema, notImplementedResponses, type ErrorBody } from "@kassa/schemas/errors";
 
 /**
  * Tags used to group operations in the rendered Swagger UI. Keep in sync
