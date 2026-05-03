@@ -70,8 +70,8 @@ describe("api scaffold", () => {
       // /v1/sales/submit and /v1/eod/close are now live; see eod.test.ts.
       // /v1/catalog/items CRUD is now live; see catalog-items.test.ts.
       // /v1/outlets, /v1/catalog/boms, /v1/catalog/uoms are now live (KASA-122).
+      // /v1/auth/session/login is now live (KASA-183); see session-login.test.ts.
       { method: "POST", url: "/v1/auth/heartbeat" },
-      { method: "POST", url: "/v1/auth/session/login" },
       { method: "POST", url: "/v1/sales" },
       { method: "POST", url: "/v1/sales/sync" },
       // /v1/payments/qris and /v1/payments/qris/:orderId/status are now live; see payments-qris.test.ts.
