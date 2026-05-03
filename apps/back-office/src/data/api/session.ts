@@ -12,7 +12,11 @@
  * tell ops to wire the deploy env.
  */
 
-import type { SessionLoginRequest, SessionLoginResponse } from "@kassa/schemas/auth";
+import {
+  type SessionLoginRequest,
+  type SessionLoginResponse,
+  sessionLoginResponse,
+} from "@kassa/schemas/auth";
 import { apiBaseUrl, isApiBaseUrlConfigured } from "./config";
 
 export type SessionLoginErrorCode =
@@ -64,7 +68,25 @@ export async function sessionLogin(
   }
 
   if (response.ok) {
-    return (await response.json()) as SessionLoginResponse;
+    let body: unknown;
+    try {
+      body = await response.json();
+    } catch (err) {
+      throw new SessionLoginError(
+        "unknown",
+        err instanceof Error ? err.message : "invalid response body",
+        response.status,
+      );
+    }
+    const parsed = sessionLoginResponse.safeParse(body);
+    if (!parsed.success) {
+      throw new SessionLoginError(
+        "unknown",
+        "Login response did not match the expected contract.",
+        response.status,
+      );
+    }
+    return parsed.data;
   }
 
   if (response.status === 429) {

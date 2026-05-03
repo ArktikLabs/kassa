@@ -37,6 +37,7 @@ describe("Admin reconciliation page", () => {
       email: "siti@warungpusat.id",
       displayName: "Siti Rahayu",
       role: "owner",
+      merchantId: "11111111-1111-7111-8111-111111111111",
       issuedAt: new Date().toISOString(),
     });
     renderAt("/admin/reconciliation", [
@@ -60,6 +61,7 @@ describe("Admin reconciliation page", () => {
       email: "ani@warungpusat.id",
       displayName: "Ani",
       role: "cashier",
+      merchantId: "11111111-1111-7111-8111-111111111111",
       issuedAt: new Date().toISOString(),
     });
     renderAt("/admin/reconciliation", [
@@ -78,6 +80,7 @@ describe("Admin reconciliation page", () => {
       email: "siti@warungpusat.id",
       displayName: "Siti Rahayu",
       role: "owner",
+      merchantId: "11111111-1111-7111-8111-111111111111",
       issuedAt: new Date().toISOString(),
     });
     const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 200 }));
@@ -112,6 +115,7 @@ describe("Admin reconciliation page", () => {
       email: "siti@warungpusat.id",
       displayName: "Siti Rahayu",
       role: "owner",
+      merchantId: "11111111-1111-7111-8111-111111111111",
       issuedAt: new Date().toISOString(),
     });
     const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 500 }));

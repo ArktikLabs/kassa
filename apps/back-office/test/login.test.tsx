@@ -62,8 +62,36 @@ describe("Login screen", () => {
       expect(loadSession()).toMatchObject({
         email: "owner@kassa.test",
         role: "owner",
+        merchantId: "11111111-1111-7111-8111-111111111111",
       });
     });
+  });
+
+  it("rejects success bodies that don't match sessionLoginResponse", async () => {
+    /* If the API drifts off-contract (e.g. role typo, missing merchantId,
+     * non-ISO issuedAt), surface the unknown error and refuse to write
+     * a malformed Session into localStorage. */
+    globalThis.fetch = vi.fn(async () =>
+      jsonResponse(200, {
+        email: "owner@kassa.test",
+        displayName: "Owner",
+        role: "supreme_overlord",
+        merchantId: "11111111-1111-7111-8111-111111111111",
+        issuedAt: "2026-05-03T01:00:00.000+07:00",
+      }),
+    ) as unknown as typeof fetch;
+
+    renderAt("/login", [{ path: "/login", component: LoginScreen }]);
+
+    const user = userEvent.setup();
+    await user.type(await screen.findByLabelText("Email"), "owner@kassa.test");
+    await user.type(screen.getByLabelText("Kata sandi"), "rahasia");
+    await user.click(screen.getByRole("button", { name: "Masuk" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Login gagal karena kesalahan tak terduga. Coba lagi sebentar lagi.",
+    );
+    expect(loadSession()).toBeNull();
   });
 
   it("surfaces an invalid-credentials error from the API", async () => {

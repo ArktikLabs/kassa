@@ -32,6 +32,10 @@ export type Session = {
   email: string;
   displayName: string;
   role: StaffRole;
+  /* Tenant scope for merchant-scoped reads (catalog, outlets, reports).
+   * Returned by `POST /v1/auth/session/login` per ARCHITECTURE §4.1 and
+   * pinned by the schema docstring in @kassa/schemas/auth. */
+  merchantId: string;
   issuedAt: string;
 };
 
@@ -44,6 +48,7 @@ export function loadSession(): Session | null {
   try {
     const parsed = JSON.parse(raw) as Session;
     if (!STAFF_ROLES.includes(parsed.role)) return null;
+    if (typeof parsed.merchantId !== "string" || parsed.merchantId.length === 0) return null;
     return parsed;
   } catch {
     return null;

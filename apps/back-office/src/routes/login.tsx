@@ -31,6 +31,7 @@ export function LoginScreen() {
         email: session.email,
         displayName: session.displayName,
         role: session.role,
+        merchantId: session.merchantId,
         issuedAt: session.issuedAt,
       });
       void router.navigate({ to: "/outlets" });
