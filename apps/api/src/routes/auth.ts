@@ -1,29 +1,77 @@
+import type { CookieSerializeOptions } from "@fastify/cookie";
 import type { FastifyInstance } from "fastify";
 import rateLimit from "@fastify/rate-limit";
+import argon2 from "argon2";
 import {
   deviceEnrolRequest,
   deviceEnrolResponse,
   enrolmentCodeIssueRequest,
   enrolmentCodeIssueResponse,
+  sessionLoginRequest,
+  sessionLoginResponse,
   type DeviceEnrolRequest,
   type DeviceEnrolResponse,
   type EnrolmentCodeIssueRequest,
   type EnrolmentCodeIssueResponse,
+  type SessionLoginRequest,
+  type SessionLoginResponse,
 } from "@kassa/schemas/auth";
 import { sendError, notImplemented } from "../lib/errors.js";
 import { errorBodySchema, notImplementedResponses } from "../lib/openapi.js";
 import { validate } from "../lib/validate.js";
 import { EnrolmentError, type EnrolmentService } from "../services/enrolment/index.js";
 import { makeMerchantScopedStaffPreHandler } from "../auth/staff-bootstrap.js";
+import {
+  STAFF_SESSION_TTL_MS,
+  issueSessionCookie,
+  type StaffSessionPayload,
+} from "../auth/staff-session.js";
+import type { StaffRepository } from "../services/staff/index.js";
 import type { StaffRole } from "../db/schema/staff.js";
 
 const ENROLMENT_CODE_ISSUE_ROLES: readonly StaffRole[] = ["owner", "manager"];
+
+/**
+ * Argon2id options mirror the device-secret hasher (services/enrolment
+ * /credentials.ts) so the verify call against the timing-decoy hash
+ * costs the same CPU as a real staff password verify. Tuned to OWASP
+ * 2023 minimums.
+ */
+const STAFF_PASSWORD_ARGON2_OPTIONS = {
+  type: argon2.argon2id,
+  memoryCost: 19_456,
+  timeCost: 2,
+  parallelism: 1,
+} as const;
 
 export interface AuthRouteDeps {
   enrolment: EnrolmentService;
   staffBootstrapToken?: string;
   /** Per-IP requests per minute against `/v1/auth/enroll`. Defaults to 10. */
   enrollRateLimitPerMinute?: number;
+  /**
+   * Staff record source for `POST /v1/auth/session/login`. When omitted the
+   * login route returns 503 `not_configured` so deploys without a wired
+   * repository surface a clean failure instead of throwing on a null deref.
+   */
+  staffRepository?: StaffRepository;
+  /**
+   * HMAC secret used to sign the session cookie. Required when
+   * `staffRepository` is set; the route refuses to start signing
+   * cookies with an empty secret.
+   */
+  sessionCookieSecret?: string;
+  /** Per-IP requests per minute against `/v1/auth/session/login`. Defaults to 5. */
+  loginRateLimitPerMinute?: number;
+  /** Test seam — overrides `Date.now()` for the issuedAt/expiresAt stamps. */
+  now?: () => Date;
+  /**
+   * Test seam — partial cookie attribute overrides forwarded to
+   * `reply.setCookie`. The handler always defaults to `Secure;
+   * HttpOnly; SameSite=Lax`; tests using `app.inject` (no TLS) drop
+   * `Secure` here so the cookie can round-trip.
+   */
+  sessionCookieOptions?: Partial<CookieSerializeOptions>;
 }
 
 export function authRoutes(deps: AuthRouteDeps) {
@@ -33,6 +81,17 @@ export function authRoutes(deps: AuthRouteDeps) {
           allowedRoles: ENROLMENT_CODE_ISSUE_ROLES,
         })
       : null;
+
+    const now = deps.now ?? (() => new Date());
+
+    // Pre-computed timing decoy: argon2.verify against this hash for the
+    // "no such email" path so the response time matches a real wrong-password
+    // attempt. Computed once at register time — the literal plaintext is
+    // unused, only the CPU cost of verify matters.
+    const timingDecoyHash = await argon2.hash(
+      "kassa-timing-decoy-not-a-real-secret",
+      STAFF_PASSWORD_ARGON2_OPTIONS,
+    );
 
     // In-memory limiter; devops will swap the store to the Redis chosen for
     // BullMQ once the Fly.io worker plane has more than one instance,
@@ -207,18 +266,112 @@ export function authRoutes(deps: AuthRouteDeps) {
       },
       async (req, reply) => notImplemented(req, reply),
     );
-    app.post(
+
+    app.post<{ Body: SessionLoginRequest }>(
       "/session/login",
       {
         schema: {
           tags: ["auth"],
-          summary: "Open a staff session (not implemented)",
-          description: "Reserved for staff session login. Lands with KASA-25.",
-          response: notImplementedResponses,
+          summary: "Open a staff session",
+          description:
+            "Verifies email + password against the staff record and issues a " +
+            "signed HTTP-only session cookie (`SameSite=Lax`, `Secure`, " +
+            "30-day rolling Max-Age). Returns the staff identity the back-office " +
+            "needs to render the shell. 401 on bad credentials; 429 when the " +
+            "per-IP rate limit (5/min by default) trips. 503 when the route " +
+            "has not been configured with a staff repository or session secret.",
+          response: {
+            200: sessionLoginResponse,
+            401: errorBodySchema,
+            422: errorBodySchema,
+            429: errorBodySchema,
+            503: errorBodySchema,
+          },
         },
+        config: {
+          rateLimit: {
+            max: deps.loginRateLimitPerMinute ?? 5,
+            timeWindow: "1 minute",
+          },
+        },
+        preHandler: validate({ body: sessionLoginRequest }),
       },
-      async (req, reply) => notImplemented(req, reply),
+      async (req, reply) => {
+        if (!deps.staffRepository || !deps.sessionCookieSecret) {
+          sendError(
+            reply,
+            503,
+            "not_configured",
+            "Staff session login is not configured on this deploy.",
+          );
+          return reply;
+        }
+        const email = req.body.email.trim().toLowerCase();
+        const password = req.body.password;
+
+        const staff = await deps.staffRepository.findByEmail(email);
+        // Hash to compare against — the decoy keeps "no such email" and
+        // "wrong password" indistinguishable on the wire even though the
+        // 401 message is the same; argon2 verify is the long pole, so a
+        // missing user that skips the call gives a free probe oracle.
+        const hashToCheck = staff?.passwordHash ?? timingDecoyHash;
+        let passwordOk = false;
+        try {
+          passwordOk = await argon2.verify(hashToCheck, password);
+        } catch (err) {
+          // argon2 throws on malformed hashes (e.g. a hand-edited row);
+          // log and treat as auth failure rather than 500 so a single
+          // corrupt row can't take the login route down.
+          req.log.warn({ err, email }, "staff password verify threw");
+          passwordOk = false;
+        }
+        if (!staff || !passwordOk) {
+          req.log.info(
+            {
+              event: "staff_login.rejected",
+              email,
+              reason: staff ? "bad_password" : "unknown_email",
+            },
+            "staff login rejected",
+          );
+          sendError(reply, 401, "invalid_credentials", "Email or password is incorrect.");
+          return reply;
+        }
+
+        const issuedAt = now();
+        const expiresAt = new Date(issuedAt.getTime() + STAFF_SESSION_TTL_MS);
+        const payload: StaffSessionPayload = {
+          userId: staff.id,
+          merchantId: staff.merchantId,
+          email: staff.email,
+          displayName: staff.displayName,
+          role: staff.role,
+          iat: issuedAt.getTime(),
+          exp: expiresAt.getTime(),
+        };
+        issueSessionCookie({
+          reply,
+          payload,
+          secret: deps.sessionCookieSecret,
+          ...(deps.sessionCookieOptions ? { cookieOptions: deps.sessionCookieOptions } : {}),
+        });
+
+        const responseBody: SessionLoginResponse = {
+          email: staff.email,
+          displayName: staff.displayName,
+          role: staff.role,
+          merchantId: staff.merchantId,
+          issuedAt: issuedAt.toISOString(),
+        };
+        req.log.info(
+          { event: "staff_login.accepted", userId: staff.id, merchantId: staff.merchantId },
+          "staff login accepted",
+        );
+        reply.code(200).send(responseBody);
+        return reply;
+      },
     );
+
     app.post(
       "/session/logout",
       {

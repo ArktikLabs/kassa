@@ -47,6 +47,21 @@ const envSchema = z
     // Staging and production must point at separate Redis instances — no
     // shared queue state across tiers.
     REDIS_URL: optionalTrimmedString,
+    // HMAC secret for the staff session cookie. Required in production —
+    // see the refinement below — because without it `POST /v1/auth/session/login`
+    // returns 503 and the back-office cannot sign anyone in. Local dev is
+    // free to skip it; the route surfaces 503 `not_configured` cleanly.
+    SESSION_COOKIE_SECRET: z.string().min(32).optional(),
+    // Comma-separated allow-list of origins that may make cross-origin
+    // requests against the API with `credentials: include`. Each entry is a
+    // literal origin (`https://kassa-back-office.pages.dev`); the Cloudflare
+    // Pages preview pattern `https://pr-N.kassa-back-office.pages.dev` is
+    // matched separately via `BACK_OFFICE_PREVIEW_ORIGIN_PATTERN` below.
+    CORS_ALLOWED_ORIGINS: optionalTrimmedString,
+    // Optional regex (one entry, anchored automatically) that matches preview
+    // origins. Defaults to the Cloudflare-Pages preview pattern; set to a
+    // blank string to disable previews.
+    CORS_PREVIEW_ORIGIN_PATTERN: optionalTrimmedString,
   })
   .superRefine((env, ctx) => {
     if (env.NODE_ENV === "production" && !env.DATABASE_URL) {
@@ -54,6 +69,13 @@ const envSchema = z
         code: z.ZodIssueCode.custom,
         path: ["DATABASE_URL"],
         message: "DATABASE_URL is required when NODE_ENV=production.",
+      });
+    }
+    if (env.NODE_ENV === "production" && !env.SESSION_COOKIE_SECRET) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["SESSION_COOKIE_SECRET"],
+        message: "SESSION_COOKIE_SECRET is required when NODE_ENV=production.",
       });
     }
   });

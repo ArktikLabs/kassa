@@ -1,4 +1,6 @@
 import * as Sentry from "@sentry/node";
+import fastifyCookie, { type CookieSerializeOptions } from "@fastify/cookie";
+import fastifyCors from "@fastify/cors";
 import Fastify, {
   type FastifyError,
   type FastifyInstance,
@@ -20,6 +22,7 @@ import { createDomainEventBus, type DomainEventBus } from "./lib/events.js";
 import { registerOpenapi } from "./lib/openapi.js";
 import { createInMemoryDedupeStore, type WebhookDedupeStore } from "./lib/webhook-dedupe.js";
 import { EnrolmentService, InMemoryEnrolmentRepository } from "./services/enrolment/index.js";
+import type { StaffRepository } from "./services/staff/index.js";
 import {
   BomsService,
   InMemoryBomsRepository,
@@ -56,6 +59,31 @@ export interface BuildAppOptions {
     service: EnrolmentService;
     staffBootstrapToken?: string;
     enrollRateLimitPerMinute?: number;
+  };
+  /**
+   * Staff session login wiring (`POST /v1/auth/session/login`). When
+   * omitted the route returns 503 `not_configured` so deploys without
+   * a staff repository / cookie secret still register cleanly. The
+   * cookie attribute overrides are intended for tests using
+   * `app.inject` (no TLS); production callers must leave them unset
+   * so the cookie keeps `Secure`.
+   */
+  staffSession?: {
+    repository: StaffRepository;
+    cookieSecret: string;
+    rateLimitPerMinute?: number;
+    now?: () => Date;
+    cookieOptions?: Partial<CookieSerializeOptions>;
+  };
+  /**
+   * CORS allow-list. Each entry is a literal origin (`https://host`)
+   * or a `RegExp` matched against the request `Origin` header. Defaults
+   * to "no cross-origin" — production deploys must opt in with the
+   * back-office origins so the session cookie can round-trip.
+   */
+  cors?: {
+    /** Literal origins or RegExps; both work with `@fastify/cors` natively. */
+    allowedOrigins: ReadonlyArray<string | RegExp>;
   };
   eod?: {
     service: EodService;
@@ -124,6 +152,48 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   app.decorate("events", options.events ?? createDomainEventBus());
   app.decorate("webhookDedupe", options.webhookDedupe ?? createInMemoryDedupeStore());
   app.decorate("midtransProvider", options.midtransProvider ?? null);
+
+  // Cookie plugin sits at the app root so every route can call
+  // `reply.setCookie` / read `req.cookies`. Only the staff session uses
+  // it today, but registering globally avoids the surprise where an
+  // unrelated route forgets to pull in the plugin and crashes on cookie
+  // access. Signing is done per-cookie by the staff-session module
+  // (HMAC payload + signature in the value), not via the plugin's
+  // built-in `secret` option, so that callers can swap secrets without
+  // a server restart in the future.
+  await app.register(fastifyCookie);
+
+  // CORS: `credentials: true` is mandatory for the session cookie to
+  // round-trip on cross-origin requests from `kassa-back-office.pages.dev`.
+  // The allow-list is opt-in — `buildApp({})` registers no CORS at all so
+  // tests stay deterministic and production must explicitly name the
+  // back-office origin (and any preview deploys) before requests succeed.
+  if (options.cors && options.cors.allowedOrigins.length > 0) {
+    const allowedOrigins = options.cors.allowedOrigins;
+    await app.register(fastifyCors, {
+      credentials: true,
+      origin(origin, cb) {
+        // Same-origin / non-browser callers (curl, server-to-server)
+        // omit the Origin header — let those through unchanged so
+        // nothing inside the deploy network breaks.
+        if (!origin) return cb(null, false);
+        for (const allowed of allowedOrigins) {
+          if (typeof allowed === "string" ? allowed === origin : allowed.test(origin)) {
+            return cb(null, true);
+          }
+        }
+        // Reject by signalling "not allowed" rather than throwing — the
+        // browser surfaces this as a missing `Access-Control-Allow-Origin`
+        // header and the request is blocked client-side, which is what we
+        // want. Throwing here would 500 the preflight and look like a bug.
+        return cb(null, false);
+      },
+      methods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
+      allowedHeaders: ["content-type", "authorization", "x-kassa-merchant-id"],
+      exposedHeaders: ["x-request-id"],
+      maxAge: 600,
+    });
+  }
 
   // Run the test seam BEFORE any `register` call so an `onRoute` hook
   // installed by a caller fires for every route registered below.
@@ -222,6 +292,19 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
         : {}),
       ...(enrolment.enrollRateLimitPerMinute !== undefined
         ? { enrollRateLimitPerMinute: enrolment.enrollRateLimitPerMinute }
+        : {}),
+      ...(options.staffSession !== undefined
+        ? {
+            staffRepository: options.staffSession.repository,
+            sessionCookieSecret: options.staffSession.cookieSecret,
+            ...(options.staffSession.rateLimitPerMinute !== undefined
+              ? { loginRateLimitPerMinute: options.staffSession.rateLimitPerMinute }
+              : {}),
+            ...(options.staffSession.now !== undefined ? { now: options.staffSession.now } : {}),
+            ...(options.staffSession.cookieOptions !== undefined
+              ? { sessionCookieOptions: options.staffSession.cookieOptions }
+              : {}),
+          }
         : {}),
     },
     catalog: {

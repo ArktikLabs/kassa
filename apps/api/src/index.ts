@@ -4,6 +4,7 @@ import { loadEnv } from "./config.js";
 import { createDatabase, type DatabaseHandle } from "./db/client.js";
 import { initSentry } from "./lib/sentry.js";
 import { EnrolmentService, InMemoryEnrolmentRepository } from "./services/enrolment/index.js";
+import { InMemoryStaffRepository, type StaffRepository } from "./services/staff/index.js";
 import {
   InMemoryItemsRepository,
   ItemsService,
@@ -47,6 +48,31 @@ async function main(): Promise<void> {
     });
   }
 
+  // Staff session login (KASA-183). The Postgres-backed staff repo
+  // lands with seat management; until then, the in-memory repo keeps
+  // production deploys booting cleanly — the route returns 401
+  // `invalid_credentials` on every attempt because the repo is empty,
+  // which surfaces as a normal "wrong password" toast in the UI.
+  const staffRepository: StaffRepository = new InMemoryStaffRepository();
+
+  const corsAllowedOrigins: Array<string | RegExp> = [];
+  if (env.CORS_ALLOWED_ORIGINS) {
+    for (const raw of env.CORS_ALLOWED_ORIGINS.split(",")) {
+      const trimmed = raw.trim();
+      if (trimmed.length > 0) corsAllowedOrigins.push(trimmed);
+    }
+  }
+  // Default preview pattern matches Cloudflare Pages preview deploys
+  // (`https://pr-123.kassa-back-office.pages.dev`); ops can override
+  // via `CORS_PREVIEW_ORIGIN_PATTERN` (set to "" to disable).
+  const previewPattern =
+    env.CORS_PREVIEW_ORIGIN_PATTERN === undefined
+      ? "^https://pr-\\d+\\.kassa-back-office\\.pages\\.dev$"
+      : env.CORS_PREVIEW_ORIGIN_PATTERN;
+  if (previewPattern.length > 0) {
+    corsAllowedOrigins.push(new RegExp(previewPattern));
+  }
+
   const app = await buildApp({
     logger: {
       level: env.LOG_LEVEL,
@@ -67,12 +93,31 @@ async function main(): Promise<void> {
         ? { staffBootstrapToken: env.STAFF_BOOTSTRAP_TOKEN }
         : {}),
     },
+    ...(env.SESSION_COOKIE_SECRET !== undefined
+      ? {
+          staffSession: {
+            repository: staffRepository,
+            cookieSecret: env.SESSION_COOKIE_SECRET,
+          },
+        }
+      : {}),
+    ...(corsAllowedOrigins.length > 0 ? { cors: { allowedOrigins: corsAllowedOrigins } } : {}),
     ...(midtransProvider !== undefined ? { midtransProvider } : {}),
   });
 
   if (env.STAFF_BOOTSTRAP_TOKEN === undefined) {
     app.log.warn(
       "STAFF_BOOTSTRAP_TOKEN is not set; POST /v1/auth/enrolment-codes will reject all requests with 503.",
+    );
+  }
+  if (env.SESSION_COOKIE_SECRET === undefined) {
+    app.log.warn(
+      "SESSION_COOKIE_SECRET is not set; POST /v1/auth/session/login will reject all requests with 503.",
+    );
+  }
+  if (corsAllowedOrigins.length === 0) {
+    app.log.warn(
+      "No CORS allow-list configured; the back-office will be blocked by the browser when calling the API cross-origin.",
     );
   }
   if (!midtransProvider) {

@@ -666,14 +666,59 @@
     },
     "/v1/auth/session/login": {
       "post": {
-        "summary": "Open a staff session (not implemented)",
+        "summary": "Open a staff session",
         "tags": [
           "auth"
         ],
-        "description": "Reserved for staff session login. Lands with KASA-25.",
+        "description": "Verifies email + password against the staff record and issues a signed HTTP-only session cookie (`SameSite=Lax`, `Secure`, 30-day rolling Max-Age). Returns the staff identity the back-office needs to render the shell. 401 on bad credentials; 429 when the per-IP rate limit (5/min by default) trips. 503 when the route has not been configured with a staff repository or session secret.",
         "responses": {
-          "501": {
-            "description": "Endpoint is reserved but not yet implemented.",
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "email": {
+                      "type": "string",
+                      "format": "email"
+                    },
+                    "displayName": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "role": {
+                      "type": "string",
+                      "enum": [
+                        "owner",
+                        "manager",
+                        "cashier",
+                        "read_only"
+                      ]
+                    },
+                    "merchantId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "issuedAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  },
+                  "required": [
+                    "email",
+                    "displayName",
+                    "role",
+                    "merchantId",
+                    "issuedAt"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Standard Kassa API error envelope.",
             "content": {
               "application/json": {
                 "schema": {
@@ -705,7 +750,121 @@
                     "error"
                   ],
                   "additionalProperties": false,
-                  "description": "Endpoint is reserved but not yet implemented."
+                  "description": "Standard Kassa API error envelope."
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Standard Kassa API error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "description": "Machine-readable error code, snake_case."
+                        },
+                        "message": {
+                          "type": "string",
+                          "description": "Human-readable error message."
+                        },
+                        "details": {
+                          "description": "Optional structured detail payload."
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Standard Kassa API error envelope."
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Standard Kassa API error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "description": "Machine-readable error code, snake_case."
+                        },
+                        "message": {
+                          "type": "string",
+                          "description": "Human-readable error message."
+                        },
+                        "details": {
+                          "description": "Optional structured detail payload."
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Standard Kassa API error envelope."
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Standard Kassa API error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "description": "Machine-readable error code, snake_case."
+                        },
+                        "message": {
+                          "type": "string",
+                          "description": "Human-readable error message."
+                        },
+                        "details": {
+                          "description": "Optional structured detail payload."
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Standard Kassa API error envelope."
                 }
               }
             }
