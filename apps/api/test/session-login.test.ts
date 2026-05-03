@@ -105,7 +105,7 @@ describe("POST /v1/auth/session/login", () => {
     });
     const setCookie = res.headers["set-cookie"];
     expect(setCookie).toBeDefined();
-    const cookieLine = Array.isArray(setCookie) ? setCookie[0] : (setCookie as string);
+    const cookieLine = Array.isArray(setCookie) ? setCookie[0]! : (setCookie as string);
     expect(cookieLine).toMatch(new RegExp(`^${STAFF_SESSION_COOKIE}=`));
     expect(cookieLine).toMatch(/HttpOnly/i);
     expect(cookieLine).toMatch(/SameSite=Lax/i);
