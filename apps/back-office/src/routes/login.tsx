@@ -3,22 +3,14 @@ import { FormattedMessage, useIntl } from "react-intl";
 import { useRouter } from "@tanstack/react-router";
 import { Button } from "../components/Button";
 import { Field, TextInput } from "../components/Field";
-import { getSnapshot } from "../data/store";
+import { sessionLogin, SessionLoginError } from "../data/api/session";
 import { saveSession } from "../lib/session";
 
 /*
- * Login route (ARCHITECTURE §4.1 auth contract).
- *
- * In the scaffold we match the email + password against the seeded
- * staff row and issue a local session. Wiring to `POST /v1/auth/
- * session/login` on `@kassa/api` is the next ticket — the form and
- * validation already follow that contract so the swap is a network
- * call change, not a UX one.
+ * Login route. Calls `POST /v1/auth/session/login` (ARCHITECTURE §4.1).
+ * The session is held server-side in an HTTP-only cookie; the response
+ * body returns the staff identity we render in the shell. KASA-182.
  */
-
-// Scaffold password for the seeded owner. The real credential lives
-// server-side (Argon2id-hashed) behind the auth endpoint.
-const SCAFFOLD_PASSWORD = "welcome-to-kassa";
 
 export function LoginScreen() {
   const router = useRouter();
@@ -26,23 +18,28 @@ export function LoginScreen() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
-  const submit = (e: FormEvent<HTMLFormElement>) => {
+  const submit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    const staff = getSnapshot().staff.find(
-      (s) => s.email.toLowerCase() === email.trim().toLowerCase() && s.isActive,
-    );
-    if (!staff || password !== SCAFFOLD_PASSWORD) {
-      setError(intl.formatMessage({ id: "login.error" }));
-      return;
+    if (submitting) return;
+    setError(null);
+    setSubmitting(true);
+    try {
+      const session = await sessionLogin({ email: email.trim(), password });
+      saveSession({
+        email: session.email,
+        displayName: session.displayName,
+        role: session.role,
+        issuedAt: session.issuedAt,
+      });
+      void router.navigate({ to: "/outlets" });
+    } catch (err) {
+      const messageId = errorMessageId(err);
+      setError(intl.formatMessage({ id: messageId }));
+    } finally {
+      setSubmitting(false);
     }
-    saveSession({
-      email: staff.email,
-      displayName: staff.displayName,
-      role: staff.role,
-      issuedAt: new Date().toISOString(),
-    });
-    void router.navigate({ to: "/outlets" });
   };
 
   return (
@@ -64,6 +61,7 @@ export function LoginScreen() {
               autoComplete="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
+              disabled={submitting}
             />
           </Field>
           <Field
@@ -79,10 +77,11 @@ export function LoginScreen() {
               autoComplete="current-password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
+              disabled={submitting}
             />
           </Field>
-          <Button type="submit" className="w-full">
-            <FormattedMessage id="login.submit" />
+          <Button type="submit" className="w-full" disabled={submitting}>
+            <FormattedMessage id={submitting ? "login.submitting" : "login.submit"} />
           </Button>
         </form>
         {/*
@@ -106,4 +105,24 @@ export function LoginScreen() {
       </div>
     </main>
   );
+}
+
+function errorMessageId(err: unknown): string {
+  if (err instanceof SessionLoginError) {
+    switch (err.code) {
+      case "invalid_credentials":
+        return "login.error.invalidCredentials";
+      case "rate_limited":
+        return "login.error.rateLimited";
+      case "not_implemented":
+        return "login.error.notImplemented";
+      case "not_configured":
+        return "login.error.notConfigured";
+      case "network_error":
+        return "login.error.network";
+      default:
+        return "login.error.unknown";
+    }
+  }
+  return "login.error.unknown";
 }
