@@ -1,6 +1,15 @@
 # @kassa/back-office
 
-Manager-facing admin UI for Kassa. The laptop-first counterpart to the POS PWA — catalog, BOM, outlet, staff, device, and reconciliation surfaces for owners and managers. This is the scaffold shell only: routes, tokens, shared primitives, login stub, and CRUD forms backed by a local store. Wiring to `@kassa/api` (delta-pull queries and mutations) ships in follow-up tickets.
+Manager-facing admin UI for Kassa. The laptop-first counterpart to the POS PWA — catalog, BOM, outlet, staff, device, and reconciliation surfaces for owners and managers. The shell is wired to `@kassa/api` for staff session login (`POST /v1/auth/session/login`); the rest of the routes still read from the local scaffold store and swap to delta-pull queries in follow-up tickets.
+
+## API base URL
+
+The back-office reads the API host from `VITE_API_BASE_URL` (Vite build-time env). Set it at build/deploy time:
+
+- **Local dev**: add `VITE_API_BASE_URL=http://localhost:3000` to `.env.local` (the API listens on :3000 by default).
+- **Cloudflare Pages**: set the variable in the project's Production and Preview environments under *Settings → Environment variables*; the value should point at the API for that environment (prod: `https://kassa-api-prod.fly.dev`).
+
+When the variable is empty the login screen surfaces a clear "API URL is not configured" error so ops can spot a misconfigured deploy without digging through devtools.
 
 ## Run
 

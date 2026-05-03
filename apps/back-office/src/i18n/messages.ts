@@ -29,8 +29,16 @@ const id: MessageMap = {
   "login.email": "Email",
   "login.password": "Kata sandi",
   "login.submit": "Masuk",
-  "login.error":
-    "Email atau kata sandi tidak dikenali. Stub scaffold: gunakan email staf yang diseed.",
+  "login.submitting": "Masuk…",
+  "login.error.invalidCredentials": "Email atau kata sandi tidak sesuai.",
+  "login.error.rateLimited": "Terlalu banyak percobaan. Coba lagi sebentar lagi.",
+  "login.error.notImplemented":
+    "Login backend belum aktif. Hubungi tim Kassa untuk menyalakan endpoint sesi staf.",
+  "login.error.notConfigured":
+    "Konfigurasi API belum dipasang di deploy ini. Hubungi DevOps untuk men-set VITE_API_BASE_URL.",
+  "login.error.network":
+    "Tidak dapat menghubungi server Kassa. Periksa koneksi internet, lalu coba lagi.",
+  "login.error.unknown": "Login gagal karena kesalahan tak terduga. Coba lagi sebentar lagi.",
   "login.onboarding.link": "Baca panduan onboarding (PDF · 8 halaman)",
   "login.onboarding.suffix": "— bisa dibaca sebelum login.",
   "guard.forbidden.heading": "Akses dibatasi",
@@ -173,7 +181,15 @@ const en: MessageMap = {
   "login.email": "Email",
   "login.password": "Password",
   "login.submit": "Sign in",
-  "login.error": "Email or password not recognised. Scaffold stub: use a seeded staff email.",
+  "login.submitting": "Signing in…",
+  "login.error.invalidCredentials": "Email or password is incorrect.",
+  "login.error.rateLimited": "Too many attempts. Please try again in a moment.",
+  "login.error.notImplemented":
+    "Backend login is not enabled yet. Contact the Kassa team to switch on the staff session endpoint.",
+  "login.error.notConfigured":
+    "API URL is not configured for this deploy. Ask DevOps to set VITE_API_BASE_URL.",
+  "login.error.network": "Could not reach the Kassa server. Check your connection and try again.",
+  "login.error.unknown": "Sign-in failed due to an unexpected error. Please try again.",
   "login.onboarding.link": "Read the onboarding guide (PDF · 8 pages)",
   "login.onboarding.suffix": "— available before you sign in.",
   "guard.forbidden.heading": "Access restricted",
