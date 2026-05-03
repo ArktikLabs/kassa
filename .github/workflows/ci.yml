@@ -88,6 +88,19 @@ jobs:
       - name: Test
         run: pnpm -r test
 
+      # KASA-179 schema-drift contract gate. Re-runs the contract-gate suite
+      # (already exercised by `pnpm -r test` above) under its own named step
+      # so a drift failure surfaces as a distinct red-X in the GitHub UI.
+      # The suite asserts (a) no inline Zod in route files, (b) every route
+      # schema is reference-equal to a `@kassa/schemas` export, and (c) the
+      # rendered OpenAPI document matches the committed snapshot at
+      # apps/api/test/__contract__/openapi.snapshot.json.
+      #
+      # Refresh the snapshot intentionally with:
+      #   UPDATE_OPENAPI_SNAPSHOT=1 pnpm --filter @kassa/api test contract-gate
+      - name: Contract gate (KASA-179)
+        run: pnpm --filter @kassa/api test -- contract-gate
+
       # KASA-140: every deployable artifact must carry source maps so the
       # Sentry release uploaded by cd.yml / deploy-prod.yml can symbolicate
       # production stack traces. Failing this step on PR catches a

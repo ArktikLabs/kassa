@@ -63,3 +63,17 @@ export const qrisOrderStatusResponse = z
   })
   .strict();
 export type QrisOrderStatusResponse = z.infer<typeof qrisOrderStatusResponse>;
+
+/**
+ * Ack envelope returned to Midtrans after a webhook delivery. `duplicate`
+ * flags a deduped redelivery so the gateway records the event as accepted
+ * without our pipeline re-emitting downstream notifications.
+ */
+export const midtransWebhookAck = z
+  .object({
+    ok: z.literal(true),
+    duplicate: z.boolean(),
+  })
+  .strict()
+  .describe("Webhook ack envelope. `duplicate` flags a deduped redelivery.");
+export type MidtransWebhookAck = z.infer<typeof midtransWebhookAck>;

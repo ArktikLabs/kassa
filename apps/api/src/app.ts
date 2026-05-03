@@ -97,6 +97,13 @@ export interface BuildAppOptions {
    * un-gated routes still work during the bootstrap window.
    */
   resolveMerchantId?: (req: FastifyRequest) => string | null;
+  /**
+   * Test seam: invoked after the Fastify instance is created but before any
+   * routes register. The contract-gate suite (KASA-179) uses this to attach
+   * an `onRoute` hook that captures every route's `schema` so it can prove
+   * each Zod schema points back to a `@kassa/schemas` export.
+   */
+  onCreate?: (app: FastifyInstance) => void;
 }
 
 declare module "fastify" {
@@ -117,6 +124,10 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   app.decorate("events", options.events ?? createDomainEventBus());
   app.decorate("webhookDedupe", options.webhookDedupe ?? createInMemoryDedupeStore());
   app.decorate("midtransProvider", options.midtransProvider ?? null);
+
+  // Run the test seam BEFORE any `register` call so an `onRoute` hook
+  // installed by a caller fires for every route registered below.
+  options.onCreate?.(app);
 
   // Wire Sentry's Fastify hooks so unhandled errors in route handlers reach
   // Sentry tagged with the release set in initSentry(). No-op when Sentry is
