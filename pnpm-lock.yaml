@@ -112,6 +112,9 @@ importers:
       '@playwright/test':
         specifier: ^1.49.0
         version: 1.59.1
+      '@size-limit/file':
+        specifier: ^11.1.6
+        version: 11.2.0(size-limit@11.2.0)
       '@tailwindcss/vite':
         specifier: ^4.0.0
         version: 4.2.4(vite@7.3.2(@types/node@22.19.17)(jiti@2.6.1)(lightningcss@1.32.0)(terser@5.46.1)(tsx@4.21.0)(yaml@2.8.3))
@@ -142,6 +145,9 @@ importers:
       jsdom:
         specifier: ^25.0.0
         version: 25.0.1
+      size-limit:
+        specifier: ^11.1.6
+        version: 11.2.0
       tailwindcss:
         specifier: ^4.0.0
         version: 4.2.4

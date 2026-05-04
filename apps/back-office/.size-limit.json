@@ -1,0 +1,8 @@
+[
+  {
+    "name": "Back-office initial route — main JS + main CSS (gzip)",
+    "path": ["dist/assets/index-*.js", "dist/assets/index-*.css"],
+    "limit": "350 KB",
+    "gzip": true
+  }
+]

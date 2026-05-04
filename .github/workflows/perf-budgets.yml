@@ -1,35 +1,55 @@
 name: Perf budgets
 
-# Cross-milestone Performance budgets track from ROADMAP.md (M2 → M4) and
-# the KASA-141 acceptance.
+# Cross-milestone Performance budgets track from ROADMAP.md (M2 → M4),
+# folding the KASA-141 (POS) and KASA-199 (back-office) acceptances into one
+# workflow.
 #
-# Two parallel gates against the apps/pos PWA:
+# Three parallel gates run against the front-end apps:
 #   - Lighthouse CI (`treosh/lighthouse-ci-action`, pinned to v11.4.0 SHA per
 #     docs/CI-CD.md §2.2). v11 is the last Lighthouse line that scores the PWA
-#     category; we keep the PWA ≥ 90 contract from the acceptance instead of
-#     swapping to per-audit checks against Lighthouse 12.
-#   - `size-limit` (gzipped JS/CSS) for apps/pos initial route + total
-#     route-loaded JS, configured in apps/pos/.size-limit.json.
+#     category; we keep the PWA ≥ 90 contract from KASA-141 instead of
+#     swapping to per-audit checks against Lighthouse 12. POS only — back-office
+#     is not a PWA and runs on a merchant laptop with a different SLO.
+#   - `size-limit` for apps/pos initial route + total route-loaded JS,
+#     configured in apps/pos/.size-limit.json.
+#   - `size-limit` for apps/back-office initial route, configured in
+#     apps/back-office/.size-limit.json (KASA-199 acceptance).
 #
 # Trigger posture:
-#   - PR: both gates run, currently informational (continue-on-error: true).
-#     Will flip to blocking once the perf baseline lands — see
-#     docs/CI-CD.md §8.3 for the procedure and budget rationale.
-#   - push to main: bundle-size runs to record the trendline (also
+#   - PR: gates run when changed paths actually affect a built artifact (the
+#     `paths:` filter below). POS gates are informational
+#     (continue-on-error: true) until the perf baseline lands — see
+#     docs/CI-CD.md §8.4. Back-office bundle-size is blocking from day one
+#     because the current build sits well under budget.
+#   - push to main: bundle-size jobs run to record the trendline (also
 #     informational so a regression doesn't break the trunk gate; the asserts
 #     in .size-limit.json are the source of truth for the budget).
 #   - workflow_dispatch: manual re-run for ops.
 #
-# Both jobs run in parallel with `ci.yml` (no `needs:`) so they don't extend
-# the critical-path PR latency. Each does its own pnpm install + apps/pos
-# build — duplicated work, but the install hits the setup-node pnpm cache
-# and the build is ~15 s, which keeps each job under 3 min wall-clock.
+# All jobs run in parallel with `ci.yml` (no `needs:`) so they don't extend
+# the critical-path PR latency. Each does its own pnpm install + app build —
+# duplicated work, but the install hits the setup-node pnpm cache and each
+# build is ~15 s, which keeps every job under 3 min wall-clock.
 
 on:
   push:
     branches: [main]
+    paths:
+      - "apps/pos/**"
+      - "apps/back-office/**"
+      - "pnpm-lock.yaml"
+      - ".github/workflows/perf-budgets.yml"
   pull_request:
     branches: [main]
+    # Per KASA-199 acceptance: bundle-size runs on PRs that touch
+    # apps/pos/**, apps/back-office/**, or pnpm-lock.yaml. We also retrigger
+    # on edits to this workflow file so changes to the gate itself are
+    # exercised before merge.
+    paths:
+      - "apps/pos/**"
+      - "apps/back-office/**"
+      - "pnpm-lock.yaml"
+      - ".github/workflows/perf-budgets.yml"
   workflow_dispatch:
 
 concurrency:
@@ -47,7 +67,7 @@ jobs:
     timeout-minutes: 10
     # Informational while the perf baseline lands. Flip to `false` (or remove
     # this line) once the budgets in lighthouserc.json are met — see
-    # docs/CI-CD.md §8.3.
+    # docs/CI-CD.md §8.4.
     continue-on-error: true
     steps:
       - name: Checkout
@@ -126,7 +146,7 @@ jobs:
     timeout-minutes: 10
     # Informational while the perf baseline lands. The .size-limit.json
     # numbers are the contractual budget; the gate just won't merge-block
-    # until we flip this off. See docs/CI-CD.md §8.3.
+    # until we flip this off. See docs/CI-CD.md §8.4.
     continue-on-error: true
     steps:
       - name: Checkout
@@ -155,3 +175,34 @@ jobs:
       # needing a separate threshold check.
       - name: Check bundle size budgets
         run: pnpm --filter @kassa/pos run size:check
+
+  bundle-size-back-office:
+    name: Bundle-size budget (apps/back-office)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # Blocking from day one: the current back-office build (~136 KB gzip
+    # initial route) is well under the KASA-199 acceptance budget of 350 KB,
+    # so there is no day-zero failure to absorb. See docs/CI-CD.md §8.4.
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@fe02b34f77f8bc703788d5817da081398fad5dd2 # v4.0.0
+        with:
+          run_install: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build apps/back-office
+        run: pnpm --filter @kassa/back-office... build
+
+      - name: Check bundle size budgets
+        run: pnpm --filter @kassa/back-office run size:check
