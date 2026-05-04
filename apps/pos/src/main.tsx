@@ -50,7 +50,7 @@ createRoot(rootEl).render(
 // Sentry init and the service-worker registration are not needed on the LCP
 // critical path. Lazy-import them so they ship as separate chunks and run
 // after first paint — keeps the initial JS bundle small enough to clear the
-// mobile Lighthouse Performance/LCP budget (KASA-157, docs/CI-CD.md §8.3).
+// mobile Lighthouse Performance/LCP budget (KASA-157, docs/CI-CD.md §8.4).
 function deferUntilIdle(fn: () => void): void {
   if (typeof window === "undefined") return;
   type RICWindow = Window & {

@@ -785,11 +785,11 @@ These are out of scope for the initial CI + static-surface CD setup but are **pr
 
 ---
 
-## 8. Performance budgets ([KASA-141](/KASA/issues/KASA-141))
+## 8. Performance budgets ([KASA-141](/KASA/issues/KASA-141), [KASA-199](/KASA/issues/KASA-199))
 
-The cross-milestone Performance budgets track in [ROADMAP.md](./ROADMAP.md) commits to `Bundle size, Lighthouse, and Web Vitals gates enforced in CI`. POS is the only surface gated here in v0 — back-office runs on the merchant's laptop and has a different SLO; the API is server-side and not bundle-budgeted.
+The cross-milestone Performance budgets track in [ROADMAP.md](./ROADMAP.md) commits to `Bundle size, Lighthouse, and Web Vitals gates enforced in CI`. KASA-141 landed the POS-only baseline; [KASA-199](/KASA/issues/KASA-199) folds `apps/back-office` into the same gate. The API is server-side and not bundle-budgeted.
 
-The two gates live in their own workflow, [`.github/workflows/perf-budgets.yml`](../.github/workflows/perf-budgets.yml), and run in parallel with `ci.yml` so they don't extend the critical-path PR latency.
+The gates live in their own workflow, [`.github/workflows/perf-budgets.yml`](../.github/workflows/perf-budgets.yml), and run in parallel with `ci.yml` so they don't extend the critical-path PR latency. The workflow's `paths:` filter limits `pull_request` runs to PRs that touch `apps/pos/**`, `apps/back-office/**`, `pnpm-lock.yaml`, or the workflow file itself — docs-only PRs skip the gate entirely.
 
 ### 8.1 Lighthouse CI (apps/pos)
 
@@ -818,34 +818,46 @@ Asserts (mobile form factor with simulated slow-4G throttling, median of 3 runs 
 | Initial route — main JS + main CSS chunks              | 200 KB       | What the browser parses before first paint on slow-4G; above 200 KB the cold-start lags.     |
 | Total route-loaded JS — every hashed JS chunk in `dist/assets/` | 350 KB | Caps post-paint lazy-load, including the workbox SW shim. Headroom for code-split routes.    |
 
-### 8.3 Posture: informational vs. blocking
+### 8.3 Bundle-size budget (apps/back-office) — [KASA-199](/KASA/issues/KASA-199)
 
-Both gates currently ship with `continue-on-error: true` on the workflow jobs. They surface a red check on the PR but do not block merge. This is deliberate — at the time KASA-141 landed, the apps/pos initial bundle is at ~206 KB gzip (above the 200 KB target by ~6 KB), so blocking would wedge unrelated PRs until the code-splitting work brings it back under budget.
+`size-limit` (devDep on `@kassa/back-office`) reads [`apps/back-office/.size-limit.json`](../apps/back-office/.size-limit.json). Same trigger shape as POS: `pull_request` (gate) and `push` to `main` (trendline).
 
-The gates flip to **blocking** the moment one of the following is true:
+| Slice                                     | Limit (gzip) | Why                                                                                                 |
+|:------------------------------------------|:-------------|:----------------------------------------------------------------------------------------------------|
+| Initial route — main JS + main CSS chunks | 350 KB       | Owner-side app on a merchant laptop; SLO is "snappy on a 4G hotspot", not "fast on slow-4G tablet". |
+
+The back-office app is not a PWA and ships only an `index-*` bundle (no code-split routes today), so a single budget on the initial route is enough to cover the surface. Add additional rows here when route-level code-splitting lands.
+
+### 8.4 Posture: informational vs. blocking
+
+POS gates currently ship with `continue-on-error: true` on the workflow jobs. They surface a red check on the PR but do not block merge. This is deliberate — at the time KASA-141 landed, the apps/pos initial bundle is at ~206 KB gzip (above the 200 KB target by ~6 KB), so blocking would wedge unrelated PRs until the code-splitting work brings it back under budget.
+
+The back-office bundle-size gate is **blocking from day one**: the current build sits well under the 350 KB budget (initial route ~136 KB gzip), so there is no day-zero failure to absorb.
+
+The POS gates flip to **blocking** the moment one of the following is true:
 
 1. The current main-branch build is at or under every budget for two consecutive `push: main` runs (i.e. the baseline is real, not a fluke).
-2. Or the budget itself is intentionally raised via the procedure in §8.4 below.
+2. Or the budget itself is intentionally raised via the procedure in §8.5 below.
 
 Flip mechanism: delete the `continue-on-error: true` line from the relevant job in `perf-budgets.yml`. No workflow restructuring required.
 
-### 8.4 Procedure to raise (or lower) a budget
+### 8.5 Procedure to raise (or lower) a budget
 
-Budgets are a contract with the user (Indonesian merchant on entry-level hardware). Bumping a number is allowed but never silent.
+Budgets are a contract with the user (Indonesian merchant on entry-level hardware for POS; back-office staff on a laptop). Bumping a number is allowed but never silent.
 
-1. Open a PR that edits the budget in `apps/pos/.size-limit.json` or `apps/pos/lighthouserc.json` and the matching row in §8.1 / §8.2 above.
+1. Open a PR that edits the budget in `apps/pos/.size-limit.json`, `apps/back-office/.size-limit.json`, or `apps/pos/lighthouserc.json` and the matching row in §8.1 / §8.2 / §8.3 above.
 2. The PR description must include:
    - **Before / after numbers** (e.g. "initial route 200 → 220 KB gzip").
    - **What changed in the bundle** that justifies the bump (a new route, a vendored dep, an unavoidable polyfill).
-   - **SLO impact note** — projected effect on cold-start LCP on the target hardware (Android tablet on slow-4G). If unknown, run a manual Lighthouse against the preview from the PR's CI artifact and paste the numbers.
+   - **SLO impact note** — projected effect on cold-start LCP on the target hardware (Android tablet on slow-4G for POS; merchant laptop on 4G hotspot for back-office). If unknown for POS, run a manual Lighthouse against the preview from the PR's CI artifact and paste the numbers.
 3. PO sign-off comment on the PR ("budget bump approved") is required before merge — same gating rule as any other roadmap-level commitment change.
 4. Lowering a budget (tightening the gate) doesn't need PO sign-off, but must include a commit message that names the win that made the headroom possible (e.g. "post-route-split, initial bundle dropped to 140 KB; tighten budget to 160 KB").
 
-### 8.5 Out of scope
+### 8.6 Out of scope
 
 - Real-device verification on physical Android / iOS hardware — tracked in [KASA-131](/KASA/issues/KASA-131) (v1).
 - Real-user Web Vitals collection (RUM) — no Sentry/GA performance SDK changes here.
-- `apps/back-office` budget — owner-side app, separate SLO; revisit if back-office cold-start ever shows up as a complaint.
+- Lighthouse for `apps/back-office` — back-office is not a PWA (so the PWA ≥ 90 contract from §8.1 doesn't apply) and ships behind owner auth, so a synthetic Lighthouse against a preview doesn't model the real cold-start path. Revisit when staff-facing UX SLOs land.
 
 ---
 

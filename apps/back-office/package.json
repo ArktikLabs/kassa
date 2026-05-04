@@ -13,7 +13,8 @@
     "preview": "vite preview",
     "typecheck": "tsc -b --noEmit",
     "test": "vitest run",
-    "e2e": "playwright test"
+    "e2e": "playwright test",
+    "size:check": "size-limit"
   },
   "dependencies": {
     "@kassa/schemas": "workspace:*",
@@ -26,6 +27,7 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.49.0",
+    "@size-limit/file": "^11.1.6",
     "@tailwindcss/vite": "^4.0.0",
     "@testing-library/dom": "^10.4.0",
     "@testing-library/jest-dom": "^6.6.0",
@@ -36,6 +38,7 @@
     "@types/react-dom": "^19.0.0",
     "@vitejs/plugin-react": "^4.3.4",
     "jsdom": "^25.0.0",
+    "size-limit": "^11.1.6",
     "tailwindcss": "^4.0.0",
     "typescript": "^5.6.3",
     "vite": "^7.0.0",
