@@ -1,4 +1,5 @@
 import * as Sentry from "@sentry/node";
+import { applyDeviceTags } from "./lib/sentry.js";
 import fastifyCookie, { type CookieSerializeOptions } from "@fastify/cookie";
 import fastifyCors from "@fastify/cors";
 import Fastify, {
@@ -198,6 +199,17 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   // Run the test seam BEFORE any `register` call so an `onRoute` hook
   // installed by a caller fires for every route registered below.
   options.onCreate?.(app);
+
+  // Tag every Sentry event with the device-auth principal (merchant_id,
+  // outlet_id, device_id) for routes that have already authenticated.
+  // Registered BEFORE `setupFastifyErrorHandler` so this `onError` hook
+  // runs first (Fastify dispatches hooks in registration order); the
+  // isolation-scope tags are written before Sentry's own onError captures
+  // the exception. `applyDeviceTags` is a no-op when Sentry is unconfigured,
+  // so this stays inert on dev / CI boots without a DSN.
+  app.addHook("onError", async (req) => {
+    if (req.devicePrincipal) applyDeviceTags(req.devicePrincipal);
+  });
 
   // Wire Sentry's Fastify hooks so unhandled errors in route handlers reach
   // Sentry tagged with the release set in initSentry(). No-op when Sentry is
