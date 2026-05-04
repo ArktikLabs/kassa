@@ -11,6 +11,7 @@ function eodKey(merchantId: string, outletId: string, businessDate: string): str
  */
 export class InMemoryEodRepository implements EodRepository {
   private readonly eodsByKey = new Map<string, EodRecord>();
+  private readonly eodsById = new Map<string, EodRecord>();
 
   async findExisting(input: {
     merchantId: string;
@@ -18,6 +19,15 @@ export class InMemoryEodRepository implements EodRepository {
     businessDate: string;
   }): Promise<EodRecord | null> {
     return this.eodsByKey.get(eodKey(input.merchantId, input.outletId, input.businessDate)) ?? null;
+  }
+
+  async findById(input: { merchantId: string; eodId: string }): Promise<EodRecord | null> {
+    const record = this.eodsById.get(input.eodId);
+    if (!record) return null;
+    // Tenant scope guard: a leaked / guessed id from one merchant must
+    // never resolve to another merchant's record.
+    if (record.merchantId !== input.merchantId) return null;
+    return record;
   }
 
   async insert(record: EodRecord): Promise<EodRecord> {
@@ -28,6 +38,7 @@ export class InMemoryEodRepository implements EodRepository {
       throw new Error(`EOD already exists for ${key}`);
     }
     this.eodsByKey.set(key, record);
+    this.eodsById.set(record.id, record);
     return record;
   }
 }

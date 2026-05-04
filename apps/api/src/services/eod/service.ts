@@ -23,7 +23,11 @@ import type { EodRecord, EodRecordBreakdown, SaleRecord, SaleTender } from "./ty
 
 export class EodError extends Error {
   constructor(
-    readonly code: "eod_already_closed" | "eod_sale_mismatch" | "eod_variance_reason_required",
+    readonly code:
+      | "eod_already_closed"
+      | "eod_sale_mismatch"
+      | "eod_variance_reason_required"
+      | "eod_not_found",
     message: string,
     readonly details?: EodMissingSalesDetails,
   ) {
@@ -156,6 +160,23 @@ export class EodService {
 
     return this.eodRepository.insert(record);
   }
+
+  /**
+   * Look up a previously-closed EOD by its server id, scoped to the
+   * authenticated merchant. Throws `eod_not_found` when the id is unknown
+   * or belongs to a different tenant — both are rendered as 404 by the
+   * route handler so callers cannot probe for cross-tenant ids.
+   */
+  async get(input: { merchantId: string; eodId: string }): Promise<EodRecord> {
+    const record = await this.eodRepository.findById({
+      merchantId: input.merchantId,
+      eodId: input.eodId,
+    });
+    if (!record) {
+      throw new EodError("eod_not_found", `EOD ${input.eodId} not found.`);
+    }
+    return record;
+  }
 }
 
 function computeBreakdown(sales: readonly SaleRecord[]): EodRecordBreakdown {
@@ -163,6 +184,7 @@ function computeBreakdown(sales: readonly SaleRecord[]): EodRecordBreakdown {
   let qrisDynamicIdr = 0;
   let qrisStaticIdr = 0;
   let qrisStaticUnverifiedIdr = 0;
+  let qrisStaticUnverifiedCount = 0;
   let cardIdr = 0;
   let otherIdr = 0;
   let netIdr = 0;
@@ -187,7 +209,10 @@ function computeBreakdown(sales: readonly SaleRecord[]): EodRecordBreakdown {
           break;
         case "qris_static":
           qrisStaticIdr += tender.amountIdr;
-          if (!tender.verified) qrisStaticUnverifiedIdr += tender.amountIdr;
+          if (!tender.verified) {
+            qrisStaticUnverifiedIdr += tender.amountIdr;
+            qrisStaticUnverifiedCount += 1;
+          }
           break;
         case "card":
           cardIdr += tender.amountIdr;
@@ -205,6 +230,7 @@ function computeBreakdown(sales: readonly SaleRecord[]): EodRecordBreakdown {
     qrisDynamicIdr,
     qrisStaticIdr,
     qrisStaticUnverifiedIdr,
+    qrisStaticUnverifiedCount,
     cardIdr,
     otherIdr,
     netIdr,

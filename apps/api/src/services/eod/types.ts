@@ -87,6 +87,12 @@ export interface EodRecordBreakdown {
    * until the next reconciliation pass runs.
    */
   qrisStaticUnverifiedIdr: number;
+  /**
+   * Count of unverified static-QRIS tender rows backing `qrisStaticUnverifiedIdr`.
+   * Back-office surfaces this on `GET /v1/eod/:eodId` so operators see how many
+   * rows still need a manual reconciliation pass (KASA-197 AC).
+   */
+  qrisStaticUnverifiedCount: number;
   cardIdr: number;
   otherIdr: number;
   netIdr: number;
