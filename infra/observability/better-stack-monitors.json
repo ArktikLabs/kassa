@@ -4,10 +4,12 @@
     {
       "pronounceable_name": "kassa-api-prod-health",
       "url": "https://kassa-api-prod.fly.dev/health",
-      "monitor_type": "expected_status_code",
+      "_url_cutover_target": "https://api.kassa.id/health (KASA-149 — swap once the prod domain is bound)",
+      "monitor_type": "keyword",
+      "required_keyword": "\"status\":\"ok\"",
       "expected_status_codes": [200],
       "check_frequency": 60,
-      "request_timeout": 10,
+      "request_timeout": 30,
       "confirmation_period": 0,
       "regions": ["sgp", "sea"],
       "verify_ssl": true,
@@ -18,17 +20,18 @@
       "policy_pronounceable_name": "kassa-pilot-oncall",
       "_severity": "P0",
       "_alert_after_failures": 2,
-      "_runbook_anchor": "rollback-matrix-row-1"
+      "_runbook_anchor": "rollback-matrix-row-1",
+      "_acceptance_source": "KASA-198 — body must contain {\"status\":\"ok\"}, 30s timeout, 60s interval"
     },
     {
       "pronounceable_name": "kassa-pos-prod-shell",
-      "url": "https://app.kassa.id/",
-      "_url_fallback_until_custom_domain_lands": "https://kassa-pos.pages.dev/",
+      "url": "https://kassa-pos.pages.dev/",
+      "_url_cutover_target": "https://app.kassa.id/ (KASA-149 — swap once the prod custom domain is bound; pages.dev URL stays reachable as the Cloudflare default)",
       "monitor_type": "keyword",
       "required_keyword": "<title>Kassa POS</title>",
       "expected_status_codes": [200],
       "check_frequency": 60,
-      "request_timeout": 10,
+      "request_timeout": 30,
       "confirmation_period": 0,
       "regions": ["sgp", "sea"],
       "verify_ssl": true,
@@ -37,7 +40,8 @@
       "policy_pronounceable_name": "kassa-pilot-oncall",
       "_severity": "P0",
       "_alert_after_failures": 2,
-      "_runbook_anchor": "rollback-matrix-row-3"
+      "_runbook_anchor": "rollback-matrix-row-3",
+      "_acceptance_source": "KASA-198 — POS shell HTML, 30s timeout, 60s interval"
     },
     {
       "pronounceable_name": "kassa-back-office-prod-shell",
