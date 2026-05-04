@@ -70,6 +70,9 @@ All configuration is via environment variables, validated by Zod on boot. Missin
 | `DATABASE_URL` | _unset_ | `postgres://user:pass@host:5432/db`. Optional in `development`/`test` so the enrolment in-memory path still boots; **required** in `production` (boot fails loudly otherwise). Repo swap + migration runner use it; the Fly `release_command` calls `pnpm --filter @kassa/api db:migrate` against it before the new image serves traffic. |
 | `DATABASE_SSL` | `true` | Request TLS to Postgres. Neon + Fly Postgres require `true`; flip to `false` for a local loopback test instance. |
 | `REDIS_URL` | _unset_ | `redis://default:<token>@<host>:6379` (or `rediss://…` for TLS). BullMQ broker for the `worker` Fly process group. Optional today — the worker logs and idles when unset. The first PR that lands a real consumer (KASA-120 nightly reconciliation) will tighten the Zod refinement to required-in-production. Provisioned per-environment via `flyctl redis create`; staging and production point at separate Redis instances. See [docs/CI-CD.md §3.10](../../docs/CI-CD.md). |
+| `SENTRY_DSN` | _unset_ | Sentry ingest DSN for `@sentry/node` (ADR-010). Init runs no-op when unset / blank / whitespace, so dev / CI / unconfigured staging boots cleanly without emitting events. Set via `flyctl secrets set` per Fly app. |
+| `SENTRY_ENVIRONMENT` | `NODE_ENV` | Tags every event with `environment=<value>` so Sentry can filter staging vs production traffic. Kept distinct from `NODE_ENV` (which stays `production` on every Fly tier so Fastify, pino, and the pg client gate prod-only behaviour) so cross-tier filtering still works. |
+| `SENTRY_TRACES_SAMPLE_RATE` | `0` | Float in `[0, 1]` — fraction of transactions to send. Defaults to `0` (no transactions) so a missing var never silently turns on the paid-tier transaction quota. Bump per environment when KASA-71 alert routing is ready to model trace volume. |
 
 ## Route map
 
