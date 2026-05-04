@@ -135,6 +135,11 @@ const id: MessageMap = {
   "tender.qris.error.amount_mismatch":
     "Nominal pembayaran tidak cocok dengan total. Hubungi pelanggan dan coba lagi.",
   "tender.qris.static.fallback": "Offline — gunakan QRIS statis",
+  "tender.qris.mode.dynamic.label": "Mode dinamis (online)",
+  "tender.qris.mode.static.label": "Mode statis (cetak)",
+  "tender.qris.mode.toggle.dynamic": "Pakai QR dinamis",
+  "tender.qris.mode.toggle.static": "Pakai QR statis",
+  "tender.qris.mode.toggle.aria": "Ganti mode QRIS antara dinamis dan statis",
   "tender.qris.static.heading": "QRIS statis",
   "tender.qris.static.aria": "Bayar QRIS statis",
   "tender.qris.static.total": "Total",

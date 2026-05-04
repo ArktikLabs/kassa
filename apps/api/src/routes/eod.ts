@@ -2,14 +2,19 @@ import type { FastifyInstance } from "fastify";
 import {
   eodCloseRequest,
   eodCloseResponse,
+  eodGetResponse,
+  eodIdParam,
   type EodCloseRequest,
   type EodCloseResponse,
+  type EodGetResponse,
+  type EodIdParam,
   type EodMissingSalesDetails,
 } from "@kassa/schemas/eod";
 import { notImplemented, sendError } from "../lib/errors.js";
 import { errorBodySchema, notImplementedResponses } from "../lib/openapi.js";
 import { validate } from "../lib/validate.js";
 import { EodError, type EodService } from "../services/eod/index.js";
+import type { EodRecord } from "../services/eod/types.js";
 
 export interface EodRouteDeps {
   service: EodService;
@@ -52,17 +57,7 @@ export function eodRoutes(deps: EodRouteDeps) {
             varianceReason: req.body.varianceReason,
             clientSaleIds: req.body.clientSaleIds,
           });
-          const body: EodCloseResponse = {
-            eodId: record.id,
-            outletId: record.outletId,
-            businessDate: record.businessDate,
-            closedAt: record.closedAt,
-            countedCashIdr: record.countedCashIdr,
-            expectedCashIdr: record.expectedCashIdr,
-            varianceIdr: record.varianceIdr,
-            varianceReason: record.varianceReason,
-            breakdown: record.breakdown,
-          };
+          const body: EodCloseResponse = toEodResponse(record);
           reply.code(201).send(body);
           return reply;
         } catch (err) {
@@ -102,17 +97,55 @@ export function eodRoutes(deps: EodRouteDeps) {
       },
       async (req, reply) => notImplemented(req, reply),
     );
-    app.get(
+    app.get<{ Params: EodIdParam }>(
       "/:eodId",
       {
         schema: {
           tags: ["eod"],
-          summary: "Get one EOD record (not implemented)",
-          description: "Reserved for fetching an individual EOD record. Returns 501.",
-          response: notImplementedResponses,
+          summary: "Get one EOD record",
+          description:
+            "Returns the canonical EOD record (counts, variance, tender " +
+            "breakdown). The breakdown surfaces `qrisStaticUnverifiedCount` " +
+            "so back-office can flag rows that still need a Midtrans " +
+            "settlement match (KASA-197).",
+          response: {
+            200: eodGetResponse,
+            404: errorBodySchema,
+          },
         },
+        preHandler: validate({ params: eodIdParam }),
       },
-      async (req, reply) => notImplemented(req, reply),
+      async (req, reply) => {
+        try {
+          const record = await deps.service.get({
+            merchantId: deps.resolveMerchantId(),
+            eodId: req.params.eodId,
+          });
+          const body: EodGetResponse = toEodResponse(record);
+          reply.code(200).send(body);
+          return reply;
+        } catch (err) {
+          if (err instanceof EodError && err.code === "eod_not_found") {
+            sendError(reply, 404, err.code, err.message);
+            return reply;
+          }
+          throw err;
+        }
+      },
     );
+  };
+}
+
+function toEodResponse(record: EodRecord): EodGetResponse {
+  return {
+    eodId: record.id,
+    outletId: record.outletId,
+    businessDate: record.businessDate,
+    closedAt: record.closedAt,
+    countedCashIdr: record.countedCashIdr,
+    expectedCashIdr: record.expectedCashIdr,
+    varianceIdr: record.varianceIdr,
+    varianceReason: record.varianceReason,
+    breakdown: record.breakdown,
   };
 }

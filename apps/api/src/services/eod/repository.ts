@@ -32,6 +32,12 @@ export interface EodRepository {
     outletId: string;
     businessDate: string;
   }): Promise<EodRecord | null>;
+  /**
+   * Look an EOD record up by its server-generated id, scoped to the
+   * authenticated merchant so cross-tenant reads are never possible
+   * even with a guessed id.
+   */
+  findById(input: { merchantId: string; eodId: string }): Promise<EodRecord | null>;
   insert(record: EodRecord): Promise<EodRecord>;
 }
 

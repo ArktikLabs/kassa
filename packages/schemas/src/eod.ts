@@ -57,6 +57,10 @@ export type EodCloseRequest = z.infer<typeof eodCloseRequest>;
  * tenders the EOD reconciliation pass (KASA-64) hasn't paired with a
  * Midtrans settlement row yet. It is the variance-risk number the clerk
  * sees at close time: real money the server cannot yet vouch for.
+ *
+ * `qrisStaticUnverifiedCount` is the number of unverified static-QRIS
+ * tenders behind that amount; back-office uses it to badge how many
+ * rows the operator must manually reconcile (KASA-197 AC).
  */
 export const eodBreakdown = z
   .object({
@@ -66,6 +70,7 @@ export const eodBreakdown = z
     qrisDynamicIdr: rupiahInteger,
     qrisStaticIdr: rupiahInteger,
     qrisStaticUnverifiedIdr: rupiahInteger,
+    qrisStaticUnverifiedCount: z.number().int().nonnegative(),
     cardIdr: rupiahInteger,
     otherIdr: rupiahInteger,
     netIdr: rupiahInteger,
@@ -87,6 +92,23 @@ export const eodCloseResponse = z
   })
   .strict();
 export type EodCloseResponse = z.infer<typeof eodCloseResponse>;
+
+/**
+ * Path parameter for `GET /v1/eod/:eodId`. Lives here so the contract
+ * gate (KASA-179) can trace the route's params back to a `@kassa/schemas`
+ * export.
+ */
+export const eodIdParam = z.object({ eodId: uuidV7 }).strict();
+export type EodIdParam = z.infer<typeof eodIdParam>;
+
+/**
+ * Read shape returned by `GET /v1/eod/:eodId`. Identical to the close
+ * response so back-office can re-render an existing close screen straight
+ * from a fetch — the breakdown (including `qrisStaticUnverifiedCount`,
+ * KASA-197 AC) is the same wire object.
+ */
+export const eodGetResponse = eodCloseResponse;
+export type EodGetResponse = z.infer<typeof eodGetResponse>;
 
 /**
  * Details attached to the 409 `eod_sale_mismatch` error. The receive/expected

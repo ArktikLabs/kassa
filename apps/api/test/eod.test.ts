@@ -499,3 +499,95 @@ describe("EodService — directly", () => {
     expect(record.expectedCashIdr).toBe(40_000);
   });
 });
+
+describe("GET /v1/eod/:eodId (KASA-197)", () => {
+  let h: Harness;
+  beforeEach(async () => {
+    h = await setup();
+  });
+  afterEach(async () => {
+    await h.app.close();
+  });
+
+  async function closeOne(): Promise<{ eodId: string }> {
+    const sale = "01890abc-1234-7def-8000-000000000a01";
+    await seedSale(h.salesRepository, {
+      localSaleId: sale,
+      totalIdr: 50_000,
+      tenders: [
+        {
+          method: "qris_static",
+          amountIdr: 50_000,
+          reference: null,
+          verified: false,
+          buyerRefLast4: "1234",
+        },
+      ],
+    });
+    const close = await closeEod(h.app, {
+      countedCashIdr: 0,
+      clientSaleIds: [sale],
+    });
+    expect(close.statusCode).toBe(201);
+    return close.json() as { eodId: string };
+  }
+
+  it("returns the canonical EOD record with qrisStaticUnverifiedCount", async () => {
+    const { eodId } = await closeOne();
+    const res = await h.app.inject({ method: "GET", url: `/v1/eod/${eodId}` });
+    expect(res.statusCode).toBe(200);
+    const body = res.json() as {
+      eodId: string;
+      breakdown: {
+        qrisStaticIdr: number;
+        qrisStaticUnverifiedIdr: number;
+        qrisStaticUnverifiedCount: number;
+      };
+    };
+    expect(body.eodId).toBe(eodId);
+    expect(body.breakdown.qrisStaticIdr).toBe(50_000);
+    expect(body.breakdown.qrisStaticUnverifiedIdr).toBe(50_000);
+    expect(body.breakdown.qrisStaticUnverifiedCount).toBe(1);
+  });
+
+  it("404 eod_not_found when the id is unknown", async () => {
+    const res = await h.app.inject({
+      method: "GET",
+      url: "/v1/eod/01890abc-1234-7def-8000-deadbeef0000",
+    });
+    expect(res.statusCode).toBe(404);
+    const body = res.json() as { error: { code: string } };
+    expect(body.error.code).toBe("eod_not_found");
+  });
+
+  it("422 validation_error when :eodId is not a UUIDv7", async () => {
+    const res = await h.app.inject({ method: "GET", url: "/v1/eod/not-a-uuid" });
+    expect(res.statusCode).toBe(422);
+    const body = res.json() as { error: { code: string } };
+    expect(body.error.code).toBe("validation_error");
+  });
+
+  it("404 when an EOD belongs to another merchant (tenant scope guard)", async () => {
+    const { eodId } = await closeOne();
+    // Build a second app pointing at the same EOD repository but a different
+    // merchant id. The repository.findById guard must refuse cross-tenant reads.
+    const otherMerchant = "01890abc-1234-7def-8000-00000000aaaa";
+    const otherApp = await buildApp({
+      sales: {
+        service: new SalesService({ repository: h.salesRepository }),
+        repository: h.salesRepository,
+      },
+      eod: {
+        // Reuse the same service so the in-memory repo state is shared.
+        service: h.service,
+        resolveMerchantId: () => otherMerchant,
+      },
+    });
+    await otherApp.ready();
+    const res = await otherApp.inject({ method: "GET", url: `/v1/eod/${eodId}` });
+    expect(res.statusCode).toBe(404);
+    const body = res.json() as { error: { code: string } };
+    expect(body.error.code).toBe("eod_not_found");
+    await otherApp.close();
+  });
+});
