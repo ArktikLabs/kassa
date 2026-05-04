@@ -1,8 +1,8 @@
 # Kassa Pilot On-Call Runbook
 
-Status: v0 (KASA-71 — pilot-week observability). Owner: DevOps. Companion docs: [RUNBOOK-DEPLOY.md](./RUNBOOK-DEPLOY.md), [CI-CD.md](./CI-CD.md), [TECH-STACK.md](./TECH-STACK.md).
+Status: v0 (KASA-71 — pilot-week observability). Owner: DevOps. Companion docs: [RUNBOOK-INCIDENT.md](./RUNBOOK-INCIDENT.md), [RUNBOOK-DEPLOY.md](./RUNBOOK-DEPLOY.md), [CI-CD.md](./CI-CD.md), [TECH-STACK.md](./TECH-STACK.md).
 
-This runbook is what an on-call engineer reads at 02:00 when a page fires. It defines severity, names who to wake, points at the rollback procedure, and lists the two pilot-merchant contacts. For the production-deploy / promotion procedure see [RUNBOOK-DEPLOY.md](./RUNBOOK-DEPLOY.md); this file picks up at "an alert just fired, what do I do".
+This runbook is what an on-call engineer reads at 02:00 when a page fires. It is the **tactical** layer — what to type, what to click, who to wake. The **policy** layer (canonical severity definitions, comms templates beyond the pilot WhatsApp note, post-mortem flow) lives in [RUNBOOK-INCIDENT.md](./RUNBOOK-INCIDENT.md); the production-deploy / promotion procedure lives in [RUNBOOK-DEPLOY.md](./RUNBOOK-DEPLOY.md). This file picks up at "an alert just fired, what do I do".
 
 The pilot is one week, one merchant. Everything below is sized to that. Post-pilot, sections marked **(pilot only)** are revisited.
 

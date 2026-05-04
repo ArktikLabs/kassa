@@ -1,7 +1,7 @@
 # Kassa CI/CD Pipeline
 
 Status: v0 (CI + CD — POS / Back Office in Cloudflare Pages production, API in Fly.io staging on every green main, API production via manual gate; preview-per-PR deferred). Owner: DevOps. Source issues: [KASA-12](/KASA/issues/KASA-12) (pipeline), [KASA-17](/KASA/issues/KASA-17) (deployable build artifacts), [KASA-18](/KASA/issues/KASA-18) (production CD — static surfaces), [KASA-107](/KASA/issues/KASA-107) (staging CD — API), [KASA-19](/KASA/issues/KASA-19) (post-deploy smoke tests), [KASA-70](/KASA/issues/KASA-70) (production CD — API), [KASA-139](/KASA/issues/KASA-139) (Playwright E2E gate on `main`).
-Companion docs: [TECH-STACK.md](./TECH-STACK.md), [ARCHITECTURE.md](./ARCHITECTURE.md), [ROADMAP.md](./ROADMAP.md), [RUNBOOK-DEPLOY.md](./RUNBOOK-DEPLOY.md).
+Companion docs: [TECH-STACK.md](./TECH-STACK.md), [ARCHITECTURE.md](./ARCHITECTURE.md), [ROADMAP.md](./ROADMAP.md), [RUNBOOK-DEPLOY.md](./RUNBOOK-DEPLOY.md), [RUNBOOK-ONCALL.md](./RUNBOOK-ONCALL.md), [RUNBOOK-INCIDENT.md](./RUNBOOK-INCIDENT.md).
 
 This is the authoritative description of how Kassa code moves from a contributor's branch into `main` and into production. v0 covers **CI** (lint/typecheck/test/build on every PR and every push to `main`, with compiled outputs preserved as workflow artifacts) and **CD** for four surfaces: the POS PWA and Back Office SPA deploy to Cloudflare Pages production and the API deploys to a Fly.io staging app on every successful CI run against `main`; the API ships to Fly.io production via a manual promotion gate (`deploy-prod.yml`) with required-reviewer approval. Preview-per-PR environments remain a follow-up ticket under M0. Operator playbook for production lives in [RUNBOOK-DEPLOY.md](./RUNBOOK-DEPLOY.md).
 
@@ -777,7 +777,8 @@ The on-call runbook lives at [`docs/RUNBOOK-ONCALL.md`](./RUNBOOK-ONCALL.md). Th
 | Apply / dry-run script        | [`scripts/observability-apply.sh`](../scripts/observability-apply.sh) |
 | Synthetic test sale (every 15 min) | [`.github/workflows/synthetic-sale.yml`](../.github/workflows/synthetic-sale.yml) |
 | Synthetic-sale probe script   | [`scripts/synthetic-sale.sh`](../scripts/synthetic-sale.sh) |
-| Severity / rollback / escalation | [`docs/RUNBOOK-ONCALL.md`](./RUNBOOK-ONCALL.md) |
+| Severity / rollback / escalation (operator playbook) | [`docs/RUNBOOK-ONCALL.md`](./RUNBOOK-ONCALL.md) |
+| Incident response policy (severity definitions, comms templates, post-mortem flow) | [`docs/RUNBOOK-INCIDENT.md`](./RUNBOOK-INCIDENT.md) |
 
 Both the apply script and the synthetic-sale workflow follow the same enablement-gate pattern as `cd.yml` / `deploy-prod.yml` — they run unconditionally but no-op with a `::notice::` until the corresponding repository variable (`SYNTHETIC_PROBE_ENABLED`) and environment secrets land. This keeps `main` green during the pre-pilot provisioning window.
 

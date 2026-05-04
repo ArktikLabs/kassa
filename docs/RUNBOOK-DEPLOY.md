@@ -129,6 +129,8 @@ Before triggering the workflow, confirm:
 
 **Goal: restore service first, root-cause after.** Do not wait for the fix PR.
 
+The decision policy ("when to rollback vs hotfix", "who needs to know") lives in [RUNBOOK-INCIDENT.md §5](./RUNBOOK-INCIDENT.md#5-rollback-procedures); the symptom → procedure mapping the on-call uses at 02:00 lives in [RUNBOOK-ONCALL.md §5](./RUNBOOK-ONCALL.md#5-rollback-matrix). This section is the source of truth for the **commands themselves**.
+
 ### 4.1 When to rollback
 
 Rollback when any of these signal within ~10 min of the deploy landing:

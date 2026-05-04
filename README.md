@@ -69,6 +69,13 @@ Planned additions as tickets land: `apps/pos` (PWA client), `apps/back-office` (
 - Two required approvals: Code Reviewer + Product Owner
 - See [docs/git-workflow.md](./docs/git-workflow.md) and [docs/pr-conventions.md](./docs/pr-conventions.md)
 
+## Operations
+
+- **Incident response policy** (severity ladder, comms templates, post-mortem flow): [docs/RUNBOOK-INCIDENT.md](./docs/RUNBOOK-INCIDENT.md).
+- **On-call playbook** (alert routing, escalation, what to do at 02:00): [docs/RUNBOOK-ONCALL.md](./docs/RUNBOOK-ONCALL.md).
+- **Production deploys** (promotion, [rollback](./docs/RUNBOOK-DEPLOY.md#4-rollback), pause/cancel): [docs/RUNBOOK-DEPLOY.md](./docs/RUNBOOK-DEPLOY.md).
+- **Post-mortems** are filed under [docs/post-mortems/](./docs/post-mortems/) using [TEMPLATE.md](./docs/post-mortems/TEMPLATE.md).
+
 ## Contributing
 
 We welcome contributions. Before your first PR, please read [CONTRIBUTING.md](./CONTRIBUTING.md) and sign the applicable Contributor License Agreement ([ICLA](./legal/ICLA.md) for individuals, [CCLA](./legal/CCLA.md) for corporate contributors). All participation is governed by our [Code of Conduct](./CODE_OF_CONDUCT.md).
