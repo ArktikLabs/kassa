@@ -159,6 +159,27 @@ const id: MessageMap = {
   "admin_reconciliation.age.minutes": "{count, plural, one {# menit} other {# menit}}",
   "admin_reconciliation.error":
     "Gagal menandai tender. Coba lagi atau hubungi tim teknis bila masalah berlanjut.",
+  "nav.settings": "Pengaturan",
+  "settings.heading": "Pengaturan merchant",
+  "settings.subheading":
+    "Identitas merchant yang dicetak di setiap struk: nama tampilan, alamat, nomor telepon, NPWP, dan teks penutup.",
+  "settings.legalName": "Nama legal",
+  "settings.legalName.hint":
+    "Berasal dari pendaftaran merchant. Hubungi tim Kassa untuk mengubah nama legal.",
+  "settings.displayName": "Nama tampilan di struk",
+  "settings.displayName.hint": "Maks. 80 karakter. Dicetak di bagian paling atas struk.",
+  "settings.addressLine": "Alamat",
+  "settings.addressLine.hint": "Satu baris (maks. 160 karakter). Kosongkan untuk tidak mencetak.",
+  "settings.phone": "Telepon",
+  "settings.phone.hint":
+    "Maks. 32 karakter. Hanya digit, spasi, +, -, dan tanda kurung. Kosongkan untuk tidak mencetak.",
+  "settings.npwp": "NPWP",
+  "settings.npwp.hint": "16 digit (format pasca-2022). Kosongkan jika belum tersedia.",
+  "settings.footer": "Teks penutup struk",
+  "settings.footer.hint":
+    'Maks. 140 karakter. Contoh: "Terima kasih atas kunjungan Anda". Kosongkan untuk memakai pesan bawaan.',
+  "settings.save": "Simpan pengaturan",
+  "settings.saved": "Pengaturan tersimpan",
   "table.empty": "Belum ada data.",
   "table.pagination.prev": "Sebelumnya",
   "table.pagination.next": "Berikutnya",
@@ -309,6 +330,27 @@ const en: MessageMap = {
   "admin_reconciliation.age.minutes": "{count, plural, one {# minute} other {# minutes}}",
   "admin_reconciliation.error":
     "Failed to flip tender. Retry, or contact engineering if the problem persists.",
+  "nav.settings": "Settings",
+  "settings.heading": "Merchant settings",
+  "settings.subheading":
+    "Merchant identity printed on every receipt: display name, address, phone, NPWP, and footer text.",
+  "settings.legalName": "Legal name",
+  "settings.legalName.hint":
+    "Set during merchant onboarding. Contact Kassa to change the legal name.",
+  "settings.displayName": "Display name on receipt",
+  "settings.displayName.hint": "Up to 80 characters. Printed at the top of the receipt.",
+  "settings.addressLine": "Address",
+  "settings.addressLine.hint": "Single line (up to 160 characters). Leave blank to skip.",
+  "settings.phone": "Phone",
+  "settings.phone.hint":
+    "Up to 32 characters. Digits, spaces, +, -, and parentheses only. Leave blank to skip.",
+  "settings.npwp": "NPWP",
+  "settings.npwp.hint": "16 digits (post-2022 format). Leave blank if you don't have one yet.",
+  "settings.footer": "Receipt footer",
+  "settings.footer.hint":
+    'Up to 140 characters. e.g. "Thank you for visiting". Leave blank to keep the default message.',
+  "settings.save": "Save settings",
+  "settings.saved": "Settings saved",
   "table.empty": "No data yet.",
   "table.pagination.prev": "Previous",
   "table.pagination.next": "Next",

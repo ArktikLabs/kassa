@@ -19,6 +19,7 @@ const NAV: readonly NavItem[] = [
   { to: "/devices", labelId: "nav.devices" },
   { to: "/reports/reconciliation", labelId: "nav.reconciliation" },
   { to: "/admin/reconciliation", labelId: "nav.admin_reconciliation", ownerOnly: true },
+  { to: "/settings", labelId: "nav.settings", ownerOnly: true },
 ];
 
 export function RootLayout() {

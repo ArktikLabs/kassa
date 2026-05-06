@@ -52,6 +52,10 @@ export function ReceiptScreen() {
         outletName: outlet?.name ?? intl.formatMessage({ id: "receipt.outlet.unknown" }),
         outletTimezone: outlet?.timezone ?? null,
         address: null,
+        // KASA-219: merchant header/footer renders when the merchant
+        // settings sync (KASA-221 follow-up) lands; null for now keeps the
+        // pre-219 outlet-only header intact.
+        merchant: null,
         createdAtIso: sale.createdAt,
         localSaleId: sale.localSaleId,
         items: lines,

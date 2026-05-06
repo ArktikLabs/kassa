@@ -40,3 +40,7 @@ export function useReconciliation() {
 export function useUnmatchedStaticTenders() {
   return useSyncExternalStore(subscribe, () => getSnapshot().unmatchedStaticTenders);
 }
+
+export function useMerchantSettings() {
+  return useSyncExternalStore(subscribe, () => getSnapshot().merchant);
+}

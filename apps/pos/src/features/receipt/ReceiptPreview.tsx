@@ -3,10 +3,23 @@ import { formatIdr, type Rupiah } from "../../shared/money/index.ts";
 import type { Outlet, PendingSale } from "../../data/db/types.ts";
 import { PAPER_WIDTH_PX, type PaperWidth } from "./paperWidth.ts";
 
+/**
+ * Merchant-wide receipt branding (KASA-219). Optional — falls back to
+ * outlet name + i18n thanks footer when absent.
+ */
+export interface ReceiptMerchant {
+  displayName: string;
+  addressLine: string | null;
+  phone: string | null;
+  npwp: string | null;
+  receiptFooterText: string | null;
+}
+
 interface ReceiptPreviewProps {
   sale: PendingSale;
   outlet: Outlet | undefined;
   paperWidth: PaperWidth;
+  merchant?: ReceiptMerchant | null;
 }
 
 function formatDateTime(iso: string, timezone: string | undefined): string {
@@ -26,7 +39,7 @@ function formatDateTime(iso: string, timezone: string | undefined): string {
   }
 }
 
-export function ReceiptPreview({ sale, outlet, paperWidth }: ReceiptPreviewProps) {
+export function ReceiptPreview({ sale, outlet, paperWidth, merchant }: ReceiptPreviewProps) {
   const intl = useIntl();
   const widthPx = PAPER_WIDTH_PX[paperWidth];
   const totalTendered = sale.tenders.reduce<number>(
@@ -34,6 +47,9 @@ export function ReceiptPreview({ sale, outlet, paperWidth }: ReceiptPreviewProps
     0,
   ) as Rupiah;
   const change = Math.max(0, (totalTendered as number) - (sale.totalIdr as number)) as Rupiah;
+  const npwpLabel = intl.formatMessage({ id: "receipt.merchant.npwp" });
+  const fallbackFooter = intl.formatMessage({ id: "receipt.footer.thanks" });
+  const footerText = merchant?.receiptFooterText?.trim() || fallbackFooter;
 
   return (
     <article
@@ -42,10 +58,36 @@ export function ReceiptPreview({ sale, outlet, paperWidth }: ReceiptPreviewProps
       className="mx-auto rounded-none border border-dashed border-neutral-300 bg-white px-3 py-4 font-mono text-[14px] leading-[20px] text-neutral-900"
       style={{ width: `${widthPx}px` }}
     >
-      <header className="text-center">
-        <p className="font-bold uppercase" data-testid="receipt-outlet-name">
-          {outlet?.name ?? intl.formatMessage({ id: "receipt.outlet.unknown" })}
-        </p>
+      <header className="text-center" data-testid="receipt-header">
+        {merchant ? (
+          <div data-testid="receipt-merchant">
+            <p className="font-bold uppercase" data-testid="receipt-merchant-name">
+              {merchant.displayName}
+            </p>
+            {merchant.addressLine ? (
+              <p className="text-[12px] text-neutral-700" data-testid="receipt-merchant-address">
+                {merchant.addressLine}
+              </p>
+            ) : null}
+            {merchant.phone ? (
+              <p className="text-[12px] text-neutral-700" data-testid="receipt-merchant-phone">
+                {merchant.phone}
+              </p>
+            ) : null}
+            {merchant.npwp ? (
+              <p className="text-[12px] text-neutral-700" data-testid="receipt-merchant-npwp">
+                {npwpLabel} {merchant.npwp}
+              </p>
+            ) : null}
+            <p className="text-[12px] text-neutral-700" data-testid="receipt-outlet-name">
+              {outlet?.name ?? intl.formatMessage({ id: "receipt.outlet.unknown" })}
+            </p>
+          </div>
+        ) : (
+          <p className="font-bold uppercase" data-testid="receipt-outlet-name">
+            {outlet?.name ?? intl.formatMessage({ id: "receipt.outlet.unknown" })}
+          </p>
+        )}
         <p className="text-[12px] text-neutral-700">
           {formatDateTime(sale.createdAt, outlet?.timezone)}
         </p>
@@ -90,8 +132,8 @@ export function ReceiptPreview({ sale, outlet, paperWidth }: ReceiptPreviewProps
         <Row label={intl.formatMessage({ id: "receipt.change" })} value={formatIdr(change)} />
       </dl>
       <hr className="my-2 border-dashed border-neutral-400" />
-      <footer className="text-center text-[12px]">
-        {intl.formatMessage({ id: "receipt.footer.thanks" })}
+      <footer className="text-center text-[12px]" data-testid="receipt-footer">
+        {footerText}
       </footer>
     </article>
   );

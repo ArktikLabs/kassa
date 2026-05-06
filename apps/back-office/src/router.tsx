@@ -8,6 +8,7 @@ import { StaffScreen } from "./routes/staff";
 import { DevicesScreen } from "./routes/devices";
 import { ReconciliationScreen } from "./routes/reports.reconciliation";
 import { AdminReconciliationScreen } from "./routes/admin.reconciliation";
+import { SettingsScreen } from "./routes/settings";
 import { Forbidden } from "./components/Forbidden";
 import { loadSession, roleCanManage, roleIsOwner } from "./lib/session";
 
@@ -118,6 +119,13 @@ const adminReconciliationRoute = createRoute({
     ),
 });
 
+const settingsRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: "settings",
+  component: () =>
+    loadSession()?.role && roleIsOwner(loadSession()!.role) ? <SettingsScreen /> : <Forbidden />,
+});
+
 const routeTree = rootRoute.addChildren([
   indexRoute,
   loginRoute,
@@ -129,6 +137,7 @@ const routeTree = rootRoute.addChildren([
     devicesRoute,
     reconciliationRoute,
     adminReconciliationRoute,
+    settingsRoute,
   ]),
 ]);
 

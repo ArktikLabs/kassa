@@ -56,6 +56,25 @@ export type Outlet = {
   addressLine: string;
 };
 
+/* Merchant-wide receipt branding (KASA-219). Owner-editable; rendered
+ * on every printed/PDF receipt via the POS sync runner.
+ *
+ * `name` is the legal merchant name (also returned by enrolment);
+ * `displayName` is what the receipt prints — they often differ
+ * (legal "PT Warung Pusat Indonesia" vs. printed "Warung Pusat"). All
+ * fields except `displayName` accept `null` so a brand-new merchant
+ * can ship the v0 layout with whatever subset they have on hand.
+ */
+export type MerchantSettings = {
+  id: string;
+  name: string;
+  displayName: string;
+  addressLine: string | null;
+  phone: string | null;
+  npwp: string | null;
+  receiptFooterText: string | null;
+};
+
 export type Staff = {
   id: string;
   displayName: string;
