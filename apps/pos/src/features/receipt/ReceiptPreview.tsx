@@ -7,6 +7,12 @@ interface ReceiptPreviewProps {
   sale: PendingSale;
   outlet: Outlet | undefined;
   paperWidth: PaperWidth;
+  /**
+   * When true, render the on-screen preview with a "SALINAN" (Copy) banner so
+   * the clerk can confirm a reprint will be unambiguous before tapping Cetak
+   * Ulang. Mirrors the ESC/POS `salinan` flag (KASA-220).
+   */
+  salinan?: boolean;
 }
 
 function formatDateTime(iso: string, timezone: string | undefined): string {
@@ -26,7 +32,7 @@ function formatDateTime(iso: string, timezone: string | undefined): string {
   }
 }
 
-export function ReceiptPreview({ sale, outlet, paperWidth }: ReceiptPreviewProps) {
+export function ReceiptPreview({ sale, outlet, paperWidth, salinan }: ReceiptPreviewProps) {
   const intl = useIntl();
   const widthPx = PAPER_WIDTH_PX[paperWidth];
   const totalTendered = sale.tenders.reduce<number>(
@@ -39,9 +45,18 @@ export function ReceiptPreview({ sale, outlet, paperWidth }: ReceiptPreviewProps
     <article
       data-testid="receipt-preview"
       data-paper-width={paperWidth}
+      data-salinan={salinan ? "true" : undefined}
       className="mx-auto rounded-none border border-dashed border-neutral-300 bg-white px-3 py-4 font-mono text-[14px] leading-[20px] text-neutral-900"
       style={{ width: `${widthPx}px` }}
     >
+      {salinan ? (
+        <p
+          className="text-center font-bold tracking-widest text-neutral-900"
+          data-testid="receipt-salinan-banner"
+        >
+          *** {intl.formatMessage({ id: "receipt.salinan.banner" })} ***
+        </p>
+      ) : null}
       <header className="text-center">
         <p className="font-bold uppercase" data-testid="receipt-outlet-name">
           {outlet?.name ?? intl.formatMessage({ id: "receipt.outlet.unknown" })}

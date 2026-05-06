@@ -1,23 +1,9 @@
-import { useCallback, useState } from "react";
 import { useParams } from "@tanstack/react-router";
 import { useIntl } from "react-intl";
-import { formatIdr, toRupiah } from "../../shared/money/index.ts";
-import {
-  BluetoothPrintError,
-  BluetoothUnsupportedError,
-  isWebBluetoothSupported,
-  webBluetoothPrinter,
-} from "./bluetooth.ts";
-import { encodeReceipt, type ReceiptLine } from "./escpos.ts";
 import { ReceiptPreview } from "./ReceiptPreview.tsx";
-import { PAPER_WIDTH_CHAR_COLUMNS, usePaperWidthStore, type PaperWidth } from "./paperWidth.ts";
+import { usePaperWidthStore, type PaperWidth } from "./paperWidth.ts";
 import { usePendingSale } from "./usePendingSale.ts";
-
-type PrintState =
-  | { kind: "idle" }
-  | { kind: "printing" }
-  | { kind: "done" }
-  | { kind: "fallback"; reason: "unsupported" | "failed"; message: string };
+import { usePrintReceipt } from "./printing.ts";
 
 export function ReceiptScreen() {
   const intl = useIntl();
@@ -25,65 +11,7 @@ export function ReceiptScreen() {
   const { sale, outlet, ready } = usePendingSale(localSaleId);
   const paperWidth = usePaperWidthStore((s) => s.width);
   const setWidth = usePaperWidthStore((s) => s.setWidth);
-  const [print, setPrint] = useState<PrintState>({ kind: "idle" });
-
-  const bluetoothSupported = isWebBluetoothSupported();
-
-  const handlePrint = useCallback(async () => {
-    if (!sale) return;
-    if (!bluetoothSupported) {
-      setPrint({
-        kind: "fallback",
-        reason: "unsupported",
-        message: intl.formatMessage({ id: "receipt.print.unsupported" }),
-      });
-      window.print();
-      return;
-    }
-    setPrint({ kind: "printing" });
-    try {
-      const lines: ReceiptLine[] = sale.items.map((item) => ({
-        left: `${item.quantity}x ${item.itemId.slice(0, 8)}`,
-        right: formatIdr(item.lineTotalIdr),
-      }));
-      const tendered = sale.tenders.reduce((acc, t) => acc + (t.amountIdr as number), 0);
-      const change = Math.max(0, tendered - (sale.totalIdr as number));
-      const bytes = encodeReceipt({
-        outletName: outlet?.name ?? intl.formatMessage({ id: "receipt.outlet.unknown" }),
-        outletTimezone: outlet?.timezone ?? null,
-        address: null,
-        createdAtIso: sale.createdAt,
-        localSaleId: sale.localSaleId,
-        items: lines,
-        subtotal: formatIdr(sale.subtotalIdr),
-        discount: formatIdr(sale.discountIdr),
-        total: formatIdr(sale.totalIdr),
-        tenderedLabel: intl.formatMessage({ id: "receipt.tendered" }),
-        tendered: formatIdr(toRupiah(tendered)),
-        changeLabel: intl.formatMessage({ id: "receipt.change" }),
-        change: formatIdr(toRupiah(change)),
-        footerThanks: intl.formatMessage({ id: "receipt.footer.thanks" }),
-        width: PAPER_WIDTH_CHAR_COLUMNS[paperWidth],
-      });
-      await webBluetoothPrinter.printReceipt(bytes);
-      setPrint({ kind: "done" });
-    } catch (err) {
-      if (err instanceof BluetoothUnsupportedError) {
-        setPrint({
-          kind: "fallback",
-          reason: "unsupported",
-          message: intl.formatMessage({ id: "receipt.print.unsupported" }),
-        });
-        window.print();
-        return;
-      }
-      const message =
-        err instanceof BluetoothPrintError
-          ? err.message
-          : intl.formatMessage({ id: "receipt.print.failed" });
-      setPrint({ kind: "fallback", reason: "failed", message });
-    }
-  }, [bluetoothSupported, intl, outlet, paperWidth, sale]);
+  const { state: print, print: handlePrint } = usePrintReceipt();
 
   if (!ready) {
     return (
@@ -124,7 +52,7 @@ export function ReceiptScreen() {
       <div className="flex flex-col gap-2">
         <button
           type="button"
-          onClick={() => void handlePrint()}
+          onClick={() => void handlePrint({ sale, outlet, paperWidth })}
           disabled={print.kind === "printing"}
           data-testid="receipt-print"
           className={[
