@@ -1,4 +1,4 @@
-import { boolean, index, pgTable, text, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import { boolean, integer, index, pgTable, text, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 import { createdAtCol, rupiah, updatedAtCol } from "./shared.js";
 import { merchants } from "./merchants.js";
 import { uoms } from "./uoms.js";
@@ -35,6 +35,15 @@ export const items = pgTable(
      * is managed outside the system (ARCHITECTURE.md ADR-006, KASA-66 AC).
      */
     allowNegative: boolean("allow_negative").notNull().default(false),
+    /**
+     * KASA-218 — Indonesian PPN (VAT) rate as integer percent (0..100).
+     * Default 11 matches the current statutory rate. Combined with the
+     * merchant-level `tax_inclusive` flag at sale-submit time to derive
+     * `sales.tax_idr` (per-line then summed). v0 supports a single rate per
+     * item; multi-rate (food vs service vs alcohol) is explicitly out of
+     * scope per KASA-218.
+     */
+    taxRate: integer("tax_rate").notNull().default(11),
     isActive: boolean("is_active").notNull().default(true),
     createdAt: createdAtCol(),
     updatedAt: updatedAtCol(),

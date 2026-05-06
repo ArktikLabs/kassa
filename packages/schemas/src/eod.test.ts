@@ -86,6 +86,7 @@ describe("eodCloseResponse", () => {
         cardIdr: 0,
         otherIdr: 0,
         netIdr: 120_000,
+        taxIdr: 0,
       }),
     });
     expect(parsed.varianceIdr).toBe(-20_000);

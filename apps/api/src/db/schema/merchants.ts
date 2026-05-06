@@ -1,4 +1,4 @@
-import { pgTable, text, uuid } from "drizzle-orm/pg-core";
+import { boolean, pgTable, text, uuid } from "drizzle-orm/pg-core";
 import { createdAtCol, updatedAtCol } from "./shared.js";
 
 /**
@@ -11,6 +11,15 @@ export const merchants = pgTable("merchants", {
   id: uuid("id").primaryKey(),
   name: text("name").notNull(),
   timezone: text("timezone").notNull().default("Asia/Jakarta"),
+  /**
+   * KASA-218 — pricing convention for Indonesian PPN (VAT). When true (the
+   * default for Indonesian merchants), `items.price_idr` is treated as
+   * tax-inclusive on submit: the server reverse-derives `sales.tax_idr` from
+   * the line totals (`round(lineTotal − lineTotal/(1 + taxRate/100))`) and
+   * the printed receipt shows "PPN sudah termasuk". When false, tax is added
+   * on top of the catalog price and `sales.total_idr` includes it explicitly.
+   */
+  taxInclusive: boolean("tax_inclusive").notNull().default(true),
   createdAt: createdAtCol(),
   updatedAt: updatedAtCol(),
 });

@@ -136,6 +136,7 @@ function buildTableSpecs(): SpecMap {
           uomId: r.uomId,
           bomId: r.bomId,
           isStockTracked: r.isStockTracked,
+          taxRate: r.taxRate,
           isActive: r.isActive,
           updatedAt: r.updatedAt,
         })),

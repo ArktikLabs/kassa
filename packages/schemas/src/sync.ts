@@ -76,6 +76,16 @@ export const itemRecord = z
     uomId: uuidV7,
     bomId: uuidV7.nullable(),
     isStockTracked: z.boolean(),
+    /**
+     * KASA-218 — Indonesian PPN (VAT) rate as integer percent (0..100).
+     * Default 11 matches the current statutory rate. Combined with the
+     * merchant-level `taxInclusive` flag at sale-submit time to derive
+     * `sales.taxIdr`. v0 ships single-rate-per-item; multi-rate is
+     * out of scope per KASA-218. Defaulted in the schema so pre-KASA-218
+     * sync payloads that omit the field still parse with the statutory
+     * rate; new server responses always emit it explicitly.
+     */
+    taxRate: z.number().int().min(0).max(100).default(11),
     isActive: z.boolean(),
     updatedAt: isoTimestamp,
   })
@@ -274,6 +284,13 @@ export const saleSubmitResponse = z
     localSaleId: uuidV7Typed,
     outletId: uuidV7Typed,
     createdAt: isoTimestamp,
+    /**
+     * KASA-218 — Indonesian PPN (VAT) component of this sale, derived
+     * server-side from per-line `item.taxRate` and the merchant's
+     * `taxInclusive` flag. Always present (defaults to `0` for non-PPN
+     * merchants); the receipt prints `PPN (rate%)` from this number.
+     */
+    taxIdr: rupiahAmount,
     ledger: z.array(stockLedgerEntry),
   })
   .strict();
@@ -384,6 +401,8 @@ export const saleResponse = z
     subtotalIdr: rupiahAmount,
     discountIdr: rupiahAmount,
     totalIdr: rupiahAmount,
+    /** KASA-218 — server-derived Indonesian PPN component. See `saleSubmitResponse.taxIdr`. */
+    taxIdr: rupiahAmount,
     items: z.array(saleSubmitItem),
     tenders: z.array(saleSubmitTender),
     createdAt: isoTimestamp,

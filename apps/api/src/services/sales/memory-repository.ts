@@ -5,12 +5,13 @@ import type {
   ListLedgerResult,
   SalesRepository,
 } from "./repository.js";
-import type { Bom, Item, Outlet, Sale, SaleRefund, StockLedgerEntry } from "./types.js";
+import type { Bom, Item, Merchant, Outlet, Sale, SaleRefund, StockLedgerEntry } from "./types.js";
 
 export class InMemorySalesRepository implements SalesRepository {
   private readonly items = new Map<string, Item>();
   private readonly boms = new Map<string, Bom>();
   private readonly outlets = new Map<string, Outlet>();
+  private readonly merchants = new Map<string, Merchant>();
   private readonly sales = new Map<string, Sale>();
   /** (merchantId::localSaleId) → saleId — enforces client idempotency. */
   private readonly saleIdByLocal = new Map<string, string>();
@@ -26,6 +27,9 @@ export class InMemorySalesRepository implements SalesRepository {
   }
   seedOutlets(outlets: readonly Outlet[]): void {
     for (const outlet of outlets) this.outlets.set(outlet.id, outlet);
+  }
+  seedMerchants(merchants: readonly Merchant[]): void {
+    for (const merchant of merchants) this.merchants.set(merchant.id, merchant);
   }
   seedLedger(entries: readonly LedgerAppendInput[], idGenerator: () => string): void {
     for (const entry of entries) {
@@ -67,6 +71,10 @@ export class InMemorySalesRepository implements SalesRepository {
     const row = this.outlets.get(outletId);
     if (!row || row.merchantId !== merchantId) return null;
     return row;
+  }
+
+  async findMerchant(merchantId: string): Promise<Merchant | null> {
+    return this.merchants.get(merchantId) ?? null;
   }
 
   async findSaleByLocalId(merchantId: string, localSaleId: string): Promise<Sale | null> {

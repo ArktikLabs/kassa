@@ -46,6 +46,7 @@ function makeItem(): Item {
     bomId: null,
     isStockTracked: false,
     allowNegative: false,
+    taxRate: 11,
     isActive: true,
   };
 }
@@ -146,6 +147,7 @@ async function seedSale(
     subtotalIdr: totalIdr,
     discountIdr: 0,
     totalIdr,
+    taxIdr: 0,
     items,
     tenders,
     createdAt: overrides.createdAt ?? "2026-04-23T03:00:00.000Z",
@@ -461,6 +463,7 @@ describe("EodService — directly", () => {
       subtotalIdr: 40_000,
       discountIdr: 0,
       totalIdr: 40_000,
+      taxIdr: 0,
       items: [],
       tenders: [{ method: "cash", amountIdr: 40_000, reference: null, verified: true }],
       voidedAt: null,

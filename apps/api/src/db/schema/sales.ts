@@ -54,6 +54,16 @@ export const sales = pgTable(
     subtotalIdr: rupiah("subtotal_idr").notNull(),
     discountIdr: rupiah("discount_idr").notNull().default(0),
     totalIdr: rupiah("total_idr").notNull(),
+    /**
+     * KASA-218 — Indonesian PPN (VAT) component of this sale. Server-derived
+     * at submit from per-line `item.tax_rate` and the merchant's
+     * `tax_inclusive` flag, persisted so EOD reports can sum it without
+     * re-pricing. For an inclusive merchant the amount is embedded inside
+     * `subtotal_idr` / `total_idr`; for an exclusive merchant it sits on top
+     * (`total_idr = subtotal_idr − discount_idr + tax_idr`). Default 0 so
+     * pre-KASA-218 rows stay numerically valid.
+     */
+    taxIdr: rupiah("tax_idr").notNull().default(0),
     voidedAt: timestamp("voided_at", { withTimezone: true }),
     /**
      * KASA-151 — set when the row originated from the KASA-71 production

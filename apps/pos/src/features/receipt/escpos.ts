@@ -113,6 +113,14 @@ export interface ReceiptPayload {
   items: readonly ReceiptLine[];
   subtotal: string;
   discount: string;
+  /**
+   * KASA-218 — Indonesian PPN line. Optional so legacy callers that haven't
+   * been bumped still encode without a tax row. When set, both `taxLabel`
+   * and `tax` must be provided; the encoder renders one row between
+   * `Diskon` and `Total`.
+   */
+  taxLabel?: string;
+  tax?: string;
   total: string;
   tenderedLabel: string;
   tendered: string;
@@ -120,6 +128,13 @@ export interface ReceiptPayload {
   change: string;
   footerThanks: string;
   width: 32 | 42;
+  /**
+   * When true, prepend a bold "SALINAN" (Copy) banner above the outlet name so
+   * the printed copy is unambiguously distinguishable from the original. Set
+   * by the reprint flow (KASA-220) — reprints must never read like fresh sales
+   * because audit/EOD reconciliation runs off the original.
+   */
+  salinan?: boolean;
 }
 
 function padBetween(left: string, right: string, width: number): string {
@@ -158,6 +173,9 @@ export function encodeReceipt(payload: ReceiptPayload): Uint8Array {
   const b = new EscPosBuilder().init();
 
   b.align("center");
+  if (payload.salinan) {
+    b.bold(true).line("*** SALINAN ***").bold(false);
+  }
   if (payload.merchant) {
     const m = payload.merchant;
     b.bold(true).line(m.displayName).bold(false);
@@ -181,6 +199,12 @@ export function encodeReceipt(payload: ReceiptPayload): Uint8Array {
   b.line(padBetween("Subtotal", payload.subtotal, width));
   if (payload.discount && payload.discount !== payload.subtotal) {
     b.line(padBetween("Diskon", `-${payload.discount}`, width));
+  }
+  if (payload.taxLabel && payload.tax) {
+    // KASA-218 — between discount and total. The "PPN sudah termasuk"
+    // convention for inclusive merchants is conveyed by the label
+    // localisation; the encoder doesn't decide inclusive vs exclusive.
+    b.line(padBetween(payload.taxLabel, payload.tax, width));
   }
   b.bold(true)
     .line(padBetween("Total", payload.total, width))

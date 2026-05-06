@@ -5,6 +5,7 @@ import { uuidv7 } from "../../lib/uuidv7.ts";
 import type { CartLine, CartTotals } from "../cart/types.ts";
 import { explodeLines } from "../stock/index.ts";
 import { kassaSale, type KassaSale } from "./schema.ts";
+import { computeSaleTaxIdr } from "./tax.ts";
 
 /*
  * `features/sale.finalize` turns a filled cart + cash tender into a persisted
@@ -199,6 +200,10 @@ export async function finalizeCashSale(
         subtotalIdr: toRupiah(sale.subtotalIdr),
         discountIdr: toRupiah(sale.discountIdr),
         totalIdr: toRupiah(sale.totalIdr),
+        // KASA-218 — local PPN preview for the receipt before the server
+        // confirms. Server is still authoritative on submit; the outbox row
+        // overwrites this once the response carries `taxIdr`.
+        taxIdr: computeSaleTaxIdr(saleItems, itemById),
         items: saleItems.map((line) => ({
           ...line,
           unitPriceIdr: toRupiah(line.unitPriceIdr),
@@ -312,6 +317,10 @@ export async function finalizeQrisSale(
         subtotalIdr: toRupiah(sale.subtotalIdr),
         discountIdr: toRupiah(sale.discountIdr),
         totalIdr: toRupiah(sale.totalIdr),
+        // KASA-218 — local PPN preview for the receipt before the server
+        // confirms. Server is still authoritative on submit; the outbox row
+        // overwrites this once the response carries `taxIdr`.
+        taxIdr: computeSaleTaxIdr(saleItems, itemById),
         items: saleItems.map((line) => ({
           ...line,
           unitPriceIdr: toRupiah(line.unitPriceIdr),
@@ -443,6 +452,10 @@ export async function finalizeQrisStaticSale(
         subtotalIdr: toRupiah(sale.subtotalIdr),
         discountIdr: toRupiah(sale.discountIdr),
         totalIdr: toRupiah(sale.totalIdr),
+        // KASA-218 — local PPN preview for the receipt before the server
+        // confirms. Server is still authoritative on submit; the outbox row
+        // overwrites this once the response carries `taxIdr`.
+        taxIdr: computeSaleTaxIdr(saleItems, itemById),
         items: saleItems.map((line) => ({
           ...line,
           unitPriceIdr: toRupiah(line.unitPriceIdr),

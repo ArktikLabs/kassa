@@ -18,6 +18,13 @@ export interface Item {
   uomId: string;
   bomId: string | null;
   isStockTracked: boolean;
+  /**
+   * KASA-218 — Indonesian PPN rate as integer percent (0..100). Synced from
+   * `itemRecord.taxRate`; defaults to 11 (statutory PPN) when the wire
+   * payload omits it (pre-KASA-218 servers). Used by the receipt preview
+   * to break out the PPN line locally before the server confirms.
+   */
+  taxRate: number;
   isActive: boolean;
   updatedAt: string;
 }
@@ -132,6 +139,13 @@ export interface PendingSale {
   subtotalIdr: Rupiah;
   discountIdr: Rupiah;
   totalIdr: Rupiah;
+  /**
+   * KASA-218 — Indonesian PPN component, computed locally from per-item
+   * `taxRate` for the receipt preview before submit, and overwritten with
+   * the server's authoritative number once the sync settles. Optional so
+   * pre-KASA-218 outbox rows survive the schema bump unchanged.
+   */
+  taxIdr?: Rupiah;
   items: readonly PendingSaleItem[];
   tenders: readonly PendingSaleTender[];
   status: "queued" | "sending" | "error" | "needs_attention" | "synced";

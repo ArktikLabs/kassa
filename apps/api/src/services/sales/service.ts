@@ -220,7 +220,21 @@ export class SalesService {
       0,
     );
     const authoritativeDiscount = Math.min(input.discountIdr, authoritativeSubtotal);
-    const authoritativeTotal = authoritativeSubtotal - authoritativeDiscount;
+
+    // KASA-218 — derive Indonesian PPN (VAT) component per-line and sum.
+    // Per-line round (then sum) keeps the breakdown stable across cart re-
+    // orderings and matches the printed receipt: each line is one statutory
+    // tax point. Inclusive merchants (Indonesian default) reverse-derive tax
+    // from the catalog price; exclusive merchants add it on top.
+    const merchant = await this.repository.findMerchant(input.merchantId);
+    const taxInclusive = merchant?.taxInclusive ?? true;
+    const taxIdr = authoritativeItems.reduce((sum, line) => {
+      const item = saleItemById.get(line.itemId) as Item;
+      return sum + computeLineTaxIdr(line.lineTotalIdr, item.taxRate, taxInclusive);
+    }, 0);
+    const authoritativeTotal = taxInclusive
+      ? authoritativeSubtotal - authoritativeDiscount
+      : authoritativeSubtotal - authoritativeDiscount + taxIdr;
 
     // Resolve BOMs once per referenced id. `line.bomId` is a hint — the
     // server authoritatively picks the item's current `bomId`, so if the
@@ -316,6 +330,7 @@ export class SalesService {
       subtotalIdr: authoritativeSubtotal,
       discountIdr: authoritativeDiscount,
       totalIdr: authoritativeTotal,
+      taxIdr,
       items: authoritativeItems,
       tenders: input.tenders.map(normalizeTender),
       createdAt: input.createdAt,
@@ -669,6 +684,36 @@ export class SalesService {
 
 function defaultSaleName(sale: Sale): string {
   return `SALE-${sale.businessDate.replaceAll("-", "")}-${sale.id.slice(0, 8)}`;
+}
+
+/**
+ * KASA-218 — Indonesian PPN per-line rounding. Returns the tax component in
+ * integer rupiah. Two modes:
+ *
+ *   - Inclusive (`taxInclusive=true`, the Indonesian default): the catalog
+ *     price already contains tax. Reverse-derive: `lineTotal − lineTotal /
+ *     (1 + rate/100)` → e.g. Rp 11,000 @ 11% → 1090.0909... → **1090**.
+ *   - Exclusive (`taxInclusive=false`): tax sits on top of the catalog
+ *     price. Forward-derive: `lineTotal × rate / 100` → e.g. Rp 10,000 @ 11%
+ *     → 1100.
+ *
+ * Rounding uses `Math.round` (half-away-from-zero for non-negative inputs),
+ * applied per line then summed. Per-line rounding keeps the receipt
+ * breakdown legible — the sum equals what each statutory tax point would
+ * report if written individually — at the cost of ±1 rupiah of drift versus
+ * a single sale-level round. This matches Indonesian retail receipt
+ * convention and the KASA-218 acceptance ("Rp 11,000 → 1090").
+ */
+export function computeLineTaxIdr(
+  lineTotalIdr: number,
+  taxRatePercent: number,
+  taxInclusive: boolean,
+): number {
+  if (taxRatePercent <= 0 || lineTotalIdr <= 0) return 0;
+  if (taxInclusive) {
+    return Math.round(lineTotalIdr - lineTotalIdr / (1 + taxRatePercent / 100));
+  }
+  return Math.round((lineTotalIdr * taxRatePercent) / 100);
 }
 
 function normalizeTender(tender: SaleTender): SaleTender {

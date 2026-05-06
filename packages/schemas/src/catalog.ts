@@ -21,6 +21,13 @@ export const itemCreateRequest = z
     uomId: uuidV7,
     bomId: uuidV7.nullable().optional(),
     isStockTracked: z.boolean().optional(),
+    /**
+     * KASA-218 — Indonesian PPN rate as integer percent (0..100). Optional;
+     * omitting it accepts the schema default (11, the statutory rate). Pre-
+     * KASA-218 back-office callers that don't yet send the field land on
+     * the same default with no behaviour change.
+     */
+    taxRate: z.number().int().min(0).max(100).optional(),
     isActive: z.boolean().optional(),
   })
   .strict();
@@ -38,6 +45,8 @@ export const itemUpdateRequest = z
     uomId: uuidV7.optional(),
     bomId: uuidV7.nullable().optional(),
     isStockTracked: z.boolean().optional(),
+    /** KASA-218 — Indonesian PPN rate as integer percent (0..100). */
+    taxRate: z.number().int().min(0).max(100).optional(),
     isActive: z.boolean().optional(),
   })
   .strict()

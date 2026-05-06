@@ -20,6 +20,12 @@ interface ReceiptPreviewProps {
   outlet: Outlet | undefined;
   paperWidth: PaperWidth;
   merchant?: ReceiptMerchant | null;
+  /**
+   * When true, render the on-screen preview with a "SALINAN" (Copy) banner so
+   * the clerk can confirm a reprint will be unambiguous before tapping Cetak
+   * Ulang. Mirrors the ESC/POS `salinan` flag (KASA-220).
+   */
+  salinan?: boolean;
 }
 
 function formatDateTime(iso: string, timezone: string | undefined): string {
@@ -39,7 +45,7 @@ function formatDateTime(iso: string, timezone: string | undefined): string {
   }
 }
 
-export function ReceiptPreview({ sale, outlet, paperWidth, merchant }: ReceiptPreviewProps) {
+export function ReceiptPreview({ sale, outlet, paperWidth, merchant, salinan }: ReceiptPreviewProps) {
   const intl = useIntl();
   const widthPx = PAPER_WIDTH_PX[paperWidth];
   const totalTendered = sale.tenders.reduce<number>(
@@ -55,9 +61,18 @@ export function ReceiptPreview({ sale, outlet, paperWidth, merchant }: ReceiptPr
     <article
       data-testid="receipt-preview"
       data-paper-width={paperWidth}
+      data-salinan={salinan ? "true" : undefined}
       className="mx-auto rounded-none border border-dashed border-neutral-300 bg-white px-3 py-4 font-mono text-[14px] leading-[20px] text-neutral-900"
       style={{ width: `${widthPx}px` }}
     >
+      {salinan ? (
+        <p
+          className="text-center font-bold tracking-widest text-neutral-900"
+          data-testid="receipt-salinan-banner"
+        >
+          *** {intl.formatMessage({ id: "receipt.salinan.banner" })} ***
+        </p>
+      ) : null}
       <header className="text-center" data-testid="receipt-header">
         {merchant ? (
           <div data-testid="receipt-merchant">
@@ -120,6 +135,13 @@ export function ReceiptPreview({ sale, outlet, paperWidth, merchant }: ReceiptPr
             value={`-${formatIdr(sale.discountIdr)}`}
           />
         ) : null}
+        {sale.taxIdr !== undefined && (sale.taxIdr as number) > 0 ? (
+          <Row
+            label={intl.formatMessage({ id: "receipt.tax" }, { rate: 11 })}
+            value={formatIdr(sale.taxIdr)}
+            data-testid="receipt-tax"
+          />
+        ) : null}
         <Row
           label={intl.formatMessage({ id: "receipt.total" })}
           value={formatIdr(sale.totalIdr)}
@@ -139,9 +161,20 @@ export function ReceiptPreview({ sale, outlet, paperWidth, merchant }: ReceiptPr
   );
 }
 
-function Row({ label, value, strong }: { label: string; value: string; strong?: boolean }) {
+function Row({
+  label,
+  value,
+  strong,
+  ...rest
+}: {
+  label: string;
+  value: string;
+  strong?: boolean;
+  [key: `data-${string}`]: string | undefined;
+}) {
   return (
     <div
+      {...rest}
       className={["flex items-baseline justify-between gap-2", strong ? "font-bold" : ""].join(" ")}
     >
       <dt>{label}</dt>

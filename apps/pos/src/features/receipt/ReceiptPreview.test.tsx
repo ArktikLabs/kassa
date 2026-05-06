@@ -117,4 +117,33 @@ describe("ReceiptPreview", () => {
     // id-ID fallback footer
     expect(screen.getByTestId("receipt-footer")).toHaveTextContent(/Terima kasih/);
   });
+
+  it("renders a PPN line above Total when the sale carries taxIdr (KASA-218)", () => {
+    const taxedSale: PendingSale = { ...sale, taxIdr: toRupiah(4_955) };
+    renderWithIntl(<ReceiptPreview sale={taxedSale} outlet={outlet} paperWidth="58mm" />);
+    const tax = screen.getByTestId("receipt-tax");
+    expect(tax.textContent).toMatch(/PPN \(11%\)/);
+    expect(tax.textContent).toMatch(/4\.955/);
+  });
+
+  it("hides the PPN row entirely when taxIdr is absent or zero", () => {
+    renderWithIntl(<ReceiptPreview sale={sale} outlet={outlet} paperWidth="58mm" />);
+    expect(screen.queryByTestId("receipt-tax")).toBeNull();
+    const zeroTaxSale: PendingSale = { ...sale, taxIdr: toRupiah(0) };
+    renderWithIntl(<ReceiptPreview sale={zeroTaxSale} outlet={outlet} paperWidth="58mm" />);
+    expect(screen.queryByTestId("receipt-tax")).toBeNull();
+  });
+
+  it("does not render the SALINAN banner on a fresh post-sale print", () => {
+    renderWithIntl(<ReceiptPreview sale={sale} outlet={outlet} paperWidth="58mm" />);
+    expect(screen.queryByTestId("receipt-salinan-banner")).toBeNull();
+  });
+
+  it("renders a SALINAN banner above the outlet when reprinted", () => {
+    renderWithIntl(<ReceiptPreview sale={sale} outlet={outlet} paperWidth="58mm" salinan />);
+    const banner = screen.getByTestId("receipt-salinan-banner");
+    const outletNameNode = screen.getByTestId("receipt-outlet-name");
+    expect(banner).toHaveTextContent(/SALINAN/);
+    expect(banner.compareDocumentPosition(outletNameNode)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+  });
 });

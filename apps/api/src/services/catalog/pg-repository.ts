@@ -162,6 +162,7 @@ export class PgItemsRepository implements ItemsRepository {
           uomId: input.uomId,
           bomId: input.bomId ?? null,
           ...(input.isStockTracked !== undefined ? { isStockTracked: input.isStockTracked } : {}),
+          ...(input.taxRate !== undefined ? { taxRate: input.taxRate } : {}),
           ...(input.isActive !== undefined ? { isActive: input.isActive } : {}),
           createdAt: input.now,
           updatedAt: input.now,
@@ -191,6 +192,7 @@ export class PgItemsRepository implements ItemsRepository {
       uomId: string;
       bomId: string | null;
       isStockTracked: boolean;
+      taxRate: number;
       isActive: boolean;
       updatedAt: Date;
     }> = { updatedAt: input.now };
@@ -200,6 +202,7 @@ export class PgItemsRepository implements ItemsRepository {
     if (input.patch.uomId !== undefined) patch.uomId = input.patch.uomId;
     if (input.patch.bomId !== undefined) patch.bomId = input.patch.bomId;
     if (input.patch.isStockTracked !== undefined) patch.isStockTracked = input.patch.isStockTracked;
+    if (input.patch.taxRate !== undefined) patch.taxRate = input.patch.taxRate;
     if (input.patch.isActive !== undefined) patch.isActive = input.patch.isActive;
 
     try {

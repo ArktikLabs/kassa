@@ -82,6 +82,7 @@ export function salesRoutes(deps: SalesRouteDeps) {
               localSaleId: outcome.existing.localSaleId,
               outletId: outcome.existing.outletId,
               createdAt: outcome.existing.createdAt,
+              taxIdr: outcome.existing.taxIdr,
               ledger: [],
             };
             reply.code(409).send(body);
@@ -94,6 +95,7 @@ export function salesRoutes(deps: SalesRouteDeps) {
             localSaleId: sale.localSaleId,
             outletId: sale.outletId,
             createdAt: sale.createdAt,
+            taxIdr: sale.taxIdr,
             ledger: ledger.map((entry) => ({
               id: entry.id,
               outletId: entry.outletId,
@@ -358,6 +360,7 @@ function toSaleWire(sale: import("../services/sales/index.js").Sale): SaleRespon
     subtotalIdr: sale.subtotalIdr,
     discountIdr: sale.discountIdr,
     totalIdr: sale.totalIdr,
+    taxIdr: sale.taxIdr,
     items: sale.items.map((line) => ({
       itemId: line.itemId,
       bomId: line.bomId,
