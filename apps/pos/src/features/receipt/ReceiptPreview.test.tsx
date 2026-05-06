@@ -87,4 +87,17 @@ describe("ReceiptPreview", () => {
     renderWithIntl(<ReceiptPreview sale={zeroTaxSale} outlet={outlet} paperWidth="58mm" />);
     expect(screen.queryByTestId("receipt-tax")).toBeNull();
   });
+
+  it("does not render the SALINAN banner on a fresh post-sale print", () => {
+    renderWithIntl(<ReceiptPreview sale={sale} outlet={outlet} paperWidth="58mm" />);
+    expect(screen.queryByTestId("receipt-salinan-banner")).toBeNull();
+  });
+
+  it("renders a SALINAN banner above the outlet when reprinted", () => {
+    renderWithIntl(<ReceiptPreview sale={sale} outlet={outlet} paperWidth="58mm" salinan />);
+    const banner = screen.getByTestId("receipt-salinan-banner");
+    const outletNameNode = screen.getByTestId("receipt-outlet-name");
+    expect(banner).toHaveTextContent(/SALINAN/);
+    expect(banner.compareDocumentPosition(outletNameNode)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+  });
 });
