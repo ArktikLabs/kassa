@@ -9,6 +9,8 @@ export interface CreateItemInput {
   uomId: string;
   bomId?: string | null;
   isStockTracked?: boolean;
+  /** KASA-218 — integer percent (0..100); defaults to 11 (statutory PPN). */
+  taxRate?: number;
   isActive?: boolean;
   now: Date;
 }
@@ -23,6 +25,8 @@ export interface UpdateItemInput {
     uomId?: string;
     bomId?: string | null;
     isStockTracked?: boolean;
+    /** KASA-218 — integer percent (0..100). */
+    taxRate?: number;
     isActive?: boolean;
   };
   now: Date;

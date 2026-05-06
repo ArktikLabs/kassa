@@ -71,4 +71,20 @@ describe("ReceiptPreview", () => {
     expect(preview).toHaveAttribute("data-paper-width", "80mm");
     expect(preview).toHaveStyle({ width: "380px" });
   });
+
+  it("renders a PPN line above Total when the sale carries taxIdr (KASA-218)", () => {
+    const taxedSale: PendingSale = { ...sale, taxIdr: toRupiah(4_955) };
+    renderWithIntl(<ReceiptPreview sale={taxedSale} outlet={outlet} paperWidth="58mm" />);
+    const tax = screen.getByTestId("receipt-tax");
+    expect(tax.textContent).toMatch(/PPN \(11%\)/);
+    expect(tax.textContent).toMatch(/4\.955/);
+  });
+
+  it("hides the PPN row entirely when taxIdr is absent or zero", () => {
+    renderWithIntl(<ReceiptPreview sale={sale} outlet={outlet} paperWidth="58mm" />);
+    expect(screen.queryByTestId("receipt-tax")).toBeNull();
+    const zeroTaxSale: PendingSale = { ...sale, taxIdr: toRupiah(0) };
+    renderWithIntl(<ReceiptPreview sale={zeroTaxSale} outlet={outlet} paperWidth="58mm" />);
+    expect(screen.queryByTestId("receipt-tax")).toBeNull();
+  });
 });

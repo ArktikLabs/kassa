@@ -60,4 +60,56 @@ describe("encodeReceipt", () => {
     expect(Array.from(bytes.slice(0, 2))).toEqual([0x1b, 0x40]);
     expect(Array.from(bytes.slice(-3))).toEqual([0x1d, 0x56, 0x01]);
   });
+
+  it("renders a PPN line between Diskon and Total when taxLabel/tax are set (KASA-218)", () => {
+    const bytes = encodeReceipt({
+      outletName: "Warung Maju",
+      outletTimezone: "Asia/Jakarta",
+      address: null,
+      createdAtIso: "2026-04-23T08:30:00.000Z",
+      localSaleId: "01929b2d-1e01-7f00-80aa-000000000001",
+      items: [{ left: "1x Kopi", right: "Rp 11.000" }],
+      subtotal: "Rp 11.000",
+      discount: "Rp 0",
+      taxLabel: "PPN (11%)",
+      tax: "Rp 1.090",
+      total: "Rp 11.000",
+      tenderedLabel: "Tunai",
+      tendered: "Rp 11.000",
+      changeLabel: "Kembalian",
+      change: "Rp 0",
+      footerThanks: "Terima kasih",
+      width: 32,
+    });
+    // ESC/POS bytes are ASCII; round-trip the body so we can assert the row
+    // appears with the right ordering (after Diskon, before Total).
+    const text = String.fromCharCode(...bytes);
+    const ppnIdx = text.indexOf("PPN (11%)");
+    const totalIdx = text.indexOf("Total");
+    expect(ppnIdx).toBeGreaterThan(-1);
+    expect(totalIdx).toBeGreaterThan(ppnIdx);
+    expect(text).toContain("Rp 1.090");
+  });
+
+  it("omits the PPN row when no taxLabel/tax provided", () => {
+    const bytes = encodeReceipt({
+      outletName: "Warung Maju",
+      outletTimezone: "Asia/Jakarta",
+      address: null,
+      createdAtIso: "2026-04-23T08:30:00.000Z",
+      localSaleId: "01929b2d-1e01-7f00-80aa-000000000001",
+      items: [{ left: "1x Kopi", right: "Rp 25.000" }],
+      subtotal: "Rp 25.000",
+      discount: "Rp 0",
+      total: "Rp 25.000",
+      tenderedLabel: "Tunai",
+      tendered: "Rp 25.000",
+      changeLabel: "Kembalian",
+      change: "Rp 0",
+      footerThanks: "Terima kasih",
+      width: 32,
+    });
+    const text = String.fromCharCode(...bytes);
+    expect(text).not.toContain("PPN");
+  });
 });

@@ -12,6 +12,7 @@ function makeItem(overrides: Partial<Item> = {}): Item {
     uomId: overrides.uomId ?? "uom-cup",
     bomId: overrides.bomId ?? null,
     isStockTracked: overrides.isStockTracked ?? false,
+    taxRate: overrides.taxRate ?? 11,
     isActive: overrides.isActive ?? true,
     updatedAt: overrides.updatedAt ?? "2026-04-26T00:00:00.000Z",
   };

@@ -60,6 +60,7 @@ async function buildFixture(): Promise<Fixture> {
       // Probe never tops up the synthetic outlet, so allow_negative keeps
       // the submit path unblocked even when on_hand goes negative.
       allowNegative: true,
+      taxRate: 11,
       isActive: true,
     },
   ];

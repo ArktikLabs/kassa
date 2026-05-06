@@ -49,6 +49,8 @@ export interface SaleRecord {
   subtotalIdr: number;
   discountIdr: number;
   totalIdr: number;
+  /** KASA-218 — sale's PPN component (server-derived, see SalesService). */
+  taxIdr: number;
   items: readonly SaleItem[];
   tenders: readonly SaleTender[];
   voidedAt: string | null;
@@ -96,4 +98,12 @@ export interface EodRecordBreakdown {
   cardIdr: number;
   otherIdr: number;
   netIdr: number;
+  /**
+   * KASA-218 — sum of every non-voided merchant sale's `taxIdr` for the
+   * close. For an inclusive merchant the amount is already inside
+   * `netIdr`; for an exclusive merchant it sits on top. Surfaced
+   * separately so the close screen and back-office can break PPN out
+   * without re-walking the sale list.
+   */
+  taxIdr: number;
 }

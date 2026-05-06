@@ -3,6 +3,7 @@ export {
   SalesError,
   DEFAULT_LEDGER_PAGE_LIMIT,
   MAX_LEDGER_PAGE_LIMIT,
+  computeLineTaxIdr,
 } from "./service.js";
 export type {
   SalesServiceDeps,
@@ -22,6 +23,7 @@ export type {
   Bom,
   BomComponent,
   Item,
+  Merchant,
   Outlet,
   Sale,
   SaleLine,
