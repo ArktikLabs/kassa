@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
-import { useNavigate } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 import { FormattedDate, FormattedMessage, useIntl } from "react-intl";
 import {
   getSnapshot,
@@ -150,6 +150,19 @@ export function AdminScreen() {
       </div>
 
       <NeedsAttentionSection triggerPush={triggerPush} />
+
+      <section className="space-y-3 rounded-md border border-neutral-200 bg-white p-4">
+        <h2 className="text-lg font-semibold text-neutral-900">
+          <FormattedMessage id="receipt.history.heading" />
+        </h2>
+        <Link
+          to="/sales/history"
+          className="inline-flex h-11 items-center justify-center rounded-md border border-neutral-300 bg-white px-4 text-sm font-semibold text-neutral-700 hover:bg-neutral-100"
+          data-testid="admin-sales-history-link"
+        >
+          <FormattedMessage id="nav.history" />
+        </Link>
+      </section>
 
       <section className="space-y-3 rounded-md border border-neutral-200 bg-white p-4">
         <h2 className="text-lg font-semibold text-neutral-900">

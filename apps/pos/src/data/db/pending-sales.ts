@@ -20,6 +20,14 @@ export interface PendingSalesRepo {
   /** Same contract as listDrainable, kept for backwards-compat call sites. */
   listQueued(limit?: number): Promise<PendingSale[]>;
   listNeedsAttention(): Promise<PendingSale[]>;
+  /**
+   * Recent sales for an outlet, newest first. Used by the reprint history
+   * screen (KASA-220) — read-only, includes every status (queued / sending /
+   * error / synced / needs_attention) because the clerk can reprint a sale
+   * the moment it lands in the outbox, even if the server has not yet
+   * acknowledged it.
+   */
+  listRecentByOutlet(outletId: string, limit?: number): Promise<PendingSale[]>;
   listAll(): Promise<PendingSale[]>;
   /** Count of outbox rows the drain still owes the server. */
   countOutstanding(): Promise<number>;
@@ -73,6 +81,15 @@ export function pendingSalesRepo(db: KassaDexie): PendingSalesRepo {
     },
     listNeedsAttention() {
       return db.pending_sales.where("status").equals("needs_attention").sortBy("createdAt");
+    },
+    async listRecentByOutlet(outletId, limit = 50) {
+      // Dexie can't reverse a `where()` collection without a compound index, so
+      // we sort ascending and slice from the tail. 50 rows is well within the
+      // single-page outbox budget (KASA-122 day-bucket cap), so the in-memory
+      // reverse is cheap.
+      const rows = await db.pending_sales.where("outletId").equals(outletId).sortBy("createdAt");
+      const newestFirst = rows.slice().reverse();
+      return newestFirst.slice(0, limit);
     },
     listAll() {
       return db.pending_sales.orderBy("createdAt").toArray();

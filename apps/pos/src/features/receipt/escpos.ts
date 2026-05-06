@@ -99,6 +99,13 @@ export interface ReceiptPayload {
   change: string;
   footerThanks: string;
   width: 32 | 42;
+  /**
+   * When true, prepend a bold "SALINAN" (Copy) banner above the outlet name so
+   * the printed copy is unambiguously distinguishable from the original. Set
+   * by the reprint flow (KASA-220) — reprints must never read like fresh sales
+   * because audit/EOD reconciliation runs off the original.
+   */
+  salinan?: boolean;
 }
 
 function padBetween(left: string, right: string, width: number): string {
@@ -136,6 +143,9 @@ export function encodeReceipt(payload: ReceiptPayload): Uint8Array {
   const width = payload.width;
   const b = new EscPosBuilder().init();
 
+  if (payload.salinan) {
+    b.align("center").bold(true).line("*** SALINAN ***").bold(false);
+  }
   b.align("center").bold(true).line(payload.outletName).bold(false);
   if (payload.address) b.line(payload.address);
   b.line(formatCreatedAt(payload.createdAtIso, payload.outletTimezone ?? null));

@@ -112,6 +112,25 @@ const receiptRoute = createRoute({
   component: lazyRouteComponent(() => import("./routes/receipt.$id"), "ReceiptScreen"),
 });
 
+// Sales history + reprint detail (KASA-220). The list lives at
+// `/sales/history` (alias of "past receipts"), and tapping a row lands the
+// clerk on `/sales/$id` for a SALINAN reprint. We split these from the
+// post-sale `/receipt/$id` flow because the labels, copy, and intent differ
+// — the print path itself is shared via `usePrintReceipt()`.
+const salesHistoryRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/sales/history",
+  beforeLoad: guardEnrolled,
+  component: lazyRouteComponent(() => import("./routes/sales.history"), "SaleHistoryScreen"),
+});
+
+const salesReprintRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/sales/$id",
+  beforeLoad: guardEnrolled,
+  component: lazyRouteComponent(() => import("./routes/sales.$id"), "SaleReprintScreen"),
+});
+
 const adminRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/admin",
@@ -143,6 +162,8 @@ export const routeTree = rootRoute.addChildren([
   tenderQrisRoute,
   tenderQrisStaticRoute,
   receiptRoute,
+  salesHistoryRoute,
+  salesReprintRoute,
   adminRoute,
   eodRoute,
   helpRoute,
