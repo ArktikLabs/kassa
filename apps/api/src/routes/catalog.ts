@@ -242,6 +242,7 @@ export function catalogRoutes(deps: CatalogRouteDeps) {
             ...(req.body.isStockTracked !== undefined
               ? { isStockTracked: req.body.isStockTracked }
               : {}),
+            ...(req.body.taxRate !== undefined ? { taxRate: req.body.taxRate } : {}),
             ...(req.body.isActive !== undefined ? { isActive: req.body.isActive } : {}),
           });
           reply.code(201).send(toItemResponse(row));
@@ -293,6 +294,7 @@ export function catalogRoutes(deps: CatalogRouteDeps) {
             uomId?: string;
             bomId?: string | null;
             isStockTracked?: boolean;
+            taxRate?: number;
             isActive?: boolean;
           } = {};
           if (req.body.code !== undefined) patch.code = req.body.code;
@@ -301,6 +303,7 @@ export function catalogRoutes(deps: CatalogRouteDeps) {
           if (req.body.uomId !== undefined) patch.uomId = req.body.uomId;
           if (req.body.bomId !== undefined) patch.bomId = req.body.bomId;
           if (req.body.isStockTracked !== undefined) patch.isStockTracked = req.body.isStockTracked;
+          if (req.body.taxRate !== undefined) patch.taxRate = req.body.taxRate;
           if (req.body.isActive !== undefined) patch.isActive = req.body.isActive;
           const row = await deps.items.update({
             merchantId: principal.merchantId,

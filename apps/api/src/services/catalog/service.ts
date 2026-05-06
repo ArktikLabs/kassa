@@ -68,6 +68,8 @@ export interface CreateItemCommand {
   uomId: string;
   bomId?: string | null | undefined;
   isStockTracked?: boolean | undefined;
+  /** KASA-218 — integer percent (0..100); defaults to 11 (statutory PPN). */
+  taxRate?: number | undefined;
   isActive?: boolean | undefined;
 }
 
@@ -167,6 +169,7 @@ export class ItemsService {
       uomId: cmd.uomId,
       ...(cmd.bomId !== undefined ? { bomId: cmd.bomId } : {}),
       ...(cmd.isStockTracked !== undefined ? { isStockTracked: cmd.isStockTracked } : {}),
+      ...(cmd.taxRate !== undefined ? { taxRate: cmd.taxRate } : {}),
       ...(cmd.isActive !== undefined ? { isActive: cmd.isActive } : {}),
       now: this.now(),
     };
@@ -311,6 +314,7 @@ export function toItemResponse(row: Item): {
   uomId: string;
   bomId: string | null;
   isStockTracked: boolean;
+  taxRate: number;
   isActive: boolean;
   updatedAt: string;
 } {
@@ -322,6 +326,7 @@ export function toItemResponse(row: Item): {
     uomId: row.uomId,
     bomId: row.bomId,
     isStockTracked: row.isStockTracked,
+    taxRate: row.taxRate,
     isActive: row.isActive,
     updatedAt: row.updatedAt.toISOString(),
   };

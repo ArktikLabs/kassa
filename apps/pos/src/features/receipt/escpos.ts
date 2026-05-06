@@ -92,6 +92,14 @@ export interface ReceiptPayload {
   items: readonly ReceiptLine[];
   subtotal: string;
   discount: string;
+  /**
+   * KASA-218 — Indonesian PPN line. Optional so legacy callers that haven't
+   * been bumped still encode without a tax row. When set, both `taxLabel`
+   * and `tax` must be provided; the encoder renders one row between
+   * `Diskon` and `Total`.
+   */
+  taxLabel?: string;
+  tax?: string;
   total: string;
   tenderedLabel: string;
   tendered: string;
@@ -160,6 +168,12 @@ export function encodeReceipt(payload: ReceiptPayload): Uint8Array {
   b.line(padBetween("Subtotal", payload.subtotal, width));
   if (payload.discount && payload.discount !== payload.subtotal) {
     b.line(padBetween("Diskon", `-${payload.discount}`, width));
+  }
+  if (payload.taxLabel && payload.tax) {
+    // KASA-218 — between discount and total. The "PPN sudah termasuk"
+    // convention for inclusive merchants is conveyed by the label
+    // localisation; the encoder doesn't decide inclusive vs exclusive.
+    b.line(padBetween(payload.taxLabel, payload.tax, width));
   }
   b.bold(true)
     .line(padBetween("Total", payload.total, width))

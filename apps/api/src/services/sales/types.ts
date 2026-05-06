@@ -28,7 +28,26 @@ export interface Item {
   bomId: string | null;
   isStockTracked: boolean;
   allowNegative: boolean;
+  /**
+   * KASA-218 — Indonesian PPN (VAT) rate as integer percent (0..100). The
+   * sales service multiplies `lineTotalIdr` by this and rounds per-line to
+   * derive `sale.taxIdr`. Components carry the field for type uniformity
+   * but tax is only ever sourced from items that appear as sale lines.
+   */
+  taxRate: number;
   isActive: boolean;
+}
+
+export interface Merchant {
+  id: string;
+  /**
+   * KASA-218 — pricing convention for Indonesian PPN. When true (the
+   * Indonesian default), `item.priceIdr` is treated as tax-inclusive on
+   * submit and `taxIdr` is reverse-derived from the line totals. When
+   * false, tax is added on top of the catalog price and `totalIdr`
+   * includes it.
+   */
+  taxInclusive: boolean;
 }
 
 export interface BomComponent {
@@ -133,6 +152,14 @@ export interface Sale {
   subtotalIdr: number;
   discountIdr: number;
   totalIdr: number;
+  /**
+   * KASA-218 — server-derived Indonesian PPN component, summed from each
+   * line's `round(lineTotal × rate / (rate + 100))` (inclusive merchant) or
+   * `round(lineTotal × rate / 100)` (exclusive merchant). For inclusive
+   * merchants, the amount is embedded inside `subtotalIdr` / `totalIdr`;
+   * for exclusive merchants, `totalIdr = subtotalIdr − discountIdr + taxIdr`.
+   */
+  taxIdr: number;
   items: readonly SaleLine[];
   tenders: readonly SaleTender[];
   createdAt: string;

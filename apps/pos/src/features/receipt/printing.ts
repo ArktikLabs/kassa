@@ -66,6 +66,7 @@ export function usePrintReceipt(): UsePrintReceipt {
         }));
         const tendered = sale.tenders.reduce((acc, t) => acc + (t.amountIdr as number), 0);
         const change = Math.max(0, tendered - (sale.totalIdr as number));
+        const taxIdr = sale.taxIdr;
         const payload = {
           outletName: outlet?.name ?? intl.formatMessage({ id: "receipt.outlet.unknown" }),
           outletTimezone: outlet?.timezone ?? null,
@@ -75,6 +76,12 @@ export function usePrintReceipt(): UsePrintReceipt {
           items: lines,
           subtotal: formatIdr(sale.subtotalIdr),
           discount: formatIdr(sale.discountIdr),
+          ...(taxIdr !== undefined && (taxIdr as number) > 0
+            ? {
+                taxLabel: intl.formatMessage({ id: "receipt.tax" }, { rate: 11 }),
+                tax: formatIdr(taxIdr),
+              }
+            : {}),
           total: formatIdr(sale.totalIdr),
           tenderedLabel: intl.formatMessage({ id: "receipt.tendered" }),
           tendered: formatIdr(toRupiah(tendered)),

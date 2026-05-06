@@ -1,4 +1,4 @@
-import type { Bom, Item, Outlet, Sale, SaleRefund, StockLedgerEntry } from "./types.js";
+import type { Bom, Item, Merchant, Outlet, Sale, SaleRefund, StockLedgerEntry } from "./types.js";
 
 /*
  * Storage contract. Every method is async so a Postgres implementation (KASA-21)
@@ -40,6 +40,15 @@ export interface SalesRepository {
   findItemsByIds(merchantId: string, itemIds: readonly string[]): Promise<Item[]>;
   findBomById(bomId: string): Promise<Bom | null>;
   findOutlet(merchantId: string, outletId: string): Promise<Outlet | null>;
+  /**
+   * Look up the merchant tenant row. The sales service consults
+   * `merchant.taxInclusive` on submit to decide how to derive `sale.taxIdr`
+   * from per-line totals (KASA-218). Returns null if the merchant id is
+   * unknown — never reachable in practice because the route handler resolves
+   * the id from an authenticated device session, but kept null-safe so the
+   * service can default to inclusive without crashing in edge tests.
+   */
+  findMerchant(merchantId: string): Promise<Merchant | null>;
   findSaleByLocalId(merchantId: string, localSaleId: string): Promise<Sale | null>;
   /** Running onHand for a single (outlet, item) pair. */
   onHandFor(outletId: string, itemId: string): Promise<number>;

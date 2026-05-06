@@ -176,6 +176,7 @@ async function seedFixtures(
     // BOM-parent items are non-tracked; raw components are tracked but
     // allowNegative so a stock undercount never blocks the suite.
     allowNegative: i.isStockTracked,
+    taxRate: 11,
     isActive: true,
   }));
   repos.sales.seedItems(salesItems);

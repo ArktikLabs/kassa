@@ -15,6 +15,7 @@ const baseItem: Item = {
   uomId: "uom-1",
   bomId: null,
   isStockTracked: true,
+  taxRate: 11,
   isActive: true,
   updatedAt: "2026-01-01T00:00:00.000Z",
 };

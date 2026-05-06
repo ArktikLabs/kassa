@@ -87,6 +87,7 @@ async function buildFixture(options?: {
       bomId: BOM_COFFEE,
       isStockTracked: false,
       allowNegative: false,
+      taxRate: 11,
       isActive: true,
     },
     {
@@ -99,6 +100,7 @@ async function buildFixture(options?: {
       bomId: null,
       isStockTracked: true,
       allowNegative: false,
+      taxRate: 11,
       isActive: true,
     },
     {
@@ -111,6 +113,7 @@ async function buildFixture(options?: {
       bomId: null,
       isStockTracked: true,
       allowNegative: false,
+      taxRate: 11,
       isActive: true,
     },
     {
@@ -124,6 +127,7 @@ async function buildFixture(options?: {
       isStockTracked: true,
       // Raw material managed outside the system — allow negative per AC.
       allowNegative: true,
+      taxRate: 11,
       isActive: true,
     },
     {
@@ -136,6 +140,7 @@ async function buildFixture(options?: {
       bomId: null,
       isStockTracked: true,
       allowNegative: false,
+      taxRate: 11,
       isActive: true,
     },
     {
@@ -148,6 +153,7 @@ async function buildFixture(options?: {
       bomId: null,
       isStockTracked: true,
       allowNegative: true,
+      taxRate: 11,
       isActive: true,
     },
   ];

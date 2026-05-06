@@ -101,6 +101,7 @@ async function buildFixture(): Promise<Fixture> {
       bomId: BOM_COFFEE,
       isStockTracked: false,
       allowNegative: false,
+      taxRate: 11,
       isActive: true,
     },
     {
@@ -113,6 +114,7 @@ async function buildFixture(): Promise<Fixture> {
       bomId: null,
       isStockTracked: true,
       allowNegative: true,
+      taxRate: 11,
       isActive: true,
     },
     {
@@ -125,6 +127,7 @@ async function buildFixture(): Promise<Fixture> {
       bomId: null,
       isStockTracked: true,
       allowNegative: true,
+      taxRate: 11,
       isActive: true,
     },
     {
@@ -137,6 +140,7 @@ async function buildFixture(): Promise<Fixture> {
       bomId: null,
       isStockTracked: true,
       allowNegative: true,
+      taxRate: 11,
       isActive: true,
     },
   ];

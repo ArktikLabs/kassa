@@ -971,6 +971,12 @@
                           "isStockTracked": {
                             "type": "boolean"
                           },
+                          "taxRate": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 100,
+                            "default": 11
+                          },
                           "isActive": {
                             "type": "boolean"
                           },
@@ -1212,6 +1218,12 @@
                     },
                     "isStockTracked": {
                       "type": "boolean"
+                    },
+                    "taxRate": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 100,
+                      "default": 11
                     },
                     "isActive": {
                       "type": "boolean"
@@ -1523,6 +1535,12 @@
                     "isStockTracked": {
                       "type": "boolean"
                     },
+                    "taxRate": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 100,
+                      "default": 11
+                    },
                     "isActive": {
                       "type": "boolean"
                     },
@@ -1716,6 +1734,12 @@
                     },
                     "isStockTracked": {
                       "type": "boolean"
+                    },
+                    "taxRate": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 100,
+                      "default": 11
                     },
                     "isActive": {
                       "type": "boolean"
@@ -3388,6 +3412,10 @@
                       "type": "string",
                       "format": "date-time"
                     },
+                    "taxIdr": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
                     "ledger": {
                       "type": "array",
                       "items": {
@@ -3456,6 +3484,7 @@
                     "localSaleId",
                     "outletId",
                     "createdAt",
+                    "taxIdr",
                     "ledger"
                   ],
                   "additionalProperties": false
@@ -3568,6 +3597,10 @@
                           "type": "string",
                           "format": "date-time"
                         },
+                        "taxIdr": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
                         "ledger": {
                           "type": "array",
                           "items": {
@@ -3636,6 +3669,7 @@
                         "localSaleId",
                         "outletId",
                         "createdAt",
+                        "taxIdr",
                         "ledger"
                       ],
                       "additionalProperties": false
@@ -4499,6 +4533,10 @@
                             "type": "integer",
                             "minimum": 0
                           },
+                          "taxIdr": {
+                            "type": "integer",
+                            "minimum": 0
+                          },
                           "items": {
                             "type": "array",
                             "items": {
@@ -4676,6 +4714,7 @@
                           "subtotalIdr",
                           "discountIdr",
                           "totalIdr",
+                          "taxIdr",
                           "items",
                           "tenders",
                           "createdAt",
@@ -4883,6 +4922,10 @@
                       "type": "integer",
                       "minimum": 0
                     },
+                    "taxIdr": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
                     "items": {
                       "type": "array",
                       "items": {
@@ -5060,6 +5103,7 @@
                     "subtotalIdr",
                     "discountIdr",
                     "totalIdr",
+                    "taxIdr",
                     "items",
                     "tenders",
                     "createdAt",
@@ -5851,6 +5895,10 @@
                         "netIdr": {
                           "type": "integer",
                           "minimum": 0
+                        },
+                        "taxIdr": {
+                          "type": "integer",
+                          "minimum": 0
                         }
                       },
                       "required": [
@@ -5863,7 +5911,8 @@
                         "qrisStaticUnverifiedCount",
                         "cardIdr",
                         "otherIdr",
-                        "netIdr"
+                        "netIdr",
+                        "taxIdr"
                       ],
                       "additionalProperties": false
                     }
@@ -6110,6 +6159,10 @@
                         "netIdr": {
                           "type": "integer",
                           "minimum": 0
+                        },
+                        "taxIdr": {
+                          "type": "integer",
+                          "minimum": 0
                         }
                       },
                       "required": [
@@ -6122,7 +6175,8 @@
                         "qrisStaticUnverifiedCount",
                         "cardIdr",
                         "otherIdr",
-                        "netIdr"
+                        "netIdr",
+                        "taxIdr"
                       ],
                       "additionalProperties": false
                     }

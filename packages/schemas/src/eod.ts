@@ -74,6 +74,14 @@ export const eodBreakdown = z
     cardIdr: rupiahInteger,
     otherIdr: rupiahInteger,
     netIdr: rupiahInteger,
+    /**
+     * KASA-218 — sum of `sale.taxIdr` across every non-voided sale included
+     * in this close. For an inclusive merchant this is the PPN component
+     * already embedded in `netIdr`; for an exclusive merchant it sits on top
+     * (still summed independently here so the close screen and back-office
+     * can break it out without re-walking the sale list).
+     */
+    taxIdr: rupiahInteger,
   })
   .strict();
 export type EodBreakdown = z.infer<typeof eodBreakdown>;

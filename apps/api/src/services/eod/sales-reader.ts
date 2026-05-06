@@ -49,6 +49,7 @@ function toSaleRecord(sale: Sale): SaleRecord {
     subtotalIdr: sale.subtotalIdr,
     discountIdr: sale.discountIdr,
     totalIdr: sale.totalIdr,
+    taxIdr: sale.taxIdr,
     items,
     tenders,
     voidedAt: sale.voidedAt,

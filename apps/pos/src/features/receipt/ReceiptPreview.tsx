@@ -93,6 +93,13 @@ export function ReceiptPreview({ sale, outlet, paperWidth, salinan }: ReceiptPre
             value={`-${formatIdr(sale.discountIdr)}`}
           />
         ) : null}
+        {sale.taxIdr !== undefined && (sale.taxIdr as number) > 0 ? (
+          <Row
+            label={intl.formatMessage({ id: "receipt.tax" }, { rate: 11 })}
+            value={formatIdr(sale.taxIdr)}
+            data-testid="receipt-tax"
+          />
+        ) : null}
         <Row
           label={intl.formatMessage({ id: "receipt.total" })}
           value={formatIdr(sale.totalIdr)}
@@ -112,9 +119,20 @@ export function ReceiptPreview({ sale, outlet, paperWidth, salinan }: ReceiptPre
   );
 }
 
-function Row({ label, value, strong }: { label: string; value: string; strong?: boolean }) {
+function Row({
+  label,
+  value,
+  strong,
+  ...rest
+}: {
+  label: string;
+  value: string;
+  strong?: boolean;
+  [key: `data-${string}`]: string | undefined;
+}) {
   return (
     <div
+      {...rest}
       className={["flex items-baseline justify-between gap-2", strong ? "font-bold" : ""].join(" ")}
     >
       <dt>{label}</dt>

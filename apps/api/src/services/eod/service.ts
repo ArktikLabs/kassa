@@ -188,6 +188,7 @@ function computeBreakdown(sales: readonly SaleRecord[]): EodRecordBreakdown {
   let cardIdr = 0;
   let otherIdr = 0;
   let netIdr = 0;
+  let taxIdr = 0;
   let voidCount = 0;
   let saleCount = 0;
   for (const sale of sales) {
@@ -197,6 +198,7 @@ function computeBreakdown(sales: readonly SaleRecord[]): EodRecordBreakdown {
     }
     saleCount += 1;
     netIdr += sale.totalIdr;
+    taxIdr += sale.taxIdr;
     const nonCash = sumNonCashTenders(sale.tenders);
     const cashTaken = clampCashTaken(sale.totalIdr, nonCash);
     cashIdr += cashTaken;
@@ -234,6 +236,7 @@ function computeBreakdown(sales: readonly SaleRecord[]): EodRecordBreakdown {
     cardIdr,
     otherIdr,
     netIdr,
+    taxIdr,
   };
 }
 
