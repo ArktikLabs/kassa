@@ -72,6 +72,52 @@ describe("ReceiptPreview", () => {
     expect(preview).toHaveStyle({ width: "380px" });
   });
 
+  it("renders merchant header (name, address, phone, NPWP) and a custom footer", () => {
+    renderWithIntl(
+      <ReceiptPreview
+        sale={sale}
+        outlet={outlet}
+        paperWidth="58mm"
+        merchant={{
+          displayName: "Warung Pusat",
+          addressLine: "Jl. Sudirman No.1",
+          phone: "+62 21 555 0100",
+          npwp: "0123456789012345",
+          receiptFooterText: "Sampai jumpa lagi",
+        }}
+      />,
+    );
+    expect(screen.getByTestId("receipt-merchant-name")).toHaveTextContent("Warung Pusat");
+    expect(screen.getByTestId("receipt-merchant-address")).toHaveTextContent("Jl. Sudirman No.1");
+    expect(screen.getByTestId("receipt-merchant-phone")).toHaveTextContent("+62 21 555 0100");
+    expect(screen.getByTestId("receipt-merchant-npwp")).toHaveTextContent("NPWP 0123456789012345");
+    expect(screen.getByTestId("receipt-outlet-name")).toHaveTextContent("Warung Maju");
+    expect(screen.getByTestId("receipt-footer")).toHaveTextContent("Sampai jumpa lagi");
+  });
+
+  it("omits optional merchant fields when null and falls back to the i18n footer", () => {
+    renderWithIntl(
+      <ReceiptPreview
+        sale={sale}
+        outlet={outlet}
+        paperWidth="58mm"
+        merchant={{
+          displayName: "Warung Pusat",
+          addressLine: null,
+          phone: null,
+          npwp: null,
+          receiptFooterText: null,
+        }}
+      />,
+    );
+    expect(screen.getByTestId("receipt-merchant-name")).toBeInTheDocument();
+    expect(screen.queryByTestId("receipt-merchant-address")).toBeNull();
+    expect(screen.queryByTestId("receipt-merchant-phone")).toBeNull();
+    expect(screen.queryByTestId("receipt-merchant-npwp")).toBeNull();
+    // id-ID fallback footer
+    expect(screen.getByTestId("receipt-footer")).toHaveTextContent(/Terima kasih/);
+  });
+
   it("renders a PPN line above Total when the sale carries taxIdr (KASA-218)", () => {
     const taxedSale: PendingSale = { ...sale, taxIdr: toRupiah(4_955) };
     renderWithIntl(<ReceiptPreview sale={taxedSale} outlet={outlet} paperWidth="58mm" />);

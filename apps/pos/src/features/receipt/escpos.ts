@@ -83,10 +83,31 @@ export interface ReceiptLine {
   right: string;
 }
 
+/**
+ * Merchant-wide receipt branding (KASA-219). Optional — when absent the
+ * receipt falls back to outlet-name-only header and the i18n thanks
+ * footer. The `npwpLabel` is supplied by the caller so the wire payload
+ * stays locale-agnostic (the i18n catalogue owns the user-facing string).
+ */
+export interface ReceiptMerchant {
+  displayName: string;
+  addressLine: string | null;
+  phone: string | null;
+  npwp: string | null;
+  npwpLabel: string;
+  receiptFooterText: string | null;
+}
+
 export interface ReceiptPayload {
   outletName: string;
   outletTimezone?: string | null;
+  /**
+   * Deprecated alias kept so older call sites compile. Prefer
+   * `merchant.addressLine`. Ignored when `merchant` is set.
+   */
   address?: string | null;
+  /** Merchant brand block printed at the top of the receipt (KASA-219). */
+  merchant?: ReceiptMerchant | null;
   createdAtIso: string;
   localSaleId: string;
   items: readonly ReceiptLine[];
@@ -151,11 +172,21 @@ export function encodeReceipt(payload: ReceiptPayload): Uint8Array {
   const width = payload.width;
   const b = new EscPosBuilder().init();
 
+  b.align("center");
   if (payload.salinan) {
-    b.align("center").bold(true).line("*** SALINAN ***").bold(false);
+    b.bold(true).line("*** SALINAN ***").bold(false);
   }
-  b.align("center").bold(true).line(payload.outletName).bold(false);
-  if (payload.address) b.line(payload.address);
+  if (payload.merchant) {
+    const m = payload.merchant;
+    b.bold(true).line(m.displayName).bold(false);
+    if (m.addressLine) b.line(m.addressLine);
+    if (m.phone) b.line(m.phone);
+    if (m.npwp) b.line(`${m.npwpLabel} ${m.npwp}`);
+    b.line(payload.outletName);
+  } else {
+    b.bold(true).line(payload.outletName).bold(false);
+    if (payload.address) b.line(payload.address);
+  }
   b.line(formatCreatedAt(payload.createdAtIso, payload.outletTimezone ?? null));
   b.line(`ID ${payload.localSaleId.slice(0, 8)}`);
   b.line("");
@@ -182,7 +213,7 @@ export function encodeReceipt(payload: ReceiptPayload): Uint8Array {
   b.line(padBetween(payload.changeLabel, payload.change, width));
   b.line("");
 
-  b.align("center").line(payload.footerThanks);
+  b.align("center").line(payload.merchant?.receiptFooterText || payload.footerThanks);
   b.lineFeed(3);
   b.cut(true);
   return b.build();

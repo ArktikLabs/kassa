@@ -19,6 +19,7 @@ import type {
   CatalogItem,
   Device,
   EnrolmentCode,
+  MerchantSettings,
   Outlet,
   ReconciliationRow,
   Staff,
@@ -36,6 +37,7 @@ type State = {
   enrolmentCodes: EnrolmentCode[];
   reconciliation: ReconciliationRow[];
   unmatchedStaticTenders: UnmatchedStaticTender[];
+  merchant: MerchantSettings;
 };
 
 function seed(): State {
@@ -148,6 +150,15 @@ function seed(): State {
         last4: "5566",
       },
     ],
+    merchant: {
+      id: "01H00000000000000000MERCHANT",
+      name: "Warung Pusat Indonesia",
+      displayName: "Warung Pusat",
+      addressLine: "Jl. Sudirman No.1, Jakarta",
+      phone: "+62 21 555 0100",
+      npwp: null,
+      receiptFooterText: "Terima kasih atas kunjungan Anda",
+    },
   };
 }
 
@@ -168,6 +179,7 @@ function hydrate(parsed: Partial<State>): State {
     enrolmentCodes: parsed.enrolmentCodes ?? defaults.enrolmentCodes,
     reconciliation: parsed.reconciliation ?? defaults.reconciliation,
     unmatchedStaticTenders: parsed.unmatchedStaticTenders ?? defaults.unmatchedStaticTenders,
+    merchant: parsed.merchant ?? defaults.merchant,
   };
 }
 
@@ -320,6 +332,24 @@ export function revokeDevice(id: string): void {
   state = {
     ...state,
     devices: state.devices.map((d) => (d.id === id ? { ...d, status: "revoked" } : d)),
+  };
+  emit();
+}
+
+// Merchant settings (KASA-219) --------------------------------------
+
+/**
+ * Owner-only edit of the merchant-wide receipt branding (`displayName`,
+ * `addressLine`, `phone`, `npwp`, `receiptFooterText`). The legal `name`
+ * is sourced from enrolment and stays read-only here. `null` clears an
+ * optional field.
+ */
+export function updateMerchantSettings(
+  patch: Partial<Omit<MerchantSettings, "id" | "name">>,
+): void {
+  state = {
+    ...state,
+    merchant: { ...state.merchant, ...patch },
   };
   emit();
 }
