@@ -45,7 +45,13 @@ function formatDateTime(iso: string, timezone: string | undefined): string {
   }
 }
 
-export function ReceiptPreview({ sale, outlet, paperWidth, merchant, salinan }: ReceiptPreviewProps) {
+export function ReceiptPreview({
+  sale,
+  outlet,
+  paperWidth,
+  merchant,
+  salinan,
+}: ReceiptPreviewProps) {
   const intl = useIntl();
   const widthPx = PAPER_WIDTH_PX[paperWidth];
   const totalTendered = sale.tenders.reduce<number>(
