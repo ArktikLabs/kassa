@@ -19,10 +19,20 @@ export default defineConfig({
     trace: "on-first-retry",
   },
   webServer: {
-    command: "pnpm preview --port 4174 --strictPort",
+    // Vite bakes `import.meta.env.VITE_API_BASE_URL` at build time, so the
+    // env below has to be present during `pnpm build` — not just `pnpm
+    // preview`. Building inside `webServer.command` makes the lane hermetic
+    // both locally and in CI; mirrors apps/pos/playwright.full-day-offline.
+    // The URL only needs to satisfy `isApiBaseUrlConfigured()` so
+    // `sessionLogin()` actually fires the request the spec mocks via
+    // `page.route()` (KASA-193). No real server is reached on this port.
+    command: "pnpm build && pnpm preview --port 4174 --strictPort",
     url: "http://localhost:4174",
     reuseExistingServer: !process.env.CI,
-    timeout: 120_000,
+    timeout: 180_000,
+    env: {
+      VITE_API_BASE_URL: "http://localhost:4174",
+    },
   },
   projects: [
     {
