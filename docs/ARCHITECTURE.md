@@ -420,7 +420,7 @@ The "full sales day offline" acceptance test (vision success metric) is a Playwr
 - **Monitoring**: Sentry for errors (both tiers). Better Stack for synthetic checks on `POS shell` and API `/health`. Fly's built-in healthchecks + process restarts cover process-level failures.
 - **Logging**: Pino JSON logs from the API go to Fly's log stream, shipped to Sentry (errors) and a log aggregator (operational logs). PWA logs to console in dev; Sentry breadcrumbs in prod.
 - **Metrics**: OpenTelemetry (API) + provider-native ingest. Frontend RUM via PostHog (captured page views, custom events) until a dedicated RUM story is justified.
-- **Backups**: Neon retains point-in-time recovery in its tier; we document the restore runbook in `docs/ops/` once it lands. Out-of-region export is a v1 concern.
+- **Backups**: Neon retains point-in-time recovery in its tier; the restore runbook lives at [RUNBOOK-DR.md](./RUNBOOK-DR.md) (Neon PITR drill + S3-dump lifeboat path + decision tree, [KASA-181](/KASA/issues/KASA-181)). Out-of-region export is a v1 concern.
 - **Secrets**: Fly secrets for API, Cloudflare environment variables for Pages, GitHub Actions secrets for CI. No secrets in the repo, `.env` files are gitignored and only used for local dev. A `gitleaks` scan runs in CI.
 - **On-call**: one engineer on the pilot. Escalation path documented in `docs/ops/on-call.md` once it lands.
 
@@ -543,3 +543,4 @@ Each milestone produces a deployable increment; no milestone ends with a non-wor
 | 2026-04-22 | Review fixup: health endpoint is `/health` (unversioned) per [KASA-22](/KASA/issues/KASA-22) — corrected §2.2, §4.1, §5.4, §5.5, §8. Routes layout is `src/routes/*` with `/v1` applied by `routes/index.ts`. `transaction_event` → `transaction_events` aligned with [TECH-STACK.md](./TECH-STACK.md) §6.3. | Engineer ([KASA-51](/KASA/issues/KASA-51)) |
 | 2026-04-26 | Document RBAC role matrix and `allowedRoles` enforcement under §4.1; catalog write paths gated to `owner`/`manager`. | Engineer ([KASA-26](/KASA/issues/KASA-26)) |
 | 2026-04-26 | Gate `POST /v1/auth/enrolment-codes` to `owner`/`manager` via `allowedRoles`; cashier/read_only callers are rejected with 403. RBAC matrix updated. | Engineer ([KASA-123](/KASA/issues/KASA-123)) |
+| 2026-05-08 | Restore runbook commitment in §5.5 closed: `docs/ops/` path retired in favour of [RUNBOOK-DR.md](./RUNBOOK-DR.md) (Neon PITR procedure, S3-dump lifeboat, decision tree, escalation owners). | DevOps ([KASA-181](/KASA/issues/KASA-181)) |
