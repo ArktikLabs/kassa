@@ -11,6 +11,12 @@ import {
   PgItemsRepository,
   type ItemsRepository,
 } from "./services/catalog/index.js";
+import {
+  InMemoryMerchantsRepository,
+  MerchantsService,
+  PgMerchantsRepository,
+  type MerchantsRepository,
+} from "./services/merchants/index.js";
 
 async function main(): Promise<void> {
   // Sentry runs before buildApp() so the Fastify error handler picks up the
@@ -28,17 +34,22 @@ async function main(): Promise<void> {
     codeTtlMs: env.ENROLMENT_CODE_TTL_MS,
   });
 
-  // Catalog (KASA-23) is merchant-scoped; bind to Postgres when DATABASE_URL
-  // is set, otherwise fall back to the in-memory repo (dev convenience).
+  // Catalog (KASA-23) and merchant settings (KASA-221) are merchant-scoped;
+  // bind to Postgres when DATABASE_URL is set, otherwise fall back to the
+  // in-memory repos (dev convenience — data is lost on restart).
   let database: DatabaseHandle | null = null;
   let itemsRepository: ItemsRepository;
+  let merchantsRepository: MerchantsRepository;
   if (env.DATABASE_URL) {
     database = createDatabase({ url: env.DATABASE_URL, ssl: env.DATABASE_SSL });
     itemsRepository = new PgItemsRepository(database.db);
+    merchantsRepository = new PgMerchantsRepository(database.db);
   } else {
     itemsRepository = new InMemoryItemsRepository();
+    merchantsRepository = new InMemoryMerchantsRepository();
   }
   const itemsService = new ItemsService({ repository: itemsRepository });
+  const merchantsService = new MerchantsService({ repository: merchantsRepository });
 
   let midtransProvider: PaymentProvider | undefined;
   if (env.MIDTRANS_SERVER_KEY) {
@@ -89,6 +100,12 @@ async function main(): Promise<void> {
     deviceAuth: { repository },
     catalog: {
       items: itemsService,
+      ...(env.STAFF_BOOTSTRAP_TOKEN !== undefined
+        ? { staffBootstrapToken: env.STAFF_BOOTSTRAP_TOKEN }
+        : {}),
+    },
+    merchant: {
+      service: merchantsService,
       ...(env.STAFF_BOOTSTRAP_TOKEN !== undefined
         ? { staffBootstrapToken: env.STAFF_BOOTSTRAP_TOKEN }
         : {}),

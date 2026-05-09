@@ -38,6 +38,10 @@ import {
   SalesRepositoryEodSyntheticReconciler,
   SalesRepositorySalesReader,
 } from "./services/eod/index.js";
+import {
+  InMemoryMerchantsRepository,
+  MerchantsService,
+} from "./services/merchants/index.js";
 import { InMemoryOutletsRepository, OutletsService } from "./services/outlets/index.js";
 import {
   InMemoryReconciliationRepository,
@@ -94,6 +98,10 @@ export interface BuildAppOptions {
     items: ItemsService;
     boms?: BomsService;
     uoms?: UomsService;
+    staffBootstrapToken?: string;
+  };
+  merchant?: {
+    service: MerchantsService;
     staffBootstrapToken?: string;
   };
   outlets?: {
@@ -268,6 +276,10 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   const catalogBoms = catalog.boms ?? new BomsService({ repository: new InMemoryBomsRepository() });
   const catalogUoms = catalog.uoms ?? new UomsService({ repository: new InMemoryUomsRepository() });
 
+  const merchantCfg = options.merchant ?? {
+    service: new MerchantsService({ repository: new InMemoryMerchantsRepository() }),
+  };
+
   const outletsCfg = options.outlets ?? {
     service: new OutletsService({ repository: new InMemoryOutletsRepository() }),
   };
@@ -325,6 +337,12 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       uoms: catalogUoms,
       ...(catalog.staffBootstrapToken !== undefined
         ? { staffBootstrapToken: catalog.staffBootstrapToken }
+        : {}),
+    },
+    merchant: {
+      merchants: merchantCfg.service,
+      ...(merchantCfg.staffBootstrapToken !== undefined
+        ? { staffBootstrapToken: merchantCfg.staffBootstrapToken }
         : {}),
     },
     outlets: {

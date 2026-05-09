@@ -17,6 +17,10 @@ export const openapiTags = [
   { name: "health", description: "Liveness probe used by uptime monitors." },
   { name: "auth", description: "Device enrolment and staff/PIN session endpoints." },
   { name: "catalog", description: "Items, BOMs, units of measure, and modifiers." },
+  {
+    name: "merchant",
+    description: "Merchant identity and receipt branding (KASA-219).",
+  },
   { name: "outlets", description: "Outlets configured under the merchant." },
   { name: "stock", description: "Per-outlet stock snapshots and ledger." },
   { name: "sales", description: "Sale creation, lookup, void, refund, and offline sync." },

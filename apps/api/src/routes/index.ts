@@ -3,6 +3,7 @@ import type { DeviceAuthPreHandler } from "../auth/device-auth.js";
 import { authRoutes, type AuthRouteDeps } from "./auth.js";
 import { catalogRoutes, type CatalogRouteDeps } from "./catalog.js";
 import { eodRoutes, type EodRouteDeps } from "./eod.js";
+import { merchantRoutes, type MerchantRouteDeps } from "./merchant.js";
 import { outletsRoutes, type OutletsRouteDeps } from "./outlets.js";
 import { paymentsRoutes } from "./payments.js";
 import { reconciliationRoutes, type ReconciliationRouteDeps } from "./reconciliation.js";
@@ -18,6 +19,7 @@ export interface V1RouteDeps {
   requireDevice: DeviceAuthPreHandler;
   auth: AuthRouteDeps;
   catalog: CatalogRouteDeps;
+  merchant: MerchantRouteDeps;
   outlets: OutletsRouteDeps;
   sales: SalesRouteDeps;
   stock: StockRouteDeps;
@@ -28,6 +30,7 @@ export interface V1RouteDeps {
 export async function registerV1Routes(app: FastifyInstance, deps: V1RouteDeps): Promise<void> {
   await app.register(authRoutes(deps.auth), { prefix: "/auth" });
   await app.register(catalogRoutes(deps.catalog), { prefix: "/catalog" });
+  await app.register(merchantRoutes(deps.merchant), { prefix: "/merchant" });
   await app.register(outletsRoutes(deps.outlets), { prefix: "/outlets" });
   await app.register(stockRoutes(deps.stock), { prefix: "/stock" });
   await app.register(salesRoutes(deps.sales), { prefix: "/sales" });
