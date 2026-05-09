@@ -1,42 +1,54 @@
 name: E2E
 
-# KASA-139 — Playwright smoke gate.
+# KASA-139 / KASA-238 — Playwright gate + quarantine + nightly flake-budget lanes.
 #
 # Runs the POS service-worker shell + tender-flow specs and the back-office
-# admin smoke spec against the production Vite preview bundles. Gates `main`:
-# a regression in either suite fails this workflow and (once branch protection
-# is wired separately) blocks subsequent merges.
+# admin smoke spec against the production Vite preview bundles. Three lanes:
+#
+#   gate        Blocks `main`. Runs all specs except `@flaky`-tagged.
+#   quarantine  Non-blocking. Runs only `@flaky`-tagged specs and emits a
+#               JSON artifact (30-day retention) for the weekly QA review.
+#   nightly     Non-blocking. Runs the FULL suite (incl. `@flaky`) on a
+#               17:00 UTC schedule (00:00 WIB next day) so flake count is
+#               observable independently of PR pressure.
+#
+# The flake policy that governs which specs may be tagged `@flaky` and how
+# long they may stay tagged lives in docs/E2E-FLAKE-POLICY.md.
 #
 # Posture
-# - Triggered on push to `main` and on `workflow_dispatch` only. NOT on
-#   pull_request — keeping it off the PR lane preserves PR latency
-#   (TECH-STACK.md §9). The matching branch-protection rule is filed as a
-#   follow-up Repo Admin step (out of scope for this workflow).
-# - Flake quarantine is not permitted on this lane (per KASA-68); the spec
-#   suites already use `retries: 2` in CI mode and that's the ceiling.
-#
-# Scope
-# - POS suite: `apps/pos/e2e/{offline,tender-cash,tender-qris}.spec.ts`. The
-#   `full-day-offline.spec.ts` acceptance suite has its own job in `ci.yml`
-#   and a dedicated config; the POS playwright config excludes it from the
-#   default `playwright test` invocation so it isn't double-run here.
-# - Back office suite: `apps/back-office/e2e/admin-smoke.spec.ts`.
+# - Triggered on push to `main` and on `workflow_dispatch` (gate + quarantine)
+#   and on schedule (nightly only). NOT on pull_request — keeping it off the
+#   PR lane preserves PR latency (TECH-STACK.md §9). The matching branch-
+#   protection rule that gates `main` on the `gate` job is filed as a follow-
+#   up Repo Admin step (out of scope for this workflow; see CI-CD.md §6 #9).
+# - The `full-day-offline.spec.ts` acceptance suite has its own job in
+#   `ci.yml` and a dedicated config; the POS playwright config excludes it
+#   from the default `playwright test` invocation so it isn't double-run here.
 
 on:
   push:
     branches: [main]
   workflow_dispatch:
+  schedule:
+    # 17:00 UTC = 00:00 WIB next day. Off-peak for the team.
+    - cron: "0 17 * * *"
 
 concurrency:
-  group: e2e-${{ github.workflow }}-${{ github.ref }}
+  # Include event_name so a nightly schedule run can proceed in parallel with
+  # the gate/quarantine lanes that fire on push to main, instead of queueing
+  # behind them and skewing the flake-budget timing window.
+  group: e2e-${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: false
 
 permissions:
   contents: read
 
 jobs:
-  e2e:
+  gate:
     name: Playwright (POS shell + tenders, back-office admin smoke)
+    # Gate is the blocking lane on push to main; nightly does not need to
+    # re-gate the trunk since the latest push already did.
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     # 10 min ceiling per acceptance criteria. A healthy run is closer to
     # 5–7 min: ~15 s install (warm cache) + ~40 s build + ~30 s browser
@@ -71,13 +83,15 @@ jobs:
       - name: Install Playwright browsers (chromium)
         run: pnpm --filter @kassa/pos exec playwright install --with-deps chromium
 
+      # `--grep-invert "@flaky"` skips quarantined specs on the gate. The
+      # quarantine job below picks them up separately and never blocks main.
       - name: POS — Playwright smoke (offline shell + tender flows)
-        run: pnpm --filter @kassa/pos exec playwright test
+        run: pnpm --filter @kassa/pos exec playwright test --grep-invert "@flaky"
         env:
           CI: "true"
 
       - name: Back office — Playwright admin smoke
-        run: pnpm --filter @kassa/back-office exec playwright test
+        run: pnpm --filter @kassa/back-office exec playwright test --grep-invert "@flaky"
         env:
           CI: "true"
 
@@ -97,3 +111,167 @@ jobs:
             apps/back-office/test-results
           if-no-files-found: ignore
           retention-days: 7
+
+  quarantine:
+    name: Playwright quarantine (@flaky, non-blocking)
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    # Quarantine runs the same install + build as gate plus the flaky-tagged
+    # specs. We give it a touch more headroom (15 min) because quarantined
+    # specs are by definition the slow/retry-heavy ones.
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@fe02b34f77f8bc703788d5817da081398fad5dd2 # v4.0.0
+        with:
+          run_install: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Probe whether either suite has any `@flaky`-tagged specs before paying
+      # for the build + browser install. `playwright test --list --grep` exits
+      # 0 when at least one spec matches and non-zero when none match, so we
+      # use the exit code as a count proxy. When zero specs are quarantined
+      # (the day-1 state) the lane is a clean green no-op per the policy.
+      - name: Probe quarantine count
+        id: probe
+        run: |
+          set +e
+          pnpm --silent --filter @kassa/pos exec playwright test --list --grep "@flaky" >/dev/null 2>&1
+          pos_rc=$?
+          pnpm --silent --filter @kassa/back-office exec playwright test --list --grep "@flaky" >/dev/null 2>&1
+          bo_rc=$?
+          if [ "$pos_rc" -eq 0 ] || [ "$bo_rc" -eq 0 ]; then
+            echo "has_flaky=true" >> "$GITHUB_OUTPUT"
+            echo "Quarantined specs detected (pos_rc=$pos_rc, bo_rc=$bo_rc); quarantine lane will run."
+          else
+            echo "has_flaky=false" >> "$GITHUB_OUTPUT"
+            echo "No @flaky specs in either suite; quarantine lane is a no-op (per docs/E2E-FLAKE-POLICY.md §1)."
+          fi
+
+      - name: Build workspace
+        if: steps.probe.outputs.has_flaky == 'true'
+        run: pnpm -r build
+
+      - name: Install Playwright browsers (chromium)
+        if: steps.probe.outputs.has_flaky == 'true'
+        run: pnpm --filter @kassa/pos exec playwright install --with-deps chromium
+
+      # Each suite is wrapped in `continue-on-error: true` and writes its JSON
+      # report to `quarantine-results/`. The quarantine lane MUST NOT fail the
+      # workflow even if every quarantined spec is red — the whole point is
+      # that gate is the blocking signal, quarantine is the observation lane.
+      - name: POS — quarantine run (@flaky)
+        if: steps.probe.outputs.has_flaky == 'true'
+        continue-on-error: true
+        working-directory: apps/pos
+        run: |
+          mkdir -p ../../quarantine-results
+          pnpm exec playwright test --grep "@flaky" --reporter=json > ../../quarantine-results/pos-flaky.json
+        env:
+          CI: "true"
+
+      - name: Back office — quarantine run (@flaky)
+        if: steps.probe.outputs.has_flaky == 'true'
+        continue-on-error: true
+        working-directory: apps/back-office
+        run: |
+          mkdir -p ../../quarantine-results
+          pnpm exec playwright test --grep "@flaky" --reporter=json > ../../quarantine-results/back-office-flaky.json
+        env:
+          CI: "true"
+
+      - name: Upload quarantine artifact
+        if: steps.probe.outputs.has_flaky == 'true'
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        with:
+          name: quarantine-results
+          path: quarantine-results/
+          if-no-files-found: warn
+          retention-days: 30
+
+  nightly:
+    name: Nightly full E2E (incl. @flaky) — flake budget
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    # Nightly runs the FULL suite — the standard 10-min ceiling is for the
+    # gate (which excludes @flaky); nightly may legitimately take longer when
+    # quarantined specs accumulate retries. 25 min is a soft ceiling that
+    # would catch a runaway suite without truncating realistic worst cases.
+    timeout-minutes: 25
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@fe02b34f77f8bc703788d5817da081398fad5dd2 # v4.0.0
+        with:
+          run_install: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build workspace
+        run: pnpm -r build
+
+      - name: Install Playwright browsers (chromium)
+        run: pnpm --filter @kassa/pos exec playwright install --with-deps chromium
+
+      # Both suites continue on error so the nightly job ALWAYS produces the
+      # outcomes artifact even when one app's specs blow up entirely. The
+      # weekly QA review depends on having a continuous timeseries.
+      - name: POS — full E2E (nightly)
+        continue-on-error: true
+        working-directory: apps/pos
+        run: |
+          mkdir -p ../../nightly-results
+          pnpm exec playwright test --reporter=json > ../../nightly-results/pos.json
+        env:
+          CI: "true"
+
+      - name: Back office — full E2E (nightly)
+        continue-on-error: true
+        working-directory: apps/back-office
+        run: |
+          mkdir -p ../../nightly-results
+          pnpm exec playwright test --reporter=json > ../../nightly-results/back-office.json
+        env:
+          CI: "true"
+
+      # Stamp the run for downstream tooling; the flake report keys timeseries
+      # rows by stamp.runId so duplicate uploads in the same window dedupe.
+      - name: Stamp run metadata
+        run: |
+          cat <<JSON > nightly-results/stamp.json
+          {
+            "runId": "${{ github.run_id }}",
+            "runAttempt": "${{ github.run_attempt }}",
+            "sha": "${{ github.sha }}",
+            "ref": "${{ github.ref }}",
+            "startedAt": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          }
+          JSON
+
+      - name: Upload nightly outcomes artifact
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        with:
+          name: nightly-results-${{ github.run_id }}
+          path: nightly-results/
+          if-no-files-found: error
+          retention-days: 30
