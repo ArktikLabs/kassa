@@ -17,7 +17,7 @@
         "tags": [
           "health"
         ],
-        "description": "Always returns 200 when the process can serve requests. Mounted at the root (not under `/v1`) so external monitors do not have to track API versions.",
+        "description": "Always returns 200 when the process can serve requests. Mounted at the root (not under `/v1`) so external monitors do not have to track API versions. The `warnings[]` array exposes structured codes for degraded-but-up boots (e.g. `missing_session_cookie_secret`); see ADR-011 for the policy.",
         "responses": {
           "200": {
             "description": "Liveness payload for uptime monitors. Intentionally unversioned so monitors do not need to track API versions.",
@@ -48,6 +48,12 @@
                     "timestamp": {
                       "type": "string",
                       "format": "date-time"
+                    },
+                    "warnings": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
                     }
                   },
                   "required": [
@@ -55,7 +61,8 @@
                     "service",
                     "version",
                     "uptimeSeconds",
-                    "timestamp"
+                    "timestamp",
+                    "warnings"
                   ],
                   "additionalProperties": false,
                   "description": "Liveness payload for uptime monitors. Intentionally unversioned so monitors do not need to track API versions."
