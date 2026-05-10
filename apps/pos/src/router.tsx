@@ -24,6 +24,42 @@ async function guardUnenrolled(): Promise<void> {
   }
 }
 
+/*
+ * KASA-235 — sales / cart routes also require an *open shift*. Imported
+ * dynamically so the shift module stays out of the initial bundle on the
+ * cold-load path and only loads when the cashier reaches a sale screen.
+ */
+async function guardOpenShift(): Promise<void> {
+  await guardEnrolled();
+  const { getCurrentShift } = await import("./features/shift/repository");
+  const shift = await getCurrentShift();
+  if (!shift) {
+    throw redirect({ to: "/shift/open" });
+  }
+}
+
+async function guardShiftOpenScreen(): Promise<void> {
+  // Devices that already have an open shift bounce back to /catalog so a
+  // second open attempt cannot create a duplicate row.
+  await guardEnrolled();
+  const { getCurrentShift } = await import("./features/shift/repository");
+  const shift = await getCurrentShift();
+  if (shift) {
+    throw redirect({ to: "/catalog" });
+  }
+}
+
+async function guardShiftCloseScreen(): Promise<void> {
+  // The close screen is reachable only with an open shift; if none exists
+  // (already closed, or never opened) bounce to the open screen.
+  await guardEnrolled();
+  const { getCurrentShift } = await import("./features/shift/repository");
+  const shift = await getCurrentShift();
+  if (!shift) {
+    throw redirect({ to: "/shift/open" });
+  }
+}
+
 const rootRoute = createRootRoute({
   component: () => (
     <RootLayout>
@@ -70,21 +106,21 @@ const enrolRoute = createRoute({
 const catalogRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/catalog",
-  beforeLoad: guardEnrolled,
+  beforeLoad: guardOpenShift,
   component: lazyRouteComponent(() => import("./routes/catalog"), "CatalogScreen"),
 });
 
 const cartRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/cart",
-  beforeLoad: guardEnrolled,
+  beforeLoad: guardOpenShift,
   component: lazyRouteComponent(() => import("./routes/cart"), "CartScreen"),
 });
 
 const tenderCashRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/tender/cash",
-  beforeLoad: guardEnrolled,
+  beforeLoad: guardOpenShift,
   component: lazyRouteComponent(() => import("./routes/tender.cash"), "TenderCashScreen"),
 });
 
@@ -144,6 +180,22 @@ const eodRoute = createRoute({
   component: lazyRouteComponent(() => import("./routes/eod"), "EodRoute"),
 });
 
+// KASA-235 — cashier shift open / close routes. Code-split so the shift
+// module stays out of the cold-load bundle on the LCP path.
+const shiftOpenRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/shift/open",
+  beforeLoad: guardShiftOpenScreen,
+  component: lazyRouteComponent(() => import("./routes/shift.open"), "ShiftOpenRoute"),
+});
+
+const shiftCloseRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/shift/close",
+  beforeLoad: guardShiftCloseScreen,
+  component: lazyRouteComponent(() => import("./routes/shift.close"), "ShiftCloseRoute"),
+});
+
 // `/help` is the in-PWA mirror of `docs/ONBOARDING.md` (KASA-69). No guard:
 // a fresh tablet on `/enrol` must be able to reach the runbook before the
 // device is enrolled to any outlet.
@@ -166,6 +218,8 @@ export const routeTree = rootRoute.addChildren([
   salesReprintRoute,
   adminRoute,
   eodRoute,
+  shiftOpenRoute,
+  shiftCloseRoute,
   helpRoute,
 ]);
 

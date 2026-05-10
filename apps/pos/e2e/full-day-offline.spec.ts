@@ -100,6 +100,16 @@ test("KASA-68: full-day offline acceptance gate", async ({ browser, request }) =
     expect(credsA.outletId).toBe(OUTLET_A_ID);
     expect(credsB.outletId).toBe(OUTLET_B_ID);
 
+    // KASA-235 — the catalog guard redirects an enrolled device with no
+    // open shift to `/shift/open`, so a real cashier (and this suite)
+    // must open the day before any sale screen is reachable. Open both
+    // devices' shifts here, while still online, so the open-event drains
+    // before the offline cut-over. Float = 0 keeps EOD math identical to
+    // the pre-KASA-235 baseline (`expectedCash = cashSales` when the
+    // server-side EOD has no shift wired).
+    await openShiftViaUi(pageA);
+    await openShiftViaUi(pageB);
+
     // Step 2: confirm catalog pull populated Dexie reference tables.
     await waitForCatalogPullComplete(pageA);
     await waitForCatalogPullComplete(pageB);
@@ -239,16 +249,19 @@ async function enrolDevice(page: Page, code: string): Promise<DeviceCreds> {
   // making `button[type="submit"]` unique on `/enrol`.
   await page.locator("#enrol-code").fill(code);
   await page.locator('button[type="submit"]').click();
-  // Successful enrolment redirects to /catalog.
-  await page.waitForURL(/\/catalog$/, { timeout: 30_000 });
+  // Successful enrolment navigates to /catalog; the catalog guard
+  // (KASA-235) immediately redirects to /shift/open when no local shift
+  // exists, so accept either landing here — TanStack Router may collapse
+  // the intermediate transition and never commit /catalog to history.
+  await page.waitForURL(/\/(catalog|shift\/open)$/, { timeout: 30_000 });
   // SyncProvider's mount effect only calls `runner.start()` if the device
   // secret was persisted by the time it reads `deviceSecret.get()`. On the
   // first session that wrote the secret, that read races the enrolment
   // POST and only sometimes wins — meaning the catalog pull may never
-  // fire. A reload on /catalog re-mounts SyncProvider with the secret
-  // already in Dexie, making `runner.start()` deterministic. (App-side
-  // fix tracked separately; the harness pins the test to the boot path
-  // a real merchant would hit on the next launch after enrolment.)
+  // fire. A reload re-mounts SyncProvider with the secret already in
+  // Dexie, making `runner.start()` deterministic. (App-side fix tracked
+  // separately; the harness pins the test to the boot path a real
+  // merchant would hit on the next launch after enrolment.)
   await page.reload();
 
   const secret = await page.evaluate(async () => {
@@ -267,6 +280,18 @@ async function enrolDevice(page: Page, code: string): Promise<DeviceCreds> {
     return value as { apiKey: string; apiSecret: string; deviceId: string; outletId: string };
   });
   return secret;
+}
+
+async function openShiftViaUi(page: Page): Promise<void> {
+  // After enrolment + reload, the catalog guard (router.tsx::guardOpenShift)
+  // redirects to `/shift/open` because no local shift exists yet. Wait for
+  // the screen to mount, submit with the default zero opening float, then
+  // wait for the post-submit navigation back to `/catalog`. Float = 0 is
+  // accepted by the screen (`ShiftOpenScreen` does not gate on a non-zero
+  // amount) and keeps this suite's EOD math unchanged.
+  await page.getByTestId("shift-open-screen").waitFor({ timeout: 30_000 });
+  await page.getByTestId("shift-open-submit").click();
+  await page.waitForURL(/\/catalog$/, { timeout: 30_000 });
 }
 
 async function waitForCatalogPullComplete(page: Page): Promise<void> {

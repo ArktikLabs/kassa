@@ -6,4 +6,5 @@ export * from "./errors.js";
 export * from "./merchant.js";
 export * from "./payments.js";
 export * from "./reconciliation.js";
+export * from "./shifts.js";
 export * from "./sync.js";

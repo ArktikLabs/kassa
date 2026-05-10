@@ -9,6 +9,7 @@ import { paymentsRoutes } from "./payments.js";
 import { reconciliationRoutes, type ReconciliationRouteDeps } from "./reconciliation.js";
 import { reportsRoutes, type ReportsRouteDeps } from "./reports.js";
 import { salesRoutes, type SalesRouteDeps } from "./sales.js";
+import { shiftsRoutes, type ShiftsRouteDeps } from "./shifts.js";
 import { stockRoutes, type StockRouteDeps } from "./stock.js";
 
 export interface V1RouteDeps {
@@ -23,6 +24,7 @@ export interface V1RouteDeps {
   merchant: MerchantRouteDeps;
   outlets: OutletsRouteDeps;
   sales: SalesRouteDeps;
+  shifts: ShiftsRouteDeps;
   stock: StockRouteDeps;
   eod: EodRouteDeps;
   reconciliation: ReconciliationRouteDeps;
@@ -36,6 +38,7 @@ export async function registerV1Routes(app: FastifyInstance, deps: V1RouteDeps):
   await app.register(outletsRoutes(deps.outlets), { prefix: "/outlets" });
   await app.register(stockRoutes(deps.stock), { prefix: "/stock" });
   await app.register(salesRoutes(deps.sales), { prefix: "/sales" });
+  await app.register(shiftsRoutes(deps.shifts), { prefix: "/shifts" });
   await app.register(paymentsRoutes(deps.requireDevice), { prefix: "/payments" });
   await app.register(eodRoutes(deps.eod), { prefix: "/eod" });
   await app.register(reconciliationRoutes(deps.reconciliation), {

@@ -7,14 +7,16 @@ import type {
   Item,
   Outlet,
   PendingSale,
+  PendingShiftEvent,
   PrintedQris,
+  ShiftState,
   StockSnapshot,
   SyncState,
   Uom,
 } from "./types.ts";
 
 export const DB_NAME = "kassa-pos";
-export const DB_VERSION = 4;
+export const DB_VERSION = 5;
 
 export class KassaDexie extends Dexie {
   items!: Table<Item, string>;
@@ -28,6 +30,8 @@ export class KassaDexie extends Dexie {
   device_meta!: Table<DeviceMeta, string>;
   eod_closures!: Table<EodClosure, string>;
   printed_qris!: Table<PrintedQris, string>;
+  pending_shift_events!: Table<PendingShiftEvent, string>;
+  shift_state!: Table<ShiftState, string>;
 
   constructor(name: string = DB_NAME) {
     super(name);
@@ -96,6 +100,25 @@ export class KassaDexie extends Dexie {
       device_meta: "id",
       eod_closures: "key, outletId, businessDate, closedAt",
       printed_qris: "outletId, fetchedAt",
+    });
+    // v5 — KASA-235 cashier shift open/close. `pending_shift_events` is the
+    // dedicated outbox for shift events (open + close ride independent rows
+    // keyed by their respective uuids); `shift_state` is a singleton row
+    // the boot guard reads to decide whether to redirect to /shift/open.
+    this.version(5).stores({
+      items: "id, code, name, isActive, updatedAt",
+      boms: "id, itemId, updatedAt",
+      uoms: "id, code, updatedAt",
+      outlets: "id, code, updatedAt",
+      stock_snapshot: "key, outletId, itemId, updatedAt",
+      pending_sales: "localSaleId, status, outletId, createdAt",
+      sync_state: "table",
+      device_secret: "id",
+      device_meta: "id",
+      eod_closures: "key, outletId, businessDate, closedAt",
+      printed_qris: "outletId, fetchedAt",
+      pending_shift_events: "eventId, status, outletId, createdAt, kind",
+      shift_state: "id",
     });
   }
 }

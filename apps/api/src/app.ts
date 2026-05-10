@@ -42,6 +42,11 @@ import {
 import { InMemoryMerchantsRepository, MerchantsService } from "./services/merchants/index.js";
 import { InMemoryOutletsRepository, OutletsService } from "./services/outlets/index.js";
 import {
+  InMemoryShiftsRepository,
+  ShiftsService,
+  type ShiftsRepository,
+} from "./services/shifts/index.js";
+import {
   InMemoryReconciliationRepository,
   ReconciliationService,
 } from "./services/reconciliation/index.js";
@@ -124,6 +129,16 @@ export interface BuildAppOptions {
   sales?: {
     service: SalesService;
     repository: SalesRepository;
+  };
+  /**
+   * Cashier shift open/close (KASA-235). Defaults to an in-memory
+   * `ShiftsService` reading sales through the same `SalesRepository` the
+   * EOD service uses, so a `buildApp({})` boot has a self-consistent
+   * shift open → cash sale → shift close flow without further wiring.
+   */
+  shifts?: {
+    service: ShiftsService;
+    repository: ShiftsRepository;
   };
   /**
    * Device-authentication repository. Defaults to the same in-memory store
@@ -297,11 +312,20 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   const salesService = options.sales?.service ?? new SalesService({ repository: salesRepository });
   const resolveRequestMerchantId = options.resolveMerchantId ?? defaultMerchantResolver;
 
+  const shiftsRepository = options.shifts?.repository ?? new InMemoryShiftsRepository();
+  const shiftsService =
+    options.shifts?.service ??
+    new ShiftsService({
+      repository: shiftsRepository,
+      salesReader: new SalesRepositorySalesReader(salesRepository),
+    });
+
   const eod = options.eod ?? {
     service: new EodService({
       salesReader: new SalesRepositorySalesReader(salesRepository),
       eodRepository: new InMemoryEodRepository(),
       syntheticReconciler: new SalesRepositoryEodSyntheticReconciler(salesRepository),
+      shiftReader: shiftsRepository,
     }),
   };
   const resolveEodMerchantId = eod.resolveMerchantId ?? (() => BOOTSTRAP_MERCHANT_ID);
@@ -374,6 +398,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       resolveMerchantId: resolveRequestMerchantId,
     },
     eod: { service: eod.service, resolveMerchantId: resolveEodMerchantId },
+    shifts: { service: shiftsService, resolveMerchantId: resolveRequestMerchantId },
     reconciliation: {
       service: reconciliation.service,
       ...(reconciliation.staffBootstrapToken !== undefined

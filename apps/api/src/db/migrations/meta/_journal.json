@@ -40,8 +40,15 @@
     {
       "idx": 5,
       "version": "7",
-      "when": 1778209740316,
-      "tag": "0005_merchant_settings_columns",
+      "when": 1778544000000,
+      "tag": "0005_shifts",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1778640000000,
+      "tag": "0006_merchant_settings_columns",
       "breakpoints": true
     }
   ]

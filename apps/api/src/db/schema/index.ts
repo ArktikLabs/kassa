@@ -7,6 +7,7 @@ export * from "./merchants.js";
 export * from "./modifiers.js";
 export * from "./outlets.js";
 export * from "./sales.js";
+export * from "./shifts.js";
 export * from "./staff.js";
 export * from "./stock.js";
 export * from "./sync-log.js";

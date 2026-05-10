@@ -1,6 +1,13 @@
 import type { Database } from "../db/index.ts";
+import type { PendingShiftEvent } from "../db/types.ts";
 import { pullAll, type PullAllResult } from "./pull.ts";
 import { pushOutbox, type PushOptions, type PushResult } from "./push.ts";
+import {
+  pushShiftEvents,
+  type PushShiftOptions,
+  type PushShiftResult,
+  type ShiftSyncResponse,
+} from "./push-shifts.ts";
 import { SyncHttpError, SyncNetworkError, SyncOfflineError, SyncParseError } from "./errors.ts";
 import type { SyncStatusStore } from "./status.ts";
 
@@ -45,6 +52,8 @@ export interface RunnerOptions {
   outletId?: () => Promise<string | null>;
   /** Injected so tests can assert what the runner drives push.ts with. */
   pushImpl?: (database: Database, opts: PushOptions) => Promise<PushResult>;
+  /** Injected so tests can assert what the runner drives push-shifts.ts with. */
+  pushShiftsImpl?: (database: Database, opts: PushShiftOptions) => Promise<PushShiftResult>;
 }
 
 export interface SyncRunner {
@@ -60,6 +69,7 @@ export function createSyncRunner(opts: RunnerOptions): SyncRunner {
   const interval = opts.intervalMs ?? DEFAULT_SYNC_INTERVAL_MS;
   const onlineSource = opts.onlineSource ?? browserOnlineSource();
   const pushImpl = opts.pushImpl ?? pushOutbox;
+  const pushShiftsImpl = opts.pushShiftsImpl ?? pushShiftEvents;
   let timer: ReturnType<typeof setInterval> | null = null;
   let unsubOnline: (() => void) | null = null;
   let running = false;
@@ -94,6 +104,12 @@ export function createSyncRunner(opts: RunnerOptions): SyncRunner {
       return null;
     }
     try {
+      // KASA-235 — drain shift events before sales so an offline-queued
+      // open lands before any sale that rolled in after it. The server
+      // already accepts sales without a server-side shift, but draining
+      // in this order keeps the local sync-state coherent for the boot
+      // guard and the EOD float lookup.
+      await pushShiftsImpl(opts.database, await buildShiftPushOptions());
       const result = await pushImpl(opts.database, await buildPushOptions());
       await refreshNeedsAttention();
       return result;
@@ -106,6 +122,32 @@ export function createSyncRunner(opts: RunnerOptions): SyncRunner {
       await refreshNeedsAttention();
       throw err;
     }
+  };
+
+  const buildShiftPushOptions = async (): Promise<PushShiftOptions> => {
+    const auth = opts.auth ? await opts.auth() : null;
+    const handleSynced = async (
+      event: PendingShiftEvent,
+      response: ShiftSyncResponse | null,
+    ): Promise<void> => {
+      const repo = opts.database.repos.shiftState;
+      if (event.kind === "open") {
+        if (response?.shiftId) await repo.recordServerShiftId(response.shiftId);
+      } else if (event.kind === "close") {
+        // Close acknowledged: drop the local singleton so the boot guard
+        // routes the cashier back to /shift/open on the next session.
+        await repo.clear();
+      }
+    };
+    const shiftPushOpts: PushShiftOptions = {
+      baseUrl: opts.baseUrl,
+      isOnline: onlineSource.isOnline,
+      auth,
+      onEventSynced: handleSynced,
+    };
+    if (opts.fetchImpl) shiftPushOpts.fetchImpl = opts.fetchImpl;
+    if (opts.clock) shiftPushOpts.clock = opts.clock;
+    return shiftPushOpts;
   };
 
   const runOnce = (): Promise<RunnerCycleResult | null> => {
