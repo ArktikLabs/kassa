@@ -11,11 +11,11 @@ import type { Merchant } from "../../db/schema/merchants.js";
  * `merchantSettingsUpdateRequest` schema.
  */
 export interface MerchantSettingsUpdate {
-  displayName?: string;
-  addressLine?: string | null;
-  phone?: string | null;
-  npwp?: string | null;
-  receiptFooterText?: string | null;
+  displayName?: string | undefined;
+  addressLine?: string | null | undefined;
+  phone?: string | null | undefined;
+  npwp?: string | null | undefined;
+  receiptFooterText?: string | null | undefined;
 }
 
 /**
