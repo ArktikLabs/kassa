@@ -5283,6 +5283,767 @@
         }
       }
     },
+    "/v1/shifts/open": {
+      "post": {
+        "summary": "Open a cashier shift",
+        "tags": [
+          "shifts"
+        ],
+        "description": "Records the starting cash float for a cashier on a given (outlet, business_date). Idempotent on `(merchantId, openShiftId)` — a retried push with the same id and same payload returns the original row at 200; a different payload reusing the id is a 409 `shift_idempotency_conflict`.",
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "shiftId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "outletId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "cashierStaffId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "businessDate": {
+                      "type": "string",
+                      "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "open",
+                        "closed"
+                      ]
+                    },
+                    "openShiftId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "openedAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "openingFloatIdr": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "closeShiftId": {
+                      "type": "string",
+                      "format": "uuid",
+                      "nullable": true
+                    },
+                    "closedAt": {
+                      "type": "string",
+                      "format": "date-time",
+                      "nullable": true
+                    },
+                    "countedCashIdr": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "nullable": true
+                    },
+                    "expectedCashIdr": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "nullable": true
+                    },
+                    "varianceIdr": {
+                      "type": "integer",
+                      "nullable": true
+                    }
+                  },
+                  "required": [
+                    "shiftId",
+                    "outletId",
+                    "cashierStaffId",
+                    "businessDate",
+                    "status",
+                    "openShiftId",
+                    "openedAt",
+                    "openingFloatIdr",
+                    "closeShiftId",
+                    "closedAt",
+                    "countedCashIdr",
+                    "expectedCashIdr",
+                    "varianceIdr"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "shiftId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "outletId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "cashierStaffId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "businessDate": {
+                      "type": "string",
+                      "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "open",
+                        "closed"
+                      ]
+                    },
+                    "openShiftId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "openedAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "openingFloatIdr": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "closeShiftId": {
+                      "type": "string",
+                      "format": "uuid",
+                      "nullable": true
+                    },
+                    "closedAt": {
+                      "type": "string",
+                      "format": "date-time",
+                      "nullable": true
+                    },
+                    "countedCashIdr": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "nullable": true
+                    },
+                    "expectedCashIdr": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "nullable": true
+                    },
+                    "varianceIdr": {
+                      "type": "integer",
+                      "nullable": true
+                    }
+                  },
+                  "required": [
+                    "shiftId",
+                    "outletId",
+                    "cashierStaffId",
+                    "businessDate",
+                    "status",
+                    "openShiftId",
+                    "openedAt",
+                    "openingFloatIdr",
+                    "closeShiftId",
+                    "closedAt",
+                    "countedCashIdr",
+                    "expectedCashIdr",
+                    "varianceIdr"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Standard Kassa API error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "description": "Machine-readable error code, snake_case."
+                        },
+                        "message": {
+                          "type": "string",
+                          "description": "Human-readable error message."
+                        },
+                        "details": {
+                          "description": "Optional structured detail payload."
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Standard Kassa API error envelope."
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Standard Kassa API error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "description": "Machine-readable error code, snake_case."
+                        },
+                        "message": {
+                          "type": "string",
+                          "description": "Human-readable error message."
+                        },
+                        "details": {
+                          "description": "Optional structured detail payload."
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Standard Kassa API error envelope."
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Standard Kassa API error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "description": "Machine-readable error code, snake_case."
+                        },
+                        "message": {
+                          "type": "string",
+                          "description": "Human-readable error message."
+                        },
+                        "details": {
+                          "description": "Optional structured detail payload."
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Standard Kassa API error envelope."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/shifts/close": {
+      "post": {
+        "summary": "Close a cashier shift",
+        "tags": [
+          "shifts"
+        ],
+        "description": "Records the counted cash drawer total at end of shift. Idempotent on `(merchantId, closeShiftId)`. The server derives `expectedCashIdr = openingFloatIdr + cashSalesIdr` and `varianceIdr = countedCashIdr − expectedCashIdr`.",
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "shiftId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "outletId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "cashierStaffId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "businessDate": {
+                      "type": "string",
+                      "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "open",
+                        "closed"
+                      ]
+                    },
+                    "openShiftId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "openedAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "openingFloatIdr": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "closeShiftId": {
+                      "type": "string",
+                      "format": "uuid",
+                      "nullable": true
+                    },
+                    "closedAt": {
+                      "type": "string",
+                      "format": "date-time",
+                      "nullable": true
+                    },
+                    "countedCashIdr": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "nullable": true
+                    },
+                    "expectedCashIdr": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "nullable": true
+                    },
+                    "varianceIdr": {
+                      "type": "integer",
+                      "nullable": true
+                    }
+                  },
+                  "required": [
+                    "shiftId",
+                    "outletId",
+                    "cashierStaffId",
+                    "businessDate",
+                    "status",
+                    "openShiftId",
+                    "openedAt",
+                    "openingFloatIdr",
+                    "closeShiftId",
+                    "closedAt",
+                    "countedCashIdr",
+                    "expectedCashIdr",
+                    "varianceIdr"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Standard Kassa API error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "description": "Machine-readable error code, snake_case."
+                        },
+                        "message": {
+                          "type": "string",
+                          "description": "Human-readable error message."
+                        },
+                        "details": {
+                          "description": "Optional structured detail payload."
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Standard Kassa API error envelope."
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Standard Kassa API error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "description": "Machine-readable error code, snake_case."
+                        },
+                        "message": {
+                          "type": "string",
+                          "description": "Human-readable error message."
+                        },
+                        "details": {
+                          "description": "Optional structured detail payload."
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Standard Kassa API error envelope."
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Standard Kassa API error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "description": "Machine-readable error code, snake_case."
+                        },
+                        "message": {
+                          "type": "string",
+                          "description": "Human-readable error message."
+                        },
+                        "details": {
+                          "description": "Optional structured detail payload."
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Standard Kassa API error envelope."
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Standard Kassa API error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "description": "Machine-readable error code, snake_case."
+                        },
+                        "message": {
+                          "type": "string",
+                          "description": "Human-readable error message."
+                        },
+                        "details": {
+                          "description": "Optional structured detail payload."
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Standard Kassa API error envelope."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/shifts/current": {
+      "get": {
+        "summary": "Get the current open shift",
+        "tags": [
+          "shifts"
+        ],
+        "description": "Resolves the open shift for the (outlet, cashier) bucket. Returns 404 when no shift is currently open so the PWA boot guard can route the cashier to `/shift/open` deterministically.",
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "shiftId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "outletId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "cashierStaffId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "businessDate": {
+                      "type": "string",
+                      "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "open",
+                        "closed"
+                      ]
+                    },
+                    "openShiftId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "openedAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "openingFloatIdr": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "closeShiftId": {
+                      "type": "string",
+                      "format": "uuid",
+                      "nullable": true
+                    },
+                    "closedAt": {
+                      "type": "string",
+                      "format": "date-time",
+                      "nullable": true
+                    },
+                    "countedCashIdr": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "nullable": true
+                    },
+                    "expectedCashIdr": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "nullable": true
+                    },
+                    "varianceIdr": {
+                      "type": "integer",
+                      "nullable": true
+                    }
+                  },
+                  "required": [
+                    "shiftId",
+                    "outletId",
+                    "cashierStaffId",
+                    "businessDate",
+                    "status",
+                    "openShiftId",
+                    "openedAt",
+                    "openingFloatIdr",
+                    "closeShiftId",
+                    "closedAt",
+                    "countedCashIdr",
+                    "expectedCashIdr",
+                    "varianceIdr"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Standard Kassa API error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "description": "Machine-readable error code, snake_case."
+                        },
+                        "message": {
+                          "type": "string",
+                          "description": "Human-readable error message."
+                        },
+                        "details": {
+                          "description": "Optional structured detail payload."
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Standard Kassa API error envelope."
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Standard Kassa API error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "description": "Machine-readable error code, snake_case."
+                        },
+                        "message": {
+                          "type": "string",
+                          "description": "Human-readable error message."
+                        },
+                        "details": {
+                          "description": "Optional structured detail payload."
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Standard Kassa API error envelope."
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Standard Kassa API error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "description": "Machine-readable error code, snake_case."
+                        },
+                        "message": {
+                          "type": "string",
+                          "description": "Human-readable error message."
+                        },
+                        "details": {
+                          "description": "Optional structured detail payload."
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Standard Kassa API error envelope."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/payments/qris": {
       "post": {
         "summary": "Create a dynamic QRIS order",
@@ -5846,6 +6607,11 @@
                       "type": "integer",
                       "minimum": 0
                     },
+                    "openingFloatIdr": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "default": 0
+                    },
                     "varianceIdr": {
                       "type": "integer"
                     },
@@ -6109,6 +6875,11 @@
                     "expectedCashIdr": {
                       "type": "integer",
                       "minimum": 0
+                    },
+                    "openingFloatIdr": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "default": 0
                     },
                     "varianceIdr": {
                       "type": "integer"

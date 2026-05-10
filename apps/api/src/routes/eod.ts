@@ -144,6 +144,7 @@ function toEodResponse(record: EodRecord): EodGetResponse {
     closedAt: record.closedAt,
     countedCashIdr: record.countedCashIdr,
     expectedCashIdr: record.expectedCashIdr,
+    openingFloatIdr: record.openingFloatIdr,
     varianceIdr: record.varianceIdr,
     varianceReason: record.varianceReason,
     breakdown: record.breakdown,

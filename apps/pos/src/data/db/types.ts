@@ -224,3 +224,72 @@ export function stockSnapshotKey(outletId: string, itemId: string): string {
 export function eodClosureKey(outletId: string, businessDate: string): string {
   return `${outletId}::${businessDate}`;
 }
+
+/**
+ * Cashier shift open/close outbox row (KASA-235).
+ *
+ * Two event kinds ride the same outbox: an "open" event keyed by
+ * `openShiftId` and a "close" event keyed by `closeShiftId`. Each event
+ * is its own row so retries can replay independently — the close cannot
+ * succeed before the open lands, but if the close errors we don't want
+ * the next drain to also reattempt the open.
+ *
+ * Lifecycle mirrors `PendingSale.status`:
+ *   queued → sending → (synced | error | needs_attention)
+ *
+ * The Dexie primary key is `eventId` (the open or close UUID); the
+ * `localShiftId` field links open/close events for the same shift so the
+ * UI can render a tape without rejoining server data.
+ */
+export type PendingShiftEventKind = "open" | "close";
+export type PendingShiftEventStatus = "queued" | "sending" | "error" | "needs_attention" | "synced";
+
+export interface PendingShiftEvent {
+  eventId: string;
+  localShiftId: string;
+  kind: PendingShiftEventKind;
+  outletId: string;
+  cashierStaffId: string;
+  businessDate: string;
+  createdAt: string;
+  /** Open event only; null on close-event rows. */
+  openShiftId: string | null;
+  /** Close event only; null on open-event rows. */
+  closeShiftId: string | null;
+  /** Open event: cashier-stamped `openedAt`; close event: `closedAt`. */
+  occurredAt: string;
+  /** Open event only. */
+  openingFloatIdr?: number;
+  /** Close event only. */
+  countedCashIdr?: number;
+  status: PendingShiftEventStatus;
+  attempts: number;
+  lastError: string | null;
+  lastAttemptAt: string | null;
+}
+
+/**
+ * Local cache of the cashier's open shift. Populated by the open-shift
+ * route after a successful enqueue and the server-acknowledged close.
+ * Keyed on the singleton id so the boot guard can read it synchronously
+ * before deciding whether to redirect to `/shift/open`.
+ *
+ * `serverShiftId` is null until the open event has been mirrored from
+ * the server (200/201 on `POST /v1/shifts/open`); the boot guard treats
+ * a row with `localShiftId` set as "an open shift exists" regardless,
+ * because the offline outbox guarantees the server will eventually
+ * receive it.
+ */
+export interface ShiftState {
+  id: "singleton";
+  localShiftId: string;
+  outletId: string;
+  cashierStaffId: string;
+  businessDate: string;
+  openShiftId: string;
+  openedAt: string;
+  openingFloatIdr: number;
+  serverShiftId: string | null;
+  /** Set when close has been recorded locally; the row is cleared after the close lands. */
+  closedAt: string | null;
+}
