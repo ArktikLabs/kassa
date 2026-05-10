@@ -147,16 +147,27 @@ Biome is the single lint + format tool for the whole tree, per [TECH-STACK.md §
 
 **Editing `biome.json`.** Any change to lint rule severity needs a quick justification in the PR description (why the rule is being loosened or tightened) and a `pnpm lint` run against `main` to confirm no pre-existing violations are hidden by the change.
 
-### 2.5 E2E gate ([`e2e.yml`](../.github/workflows/e2e.yml), [KASA-139](/KASA/issues/KASA-139))
+### 2.5 E2E gate ([`e2e.yml`](../.github/workflows/e2e.yml), [KASA-139](/KASA/issues/KASA-139), [KASA-238](/KASA/issues/KASA-238))
 
 Playwright runs in its own workflow rather than as a step in `ci.yml` because (a) the browser install adds ~30–60 s that PR CI does not need to pay for and (b) the E2E lane has its own posture (push-only, retry policy, artifact retention) that does not match the `ci.yml` pipeline.
 
+The workflow is split into three jobs that share an install/build but have different blocking postures:
+
+| Job          | Trigger                                | Specs                              | Blocks `main`? |
+|:-------------|:---------------------------------------|:-----------------------------------|:---------------|
+| `gate`       | `push` to `main`, `workflow_dispatch`  | All specs except `@flaky`-tagged   | Yes            |
+| `quarantine` | `push` to `main`, `workflow_dispatch`  | Only `@flaky`-tagged specs         | No (observation only) |
+| `nightly`    | `schedule` (`0 17 * * *` UTC), dispatch| **All** specs (incl. `@flaky`)     | No (observation only) |
+
+`gate` is the blocking lane. `quarantine` and `nightly` produce JSON outcome artifacts (30-day retention) consumed by [`scripts/qa/flake-report.ts`](../scripts/qa/flake-report.ts) for the weekly QA review. The full policy that governs which specs may be tagged `@flaky`, when they earn the tag, and how long they may stay tagged lives in [docs/E2E-FLAKE-POLICY.md](./E2E-FLAKE-POLICY.md).
+
 **Triggers**
 
-- `push` to `main` — blocks the trunk on a regression.
+- `push` to `main` — runs `gate` (blocks the trunk on a regression) and `quarantine`.
 - `workflow_dispatch` — operator can run on demand against `main`, e.g. before kicking off `deploy-prod.yml`.
+- `schedule` (`0 17 * * *` UTC = 00:00 WIB next day) — runs `nightly` only.
 
-It does **not** run on `pull_request`. Keeping E2E off the PR lane preserves PR latency per [TECH-STACK.md §9](./TECH-STACK.md). Branch-protection wiring to make this job a required check on `main` is a separate Repo Admin step.
+It does **not** run on `pull_request`. Keeping E2E off the PR lane preserves PR latency per [TECH-STACK.md §9](./TECH-STACK.md). Branch-protection wiring to make `gate` a required check on `main` is a separate Repo Admin step (see [§6 follow-up #9](#6-follow-ups-tracked-against-this-doc)) — gated on the flake policy being in force per [E2E-FLAKE-POLICY.md §7](./E2E-FLAKE-POLICY.md#7-branch-protection-enabling-the-gate).
 
 **Scope**
 
@@ -181,7 +192,11 @@ The two suites run sequentially rather than in parallel jobs so a single chromiu
 
 **Retry posture**
 
-Each app's `playwright.config.ts` sets `retries: 2` when `CI=true`. This is the ceiling for this lane — flake quarantine is not permitted (per [KASA-68](/KASA/issues/KASA-68)). If a spec is genuinely flaky, the fix is to root-cause it before the next merge, not to silence it.
+Each app's `playwright.config.ts` sets `retries: 2` when `CI=true`. This is the ceiling for the `gate` lane: a spec that fails after two retries is treated as a regression, not a flake, and re-running the workflow is **not** the first response (see [E2E-FLAKE-POLICY.md §5](./E2E-FLAKE-POLICY.md#5-zero-tolerance-on-main)).
+
+A spec that retry-passes in two distinct runs within a 14-day window earns the `@flaky` tag and moves to the `quarantine` lane under the rules in [E2E-FLAKE-POLICY.md §3](./E2E-FLAKE-POLICY.md#3-the-two-failure-rule-when-does-a-spec-become-flaky). Quarantine is bounded: each `@flaky` spec carries a 14-day deadline to ship a fix or revert the originating feature, with no extension.
+
+The KASA-68 acceptance suite (`apps/pos/e2e/full-day-offline.spec.ts`, §2.6) does not participate in `@flaky` quarantine — a flake there is a v0 release-gate failure and is escalated immediately rather than tagged.
 
 ### 2.6 KASA-68 acceptance suite (in `ci.yml`)
 
@@ -771,7 +786,7 @@ These are out of scope for the initial CI + static-surface CD setup but are **pr
 6. ~~**Preview-per-PR environments**~~ — landed via [KASA-108](/KASA/issues/KASA-108) (`cd-preview.yml`, this section §3.13). Cloudflare Pages preview deploys for both static surfaces, Fly.io staging redeploy for the API, Neon branch DB per PR, sticky PR comment, teardown on PR close.
 7. ~~**Worker queue broker + real workers**~~ — broker provisioning + BullMQ bootstrap landed via [KASA-111](/KASA/issues/KASA-111) (this section §3.10). The first real consumer (nightly reconciliation) is tracked in [KASA-120](/KASA/issues/KASA-120); subsequent per-feature consumers fan out from there.
 8. ~~**Production promotion gate**~~ — landed via [KASA-70](/KASA/issues/KASA-70) (`deploy-prod.yml`, §3.11): `workflow_dispatch` with environment protection rules (CEO + CTO required reviewers) on the `production-prod` env, gated on a green KASA-68 acceptance run.
-9. ~~**Playwright E2E workflow**~~ — landed via [KASA-139](/KASA/issues/KASA-139) (`e2e.yml`, §2.5). Branch-protection wiring to make the job a required check on `main` is a follow-up Repo Admin step.
+9. ~~**Playwright E2E workflow**~~ — landed via [KASA-139](/KASA/issues/KASA-139) (`e2e.yml`, §2.5); flake policy + quarantine + nightly lane landed via [KASA-238](/KASA/issues/KASA-238) ([docs/E2E-FLAKE-POLICY.md](./E2E-FLAKE-POLICY.md)). Branch-protection wiring to make `gate` a required check on `main` is a follow-up Repo Admin step.
 10. **Turborepo remote cache** — named in [TECH-STACK.md §10.3](./TECH-STACK.md); wire it once CI is live and we have a signal on cold vs warm install time.
 
 ---
