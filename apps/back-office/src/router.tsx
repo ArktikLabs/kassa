@@ -7,6 +7,7 @@ import { BomsScreen } from "./routes/catalog.boms";
 import { StaffScreen } from "./routes/staff";
 import { DevicesScreen } from "./routes/devices";
 import { ReconciliationScreen } from "./routes/reports.reconciliation";
+import { AdminDashboardScreen } from "./routes/admin.dashboard";
 import { AdminReconciliationScreen } from "./routes/admin.reconciliation";
 import { SettingsScreen } from "./routes/settings";
 import { Forbidden } from "./components/Forbidden";
@@ -60,6 +61,14 @@ const indexRoute = createRoute({
   path: "/",
   beforeLoad: ({ location }) => {
     requireSession(location);
+    // KASA-237 — default landing for owners and managers is the daily
+    // dashboard. Cashier / read-only roles fall through to /outlets, which
+    // gates them to <Forbidden/> behind `roleCanManage` if they shouldn't
+    // be in the back-office at all.
+    const session = loadSession()!;
+    if (roleCanManage(session.role)) {
+      throw redirect({ to: "/admin/dashboard" });
+    }
     throw redirect({ to: "/outlets" });
   },
 });
@@ -108,6 +117,17 @@ const reconciliationRoute = createRoute({
     ),
 });
 
+const adminDashboardRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: "admin/dashboard",
+  component: () =>
+    loadSession()?.role && roleCanManage(loadSession()!.role) ? (
+      <AdminDashboardScreen />
+    ) : (
+      <Forbidden />
+    ),
+});
+
 const adminReconciliationRoute = createRoute({
   getParentRoute: () => appRoute,
   path: "admin/reconciliation",
@@ -130,6 +150,7 @@ const routeTree = rootRoute.addChildren([
   indexRoute,
   loginRoute,
   appRoute.addChildren([
+    adminDashboardRoute,
     outletsRoute,
     catalogRoute,
     bomsRoute,
