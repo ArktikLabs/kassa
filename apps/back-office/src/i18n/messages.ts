@@ -16,6 +16,7 @@ type MessageMap = Record<string, string>;
 
 const id: MessageMap = {
   "app.name": "Kassa Back Office",
+  "nav.dashboard": "Dasbor",
   "nav.outlets": "Outlet",
   "nav.catalog": "Katalog",
   "nav.boms": "BOM",
@@ -44,6 +45,33 @@ const id: MessageMap = {
   "guard.forbidden.heading": "Akses dibatasi",
   "guard.forbidden.body":
     "Halaman ini hanya untuk peran manajer atau pemilik. Hubungi pemilik outlet untuk akses.",
+  "dashboard.heading": "Dasbor harian",
+  "dashboard.subheading":
+    "Ringkasan penjualan untuk pemilik dan manajer outlet. Angka diperbarui begitu sinkronisasi sale tiba dari kasir.",
+  "dashboard.outlet.all": "Semua outlet",
+  "dashboard.outlet.label": "Outlet",
+  "dashboard.scope.today": "Hari ini",
+  "dashboard.scope.yesterday": "Kemarin",
+  "dashboard.scope.last_7_days": "7 hari",
+  "dashboard.tile.gross": "Pendapatan kotor",
+  "dashboard.tile.net": "Pendapatan setelah PPN",
+  "dashboard.tile.sale_count": "Transaksi",
+  "dashboard.tile.average_ticket": "Rata-rata transaksi",
+  "dashboard.tile.tender_mix": "Komposisi pembayaran",
+  "dashboard.tender.cash": "Tunai",
+  "dashboard.tender.qris_dynamic": "QRIS dinamis",
+  "dashboard.tender.qris_static": "QRIS statis",
+  "dashboard.top_items.by_revenue": "Produk teratas (pendapatan)",
+  "dashboard.top_items.by_quantity": "Produk teratas (jumlah)",
+  "dashboard.top_items.col.name": "Produk",
+  "dashboard.top_items.col.revenue": "Pendapatan",
+  "dashboard.top_items.col.quantity": "Jumlah terjual",
+  "dashboard.empty": "Belum ada penjualan",
+  "dashboard.empty.subheading":
+    "Begitu kasir menutup transaksi pertama hari ini, ringkasan ini terisi otomatis.",
+  "dashboard.error.heading": "Gagal memuat dasbor",
+  "dashboard.error.body": "Coba muat ulang halaman. Jika masalah berlanjut, hubungi tim Kassa.",
+  "dashboard.loading": "Memuat ringkasan…",
   "outlets.heading": "Outlet",
   "outlets.new": "Tambah outlet",
   "outlets.edit": "Ubah outlet",
@@ -189,6 +217,7 @@ const id: MessageMap = {
 
 const en: MessageMap = {
   "app.name": "Kassa Back Office",
+  "nav.dashboard": "Dashboard",
   "nav.outlets": "Outlets",
   "nav.catalog": "Catalog",
   "nav.boms": "BOMs",

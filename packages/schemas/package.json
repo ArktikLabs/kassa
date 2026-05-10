@@ -20,6 +20,10 @@
       "types": "./dist/catalog.d.ts",
       "import": "./dist/catalog.js"
     },
+    "./dashboard": {
+      "types": "./dist/dashboard.d.ts",
+      "import": "./dist/dashboard.js"
+    },
     "./eod": {
       "types": "./dist/eod.d.ts",
       "import": "./dist/eod.js"
@@ -55,7 +59,7 @@
   },
   "devDependencies": {
     "typescript": "^5.6.3",
-    "vitest": "^2.1.4"
+    "vitest": "^3.2.0"
   },
   "engines": {
     "node": ">=22.0.0"
