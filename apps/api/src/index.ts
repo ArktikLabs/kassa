@@ -11,6 +11,12 @@ import {
   PgItemsRepository,
   type ItemsRepository,
 } from "./services/catalog/index.js";
+import {
+  DashboardService,
+  InMemoryDashboardRepository,
+  PgDashboardRepository,
+  type DashboardRepository,
+} from "./services/dashboard/index.js";
 
 async function main(): Promise<void> {
   // Sentry runs before buildApp() so the Fastify error handler picks up the
@@ -32,13 +38,17 @@ async function main(): Promise<void> {
   // is set, otherwise fall back to the in-memory repo (dev convenience).
   let database: DatabaseHandle | null = null;
   let itemsRepository: ItemsRepository;
+  let dashboardRepository: DashboardRepository;
   if (env.DATABASE_URL) {
     database = createDatabase({ url: env.DATABASE_URL, ssl: env.DATABASE_SSL });
     itemsRepository = new PgItemsRepository(database.db);
+    dashboardRepository = new PgDashboardRepository(database.db);
   } else {
     itemsRepository = new InMemoryItemsRepository();
+    dashboardRepository = new InMemoryDashboardRepository();
   }
   const itemsService = new ItemsService({ repository: itemsRepository });
+  const dashboardService = new DashboardService({ repository: dashboardRepository });
 
   let midtransProvider: PaymentProvider | undefined;
   if (env.MIDTRANS_SERVER_KEY) {
@@ -89,6 +99,12 @@ async function main(): Promise<void> {
     deviceAuth: { repository },
     catalog: {
       items: itemsService,
+      ...(env.STAFF_BOOTSTRAP_TOKEN !== undefined
+        ? { staffBootstrapToken: env.STAFF_BOOTSTRAP_TOKEN }
+        : {}),
+    },
+    reports: {
+      service: dashboardService,
       ...(env.STAFF_BOOTSTRAP_TOKEN !== undefined
         ? { staffBootstrapToken: env.STAFF_BOOTSTRAP_TOKEN }
         : {}),
