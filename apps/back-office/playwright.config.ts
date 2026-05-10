@@ -19,10 +19,18 @@ export default defineConfig({
     trace: "on-first-retry",
   },
   webServer: {
-    command: "pnpm preview --port 4174 --strictPort",
+    // KASA-182 wired the login form to a real `POST /v1/auth/session/login`,
+    // and the client refuses to fetch when `VITE_API_BASE_URL` is empty
+    // (returns "not_configured"). The smoke spec stubs the endpoint with a
+    // Playwright route handler, but we still need a non-empty base URL
+    // baked into the bundle so `isApiBaseUrlConfigured()` returns true.
+    // Rebuild with a same-origin loopback URL so the stubbed POST is caught
+    // by the route handler instead of escaping to the real internet.
+    command: "pnpm build && pnpm preview --port 4174 --strictPort",
     url: "http://localhost:4174",
+    env: { VITE_API_BASE_URL: "http://localhost:4174" },
     reuseExistingServer: !process.env.CI,
-    timeout: 120_000,
+    timeout: 180_000,
   },
   projects: [
     {

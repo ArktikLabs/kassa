@@ -22,7 +22,12 @@ export function computeLineTaxIdr(
   taxRatePercent: number,
   taxInclusive: boolean,
 ): number {
-  if (taxRatePercent <= 0 || lineTotalIdr <= 0) return 0;
+  // Reject non-finite rates (undefined/NaN/Infinity) up front so a single
+  // catalog row that pre-dates KASA-218 cannot crash `toRupiah` downstream
+  // with `Math.round(NaN)`. The wire schema defaults to 11, so this only
+  // catches local-only rows (e.g. e2e seeds) and stale Dexie writes.
+  if (!Number.isFinite(taxRatePercent) || taxRatePercent <= 0) return 0;
+  if (lineTotalIdr <= 0) return 0;
   if (taxInclusive) {
     return Math.round(lineTotalIdr - lineTotalIdr / (1 + taxRatePercent / 100));
   }
