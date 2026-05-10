@@ -1,4 +1,4 @@
-import { and, eq, gte, isNull, lte, sql } from "drizzle-orm";
+import { type SQL, and, eq, gte, isNull, lte, sql } from "drizzle-orm";
 import type { Database } from "../../db/client.js";
 import { items } from "../../db/schema/items.js";
 import { saleItems, sales } from "../../db/schema/sales.js";
@@ -14,20 +14,20 @@ import type {
 /**
  * Drizzle-backed `DashboardRepository` (KASA-237).
  *
- * The aggregator runs three independent SQL queries — one for the headline
- * tile sums, one for the tender mix, one for the leaderboards — instead of
+ * The aggregator runs four independent SQL queries — headline tile sums,
+ * tender mix, top items by revenue, top items by quantity — instead of
  * pulling sale rows into the application and looping over them. Each query
  * predicates on `(merchant_id, business_date, status, synthetic, voided)`
  * with an optional `outlet_id` filter, hitting the existing
  * `sales_outlet_business_date_idx` (KASA-21) on outlet-scoped runs and a
  * full merchant scan on owner runs over multiple outlets.
  *
- * The leaderboard query grabs `2 × DASHBOARD_TOP_ITEMS_LIMIT` rows ordered by
- * revenue and resorts by quantity in JS to derive the second leaderboard.
- * Pulling both top-N orderings server-side would need either a CTE+UNION or
- * two round-trips; the small-N resort here is a deliberate simplification —
- * with N=5 the worst-case JS work is bounded at 10 rows. If the leaderboards
- * are ever paginated this becomes a CTE and the JS resort goes away.
+ * The two leaderboards are independent `ORDER BY ... LIMIT N` round-trips:
+ * picking the top-N by revenue and resorting that buffer in JS would silently
+ * drop high-volume / low-revenue items (e.g. air mineral) from the by-quantity
+ * leaderboard whenever they fall outside the revenue top-N. Two separate
+ * top-N queries cost one extra round-trip but produce the correct shape on
+ * both axes.
  */
 export class PgDashboardRepository implements DashboardRepository {
   constructor(private readonly db: Database) {}
@@ -67,9 +67,9 @@ export class PgDashboardRepository implements DashboardRepository {
     const tenderMix: DashboardTenderSlice[] = [];
     for (const row of tenderRows) {
       // Filter at the repo layer, not in WHERE: keeping the WHERE clause
-      // identical across the three queries means the planner shares cache
-      // entries and the EXPLAIN-asserting test (deferred) does not need to
-      // reason about a per-query predicate fork.
+      // identical across the queries means the planner shares cache entries
+      // and the EXPLAIN-asserting test (deferred) does not need to reason
+      // about a per-query predicate fork.
       if (row.method === "cash" || row.method === "qris_dynamic" || row.method === "qris_static") {
         tenderMix.push({
           method: row.method,
@@ -80,32 +80,14 @@ export class PgDashboardRepository implements DashboardRepository {
     }
     tenderMix.sort((a, b) => b.amountIdr - a.amountIdr || a.method.localeCompare(b.method));
 
-    const itemRows = await this.db
-      .select({
-        itemId: items.id,
-        name: items.name,
-        revenueIdr: sql<string>`COALESCE(SUM(${saleItems.lineTotalIdr}), 0)`.as("revenue_idr"),
-        quantity: sql<string>`COALESCE(SUM(${saleItems.quantity}), 0)`.as("quantity"),
-      })
-      .from(saleItems)
-      .innerJoin(sales, eq(sales.id, saleItems.saleId))
-      .innerJoin(items, eq(items.id, saleItems.itemId))
-      .where(baseSaleFilter)
-      .groupBy(items.id, items.name)
-      .orderBy(sql`revenue_idr DESC`, items.id)
-      .limit(DASHBOARD_TOP_ITEMS_LIMIT * 2);
-
-    const allItems: DashboardItemRow[] = itemRows.map((r) => ({
-      itemId: r.itemId,
-      name: r.name,
-      revenueIdr: Number(r.revenueIdr),
-      quantity: Number(r.quantity),
-    }));
-
-    const topItemsByRevenue = allItems.slice(0, DASHBOARD_TOP_ITEMS_LIMIT);
-    const topItemsByQuantity = [...allItems]
-      .sort((a, b) => b.quantity - a.quantity || a.itemId.localeCompare(b.itemId))
-      .slice(0, DASHBOARD_TOP_ITEMS_LIMIT);
+    const topItemsByRevenue = await this.selectTopItems({
+      baseSaleFilter,
+      orderBy: sql`revenue_idr DESC`,
+    });
+    const topItemsByQuantity = await this.selectTopItems({
+      baseSaleFilter,
+      orderBy: sql`quantity DESC`,
+    });
 
     return {
       grossIdr: Number(headline.grossIdr),
@@ -115,5 +97,32 @@ export class PgDashboardRepository implements DashboardRepository {
       topItemsByRevenue,
       topItemsByQuantity,
     };
+  }
+
+  private async selectTopItems(args: {
+    baseSaleFilter: SQL | undefined;
+    orderBy: SQL;
+  }): Promise<DashboardItemRow[]> {
+    const rows = await this.db
+      .select({
+        itemId: items.id,
+        name: items.name,
+        revenueIdr: sql<string>`COALESCE(SUM(${saleItems.lineTotalIdr}), 0)`.as("revenue_idr"),
+        quantity: sql<string>`COALESCE(SUM(${saleItems.quantity}), 0)`.as("quantity"),
+      })
+      .from(saleItems)
+      .innerJoin(sales, eq(sales.id, saleItems.saleId))
+      .innerJoin(items, eq(items.id, saleItems.itemId))
+      .where(args.baseSaleFilter)
+      .groupBy(items.id, items.name)
+      .orderBy(args.orderBy, items.id)
+      .limit(DASHBOARD_TOP_ITEMS_LIMIT);
+
+    return rows.map((r) => ({
+      itemId: r.itemId,
+      name: r.name,
+      revenueIdr: Number(r.revenueIdr),
+      quantity: Number(r.quantity),
+    }));
   }
 }
