@@ -94,6 +94,15 @@ export const eodCloseResponse = z
     closedAt: z.string().datetime({ offset: true }),
     countedCashIdr: rupiahInteger,
     expectedCashIdr: rupiahInteger,
+    /**
+     * KASA-235 — starting cash float recorded against the day's open
+     * shift. Folded into `expectedCashIdr` so the variance never
+     * includes the float; surfaced separately so back-office can
+     * render the open/close tape without joining the shifts table.
+     * Defaults to 0 so pre-KASA-235 servers and days that never opened
+     * a shift remain wire-compatible.
+     */
+    openingFloatIdr: rupiahInteger.default(0),
     varianceIdr: rupiahSignedInteger,
     varianceReason: z.string().nullable(),
     breakdown: eodBreakdown,

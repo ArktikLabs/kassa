@@ -33,6 +33,20 @@ async function seedEnrolledDevice(): Promise<void> {
     merchantName: "Toko Maju",
     enrolledAt: new Date().toISOString(),
   });
+  // KASA-235 — every sale-affecting route is gated on an open shift.
+  // Pre-seed one so existing shell tests render the catalog instead of
+  // bouncing to `/shift/open`.
+  await repos.shiftState.put({
+    localShiftId: "22222222-2222-2222-2222-222222222222",
+    outletId: "outlet-1",
+    cashierStaffId: "11111111-1111-1111-1111-111111111111",
+    businessDate: "2026-04-23",
+    openShiftId: "33333333-3333-3333-3333-333333333333",
+    openedAt: new Date().toISOString(),
+    openingFloatIdr: 100_000,
+    serverShiftId: null,
+    closedAt: null,
+  });
 }
 
 describe("POS shell", () => {

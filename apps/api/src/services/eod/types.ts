@@ -70,6 +70,14 @@ export interface EodRecord {
   closedAt: string;
   countedCashIdr: number;
   expectedCashIdr: number;
+  /**
+   * KASA-235 — starting cash float recorded against the day's open shift.
+   * Folded into `expectedCashIdr` so the variance never includes the
+   * float; surfaced separately so back-office can render the open/close
+   * tape without joining the shifts table. Zero when no shift was
+   * opened that day (pre-KASA-235 environments).
+   */
+  openingFloatIdr: number;
   varianceIdr: number;
   varianceReason: string | null;
   breakdown: EodRecordBreakdown;
