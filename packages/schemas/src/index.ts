@@ -1,5 +1,6 @@
 export * from "./auth.js";
 export * from "./catalog.js";
+export * from "./dashboard.js";
 export * from "./eod.js";
 export * from "./errors.js";
 export * from "./merchant.js";

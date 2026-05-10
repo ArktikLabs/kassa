@@ -32,6 +32,7 @@ import {
   ItemsService,
   UomsService,
 } from "./services/catalog/index.js";
+import { DashboardService, InMemoryDashboardRepository } from "./services/dashboard/index.js";
 import {
   EodService,
   InMemoryEodRepository,
@@ -102,6 +103,17 @@ export interface BuildAppOptions {
   };
   reconciliation?: {
     service: ReconciliationService;
+    staffBootstrapToken?: string;
+  };
+  /**
+   * Back-office reports surface (KASA-237). When omitted the dashboard route
+   * binds to an in-memory repository (zero-data shape) so deploys without a
+   * configured dashboard service still register cleanly. The
+   * `staffBootstrapToken` mirrors `reconciliation` and gates the same
+   * `X-Staff-*` header tier.
+   */
+  reports?: {
+    service: DashboardService;
     staffBootstrapToken?: string;
   };
   sales?: {
@@ -295,6 +307,10 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     }),
   };
 
+  const reports = options.reports ?? {
+    service: new DashboardService({ repository: new InMemoryDashboardRepository() }),
+  };
+
   const v1Deps: V1RouteDeps = {
     requireDevice,
     auth: {
@@ -347,6 +363,12 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       service: reconciliation.service,
       ...(reconciliation.staffBootstrapToken !== undefined
         ? { staffBootstrapToken: reconciliation.staffBootstrapToken }
+        : {}),
+    },
+    reports: {
+      service: reports.service,
+      ...(reports.staffBootstrapToken !== undefined
+        ? { staffBootstrapToken: reports.staffBootstrapToken }
         : {}),
     },
   };

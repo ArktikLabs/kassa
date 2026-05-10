@@ -20,6 +20,10 @@
       "types": "./dist/catalog.d.ts",
       "import": "./dist/catalog.js"
     },
+    "./dashboard": {
+      "types": "./dist/dashboard.d.ts",
+      "import": "./dist/dashboard.js"
+    },
     "./eod": {
       "types": "./dist/eod.d.ts",
       "import": "./dist/eod.js"

@@ -12,6 +12,7 @@ import { clearSession, loadSession, roleIsOwner } from "../lib/session";
 type NavItem = { to: string; labelId: string; ownerOnly?: boolean };
 
 const NAV: readonly NavItem[] = [
+  { to: "/admin/dashboard", labelId: "nav.dashboard" },
   { to: "/outlets", labelId: "nav.outlets" },
   { to: "/catalog", labelId: "nav.catalog" },
   { to: "/catalog/boms", labelId: "nav.boms" },
@@ -34,7 +35,7 @@ export function RootLayout() {
   return (
     <div className="min-h-dvh bg-neutral-50 text-neutral-800">
       <header className="flex items-center justify-between border-b border-neutral-200 bg-white px-6 py-3 shadow-sm">
-        <Link to="/outlets" className="text-lg font-bold text-primary-700">
+        <Link to="/admin/dashboard" className="text-lg font-bold text-primary-700">
           <FormattedMessage id="app.name" />
         </Link>
         {session ? (
