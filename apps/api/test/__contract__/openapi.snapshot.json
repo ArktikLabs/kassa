@@ -2688,6 +2688,476 @@
         }
       }
     },
+    "/v1/merchant/me": {
+      "get": {
+        "summary": "Get merchant settings",
+        "tags": [
+          "merchant"
+        ],
+        "description": "Returns the merchant identity + receipt branding for the staff session's merchant (KASA-219). The `displayName` falls back to the merchant's legacy `name` until the owner edits the settings page so a brand-new merchant still prints a header.",
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "settings": {
+                      "type": "object",
+                      "properties": {
+                        "displayName": {
+                          "allOf": [
+                            {
+                              "type": "string",
+                              "maxLength": 80
+                            },
+                            {
+                              "type": "string",
+                              "minLength": 1
+                            }
+                          ]
+                        },
+                        "addressLine": {
+                          "type": "string",
+                          "maxLength": 160,
+                          "nullable": true
+                        },
+                        "phone": {
+                          "type": "string",
+                          "maxLength": 32,
+                          "pattern": "^[\\d+\\-\\s()]+$",
+                          "nullable": true
+                        },
+                        "npwp": {
+                          "type": "string",
+                          "pattern": "^\\d{16}$",
+                          "nullable": true
+                        },
+                        "receiptFooterText": {
+                          "type": "string",
+                          "maxLength": 140,
+                          "nullable": true
+                        }
+                      },
+                      "required": [
+                        "displayName",
+                        "addressLine",
+                        "phone",
+                        "npwp",
+                        "receiptFooterText"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "updatedAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "settings",
+                    "updatedAt"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Standard Kassa API error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "description": "Machine-readable error code, snake_case."
+                        },
+                        "message": {
+                          "type": "string",
+                          "description": "Human-readable error message."
+                        },
+                        "details": {
+                          "description": "Optional structured detail payload."
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Standard Kassa API error envelope."
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Standard Kassa API error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "description": "Machine-readable error code, snake_case."
+                        },
+                        "message": {
+                          "type": "string",
+                          "description": "Human-readable error message."
+                        },
+                        "details": {
+                          "description": "Optional structured detail payload."
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Standard Kassa API error envelope."
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Standard Kassa API error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "description": "Machine-readable error code, snake_case."
+                        },
+                        "message": {
+                          "type": "string",
+                          "description": "Human-readable error message."
+                        },
+                        "details": {
+                          "description": "Optional structured detail payload."
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Standard Kassa API error envelope."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/merchant/": {
+      "patch": {
+        "summary": "Update merchant settings",
+        "tags": [
+          "merchant"
+        ],
+        "description": "Owner-only. Partially updates the receipt branding fields (KASA-219). NPWP must be exactly 16 digits if present; phone, address, footer text, and display name have length caps enforced by `merchantSettingsUpdateRequest`. Returns the full `merchantMeResponse` after the write.",
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "settings": {
+                      "type": "object",
+                      "properties": {
+                        "displayName": {
+                          "allOf": [
+                            {
+                              "type": "string",
+                              "maxLength": 80
+                            },
+                            {
+                              "type": "string",
+                              "minLength": 1
+                            }
+                          ]
+                        },
+                        "addressLine": {
+                          "type": "string",
+                          "maxLength": 160,
+                          "nullable": true
+                        },
+                        "phone": {
+                          "type": "string",
+                          "maxLength": 32,
+                          "pattern": "^[\\d+\\-\\s()]+$",
+                          "nullable": true
+                        },
+                        "npwp": {
+                          "type": "string",
+                          "pattern": "^\\d{16}$",
+                          "nullable": true
+                        },
+                        "receiptFooterText": {
+                          "type": "string",
+                          "maxLength": 140,
+                          "nullable": true
+                        }
+                      },
+                      "required": [
+                        "displayName",
+                        "addressLine",
+                        "phone",
+                        "npwp",
+                        "receiptFooterText"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "updatedAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "settings",
+                    "updatedAt"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Standard Kassa API error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "description": "Machine-readable error code, snake_case."
+                        },
+                        "message": {
+                          "type": "string",
+                          "description": "Human-readable error message."
+                        },
+                        "details": {
+                          "description": "Optional structured detail payload."
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Standard Kassa API error envelope."
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Standard Kassa API error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "description": "Machine-readable error code, snake_case."
+                        },
+                        "message": {
+                          "type": "string",
+                          "description": "Human-readable error message."
+                        },
+                        "details": {
+                          "description": "Optional structured detail payload."
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Standard Kassa API error envelope."
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Standard Kassa API error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "description": "Machine-readable error code, snake_case."
+                        },
+                        "message": {
+                          "type": "string",
+                          "description": "Human-readable error message."
+                        },
+                        "details": {
+                          "description": "Optional structured detail payload."
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Standard Kassa API error envelope."
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Standard Kassa API error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "description": "Machine-readable error code, snake_case."
+                        },
+                        "message": {
+                          "type": "string",
+                          "description": "Human-readable error message."
+                        },
+                        "details": {
+                          "description": "Optional structured detail payload."
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Standard Kassa API error envelope."
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Standard Kassa API error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "description": "Machine-readable error code, snake_case."
+                        },
+                        "message": {
+                          "type": "string",
+                          "description": "Human-readable error message."
+                        },
+                        "details": {
+                          "description": "Optional structured detail payload."
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Standard Kassa API error envelope."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/outlets/": {
       "get": {
         "summary": "Pull outlets (delta)",
@@ -7042,6 +7512,10 @@
     {
       "name": "catalog",
       "description": "Items, BOMs, units of measure, and modifiers."
+    },
+    {
+      "name": "merchant",
+      "description": "Merchant identity and receipt branding (KASA-219)."
     },
     {
       "name": "outlets",
