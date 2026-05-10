@@ -1,10 +1,7 @@
 import { eq, sql } from "drizzle-orm";
 import type { Database } from "../../db/client.js";
 import { type Merchant, merchants } from "../../db/schema/merchants.js";
-import type {
-  MerchantSettingsUpdate,
-  MerchantsRepository,
-} from "./repository.js";
+import type { MerchantSettingsUpdate, MerchantsRepository } from "./repository.js";
 
 /**
  * Drizzle-backed `MerchantsRepository`. The settings PATCH builds an explicit

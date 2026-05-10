@@ -55,12 +55,8 @@
           "name": "bom_components_bom_id_boms_id_fk",
           "tableFrom": "bom_components",
           "tableTo": "boms",
-          "columnsFrom": [
-            "bom_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["bom_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -68,12 +64,8 @@
           "name": "bom_components_component_item_id_items_id_fk",
           "tableFrom": "bom_components",
           "tableTo": "items",
-          "columnsFrom": [
-            "component_item_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["component_item_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -81,12 +73,8 @@
           "name": "bom_components_uom_id_uoms_id_fk",
           "tableFrom": "bom_components",
           "tableTo": "uoms",
-          "columnsFrom": [
-            "uom_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["uom_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -94,10 +82,7 @@
       "compositePrimaryKeys": {
         "bom_components_bom_id_component_item_id_pk": {
           "name": "bom_components_bom_id_component_item_id_pk",
-          "columns": [
-            "bom_id",
-            "component_item_id"
-          ]
+          "columns": ["bom_id", "component_item_id"]
         }
       },
       "uniqueConstraints": {},
@@ -191,12 +176,8 @@
           "name": "boms_merchant_id_merchants_id_fk",
           "tableFrom": "boms",
           "tableTo": "merchants",
-          "columnsFrom": [
-            "merchant_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["merchant_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -204,12 +185,8 @@
           "name": "boms_item_id_items_id_fk",
           "tableFrom": "boms",
           "tableTo": "items",
-          "columnsFrom": [
-            "item_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["item_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -312,12 +289,8 @@
           "name": "devices_merchant_id_merchants_id_fk",
           "tableFrom": "devices",
           "tableTo": "merchants",
-          "columnsFrom": [
-            "merchant_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["merchant_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -325,12 +298,8 @@
           "name": "devices_outlet_id_outlets_id_fk",
           "tableFrom": "devices",
           "tableTo": "outlets",
-          "columnsFrom": [
-            "outlet_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["outlet_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -458,12 +427,8 @@
           "name": "end_of_day_outlet_id_outlets_id_fk",
           "tableFrom": "end_of_day",
           "tableTo": "outlets",
-          "columnsFrom": [
-            "outlet_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["outlet_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -471,12 +436,8 @@
           "name": "end_of_day_closed_by_staff_id_staff_id_fk",
           "tableFrom": "end_of_day",
           "tableTo": "staff",
-          "columnsFrom": [
-            "closed_by_staff_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["closed_by_staff_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -571,12 +532,8 @@
           "name": "enrolment_codes_merchant_id_merchants_id_fk",
           "tableFrom": "enrolment_codes",
           "tableTo": "merchants",
-          "columnsFrom": [
-            "merchant_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["merchant_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -584,12 +541,8 @@
           "name": "enrolment_codes_outlet_id_outlets_id_fk",
           "tableFrom": "enrolment_codes",
           "tableTo": "outlets",
-          "columnsFrom": [
-            "outlet_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["outlet_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -597,12 +550,8 @@
           "name": "enrolment_codes_created_by_user_id_staff_id_fk",
           "tableFrom": "enrolment_codes",
           "tableTo": "staff",
-          "columnsFrom": [
-            "created_by_user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["created_by_user_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -610,12 +559,8 @@
           "name": "enrolment_codes_consumed_by_device_id_devices_id_fk",
           "tableFrom": "enrolment_codes",
           "tableTo": "devices",
-          "columnsFrom": [
-            "consumed_by_device_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["consumed_by_device_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -764,12 +709,8 @@
           "name": "items_merchant_id_merchants_id_fk",
           "tableFrom": "items",
           "tableTo": "merchants",
-          "columnsFrom": [
-            "merchant_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["merchant_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -777,12 +718,8 @@
           "name": "items_uom_id_uoms_id_fk",
           "tableFrom": "items",
           "tableTo": "uoms",
-          "columnsFrom": [
-            "uom_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["uom_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -982,12 +919,8 @@
           "name": "modifiers_merchant_id_merchants_id_fk",
           "tableFrom": "modifiers",
           "tableTo": "merchants",
-          "columnsFrom": [
-            "merchant_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["merchant_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -1097,12 +1030,8 @@
           "name": "outlets_merchant_id_merchants_id_fk",
           "tableFrom": "outlets",
           "tableTo": "merchants",
-          "columnsFrom": [
-            "merchant_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["merchant_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -1217,12 +1146,8 @@
           "name": "sale_items_sale_id_sales_id_fk",
           "tableFrom": "sale_items",
           "tableTo": "sales",
-          "columnsFrom": [
-            "sale_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["sale_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -1230,12 +1155,8 @@
           "name": "sale_items_item_id_items_id_fk",
           "tableFrom": "sale_items",
           "tableTo": "items",
-          "columnsFrom": [
-            "item_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["item_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -1243,12 +1164,8 @@
           "name": "sale_items_uom_id_uoms_id_fk",
           "tableFrom": "sale_items",
           "tableTo": "uoms",
-          "columnsFrom": [
-            "uom_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["uom_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -1256,12 +1173,8 @@
           "name": "sale_items_bom_id_boms_id_fk",
           "tableFrom": "sale_items",
           "tableTo": "boms",
-          "columnsFrom": [
-            "bom_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["bom_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -1443,12 +1356,8 @@
           "name": "sales_merchant_id_merchants_id_fk",
           "tableFrom": "sales",
           "tableTo": "merchants",
-          "columnsFrom": [
-            "merchant_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["merchant_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -1456,12 +1365,8 @@
           "name": "sales_outlet_id_outlets_id_fk",
           "tableFrom": "sales",
           "tableTo": "outlets",
-          "columnsFrom": [
-            "outlet_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["outlet_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -1469,12 +1374,8 @@
           "name": "sales_clerk_id_staff_id_fk",
           "tableFrom": "sales",
           "tableTo": "staff",
-          "columnsFrom": [
-            "clerk_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["clerk_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -1583,12 +1484,8 @@
           "name": "staff_merchant_id_merchants_id_fk",
           "tableFrom": "staff",
           "tableTo": "merchants",
-          "columnsFrom": [
-            "merchant_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["merchant_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -1708,12 +1605,8 @@
           "name": "stock_ledger_outlet_id_outlets_id_fk",
           "tableFrom": "stock_ledger",
           "tableTo": "outlets",
-          "columnsFrom": [
-            "outlet_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["outlet_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -1721,12 +1614,8 @@
           "name": "stock_ledger_item_id_items_id_fk",
           "tableFrom": "stock_ledger",
           "tableTo": "items",
-          "columnsFrom": [
-            "item_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["item_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -1803,12 +1692,8 @@
           "name": "stock_snapshots_outlet_id_outlets_id_fk",
           "tableFrom": "stock_snapshots",
           "tableTo": "outlets",
-          "columnsFrom": [
-            "outlet_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["outlet_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -1816,12 +1701,8 @@
           "name": "stock_snapshots_item_id_items_id_fk",
           "tableFrom": "stock_snapshots",
           "tableTo": "items",
-          "columnsFrom": [
-            "item_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["item_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -1829,10 +1710,7 @@
       "compositePrimaryKeys": {
         "stock_snapshots_outlet_id_item_id_pk": {
           "name": "stock_snapshots_outlet_id_item_id_pk",
-          "columns": [
-            "outlet_id",
-            "item_id"
-          ]
+          "columns": ["outlet_id", "item_id"]
         }
       },
       "uniqueConstraints": {},
@@ -1937,12 +1815,8 @@
           "name": "sync_log_device_id_devices_id_fk",
           "tableFrom": "sync_log",
           "tableTo": "devices",
-          "columnsFrom": [
-            "device_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["device_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -2094,12 +1968,8 @@
           "name": "tenders_sale_id_sales_id_fk",
           "tableFrom": "tenders",
           "tableTo": "sales",
-          "columnsFrom": [
-            "sale_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["sale_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -2222,12 +2092,8 @@
           "name": "transaction_events_merchant_id_merchants_id_fk",
           "tableFrom": "transaction_events",
           "tableTo": "merchants",
-          "columnsFrom": [
-            "merchant_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["merchant_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -2235,12 +2101,8 @@
           "name": "transaction_events_outlet_id_outlets_id_fk",
           "tableFrom": "transaction_events",
           "tableTo": "outlets",
-          "columnsFrom": [
-            "outlet_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["outlet_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -2248,12 +2110,8 @@
           "name": "transaction_events_sale_id_sales_id_fk",
           "tableFrom": "transaction_events",
           "tableTo": "sales",
-          "columnsFrom": [
-            "sale_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["sale_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -2261,12 +2119,8 @@
           "name": "transaction_events_tender_id_tenders_id_fk",
           "tableFrom": "transaction_events",
           "tableTo": "tenders",
-          "columnsFrom": [
-            "tender_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["tender_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -2369,12 +2223,8 @@
           "name": "uoms_merchant_id_merchants_id_fk",
           "tableFrom": "uoms",
           "tableTo": "merchants",
-          "columnsFrom": [
-            "merchant_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["merchant_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }

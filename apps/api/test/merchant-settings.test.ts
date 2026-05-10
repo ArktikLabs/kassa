@@ -2,10 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { FastifyInstance } from "fastify";
 import type { MerchantMeResponse } from "@kassa/schemas";
 import { buildApp } from "../src/app.js";
-import {
-  InMemoryMerchantsRepository,
-  MerchantsService,
-} from "../src/services/merchants/index.js";
+import { InMemoryMerchantsRepository, MerchantsService } from "../src/services/merchants/index.js";
 
 /*
  * Wire-level coverage for KASA-221 — `GET /v1/merchant/me` and

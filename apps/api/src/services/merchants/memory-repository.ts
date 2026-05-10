@@ -1,8 +1,5 @@
 import type { Merchant } from "../../db/schema/merchants.js";
-import type {
-  MerchantSettingsUpdate,
-  MerchantsRepository,
-} from "./repository.js";
+import type { MerchantSettingsUpdate, MerchantsRepository } from "./repository.js";
 
 export interface SeedMerchantInput {
   id: string;

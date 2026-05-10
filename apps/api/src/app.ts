@@ -38,10 +38,7 @@ import {
   SalesRepositoryEodSyntheticReconciler,
   SalesRepositorySalesReader,
 } from "./services/eod/index.js";
-import {
-  InMemoryMerchantsRepository,
-  MerchantsService,
-} from "./services/merchants/index.js";
+import { InMemoryMerchantsRepository, MerchantsService } from "./services/merchants/index.js";
 import { InMemoryOutletsRepository, OutletsService } from "./services/outlets/index.js";
 import {
   InMemoryReconciliationRepository,
