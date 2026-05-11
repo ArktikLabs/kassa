@@ -16,6 +16,7 @@ import {
 } from "fastify-type-provider-zod";
 import type { PaymentProvider } from "@kassa/payments";
 import { makeDeviceAuthPreHandler, type DeviceAuthRepository } from "./auth/device-auth.js";
+import type { StartupWarning } from "./config.js";
 import { healthRoutes } from "./routes/health.js";
 import { registerV1Routes, type V1RouteDeps } from "./routes/index.js";
 import { sendError } from "./lib/errors.js";
@@ -158,6 +159,14 @@ export interface BuildAppOptions {
    * un-gated routes still work during the bootstrap window.
    */
   resolveMerchantId?: (req: FastifyRequest) => string | null;
+  /**
+   * Structured startup warnings surfaced by `collectStartupWarnings()` in
+   * `config.ts`. Each entry's `code` is exposed under `/health.warnings[]`
+   * so monitoring and ops can see which configuration gaps the API booted
+   * around (per ADR-011 / KASA-203). Defaults to `[]` — i.e. /health is
+   * unchanged for cleanly-configured deploys.
+   */
+  startupWarnings?: ReadonlyArray<StartupWarning>;
   /**
    * Test seam: invoked after the Fastify instance is created but before any
    * routes register. The contract-gate suite (KASA-179) uses this to attach
@@ -416,7 +425,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   // Swagger MUST be registered before routes so it can capture them.
   await registerOpenapi(app);
 
-  await app.register(healthRoutes);
+  await app.register(healthRoutes(options.startupWarnings ?? []));
   await app.register(async (instance) => registerV1Routes(instance, v1Deps), { prefix: "/v1" });
 
   return app;

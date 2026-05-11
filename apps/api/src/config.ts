@@ -47,10 +47,18 @@ const envSchema = z
     // Staging and production must point at separate Redis instances — no
     // shared queue state across tiers.
     REDIS_URL: optionalTrimmedString,
-    // HMAC secret for the staff session cookie. Required in production —
-    // see the refinement below — because without it `POST /v1/auth/session/login`
-    // returns 503 and the back-office cannot sign anyone in. Local dev is
-    // free to skip it; the route surfaces 503 `not_configured` cleanly.
+    // HMAC secret for the staff session cookie. Optional everywhere — the
+    // `superRefine` block intentionally does NOT promote it to required-in-
+    // production. Rationale (KASA-201 / KASA-203, ADR-011): the only route
+    // that uses this secret is `POST /v1/auth/session/login`, which already
+    // returns 503 `not_configured` when the secret is absent. Crashing the
+    // whole API on boot for a missing back-office login secret turns a
+    // localized degradation into a full outage (sales, sync, /health all go
+    // down). Instead the missing-secret state surfaces as a startup warning
+    // logged by `index.ts`, captured as a Sentry breadcrumb, and exposed via
+    // `/health`'s `warnings[]` field so monitoring and ops both see the
+    // degradation without paging on-call. Min length stays 32 chars when the
+    // secret IS set, so no weak-secret regression.
     SESSION_COOKIE_SECRET: z.string().min(32).optional(),
     // Comma-separated allow-list of origins that may make cross-origin
     // requests against the API with `credentials: include`. Each entry is a
@@ -64,18 +72,15 @@ const envSchema = z
     CORS_PREVIEW_ORIGIN_PATTERN: optionalTrimmedString,
   })
   .superRefine((env, ctx) => {
+    // DATABASE_URL stays a hard fail in production: no /v1 route can serve
+    // without it, so booting up just to 500 every request is worse than
+    // crashing on `flyctl deploy` and surfacing the misconfiguration loudly.
+    // Per ADR-011, that is the only "loud fail on boot" gate kept around.
     if (env.NODE_ENV === "production" && !env.DATABASE_URL) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["DATABASE_URL"],
         message: "DATABASE_URL is required when NODE_ENV=production.",
-      });
-    }
-    if (env.NODE_ENV === "production" && !env.SESSION_COOKIE_SECRET) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["SESSION_COOKIE_SECRET"],
-        message: "SESSION_COOKIE_SECRET is required when NODE_ENV=production.",
       });
     }
   });
@@ -89,4 +94,34 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): Env {
     throw new Error(`Invalid environment: ${details}`);
   }
   return parsed.data;
+}
+
+/**
+ * Stable identifiers for the structured startup warnings surfaced via
+ * `/health` and Sentry breadcrumbs. New entries should be added here so
+ * monitoring queries can match a finite, documented set of codes.
+ */
+export type StartupWarningCode = "missing_session_cookie_secret";
+
+export interface StartupWarning {
+  code: StartupWarningCode;
+  message: string;
+}
+
+/**
+ * Inspect a parsed env and return the list of "degraded but up" warnings
+ * the API should surface at boot (instead of crashing). Today this is just
+ * `SESSION_COOKIE_SECRET` in production — see ADR-011 for the policy and
+ * KASA-201 for the incident that motivated softening the gate.
+ */
+export function collectStartupWarnings(env: Env): StartupWarning[] {
+  const warnings: StartupWarning[] = [];
+  if (env.NODE_ENV === "production" && !env.SESSION_COOKIE_SECRET) {
+    warnings.push({
+      code: "missing_session_cookie_secret",
+      message:
+        "SESSION_COOKIE_SECRET is unset in production; POST /v1/auth/session/login will respond 503 not_configured.",
+    });
+  }
+  return warnings;
 }

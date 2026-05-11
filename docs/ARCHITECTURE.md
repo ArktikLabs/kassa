@@ -500,6 +500,22 @@ Architectural decisions we explicitly made, with the path-not-taken and why we'd
 **Rationale**: Keeping Sentry out of the PII classification boundary lets us use the paid tier without a separate Data Protection Agreement review for each new merchant. We lose some debug detail; we keep onboarding friction-free.
 **Revisit when**: legal review of a specific PII class needs Sentry coverage, or when we move off Sentry.
 
+### ADR-011: Degraded-but-up over crash-on-boot for non-critical config
+
+**Context**: [KASA-201](/KASA/issues/KASA-201) — a missing `SESSION_COOKIE_SECRET` (only consumed by `POST /v1/auth/session/login`) took `kassa-api-staging` fully offline for 4 days because `loadEnv()`'s `superRefine` threw at boot under `NODE_ENV=production`. Sales submission, sync, and `/health` all returned 502 even though none of those routes need the secret. Kassa is offline-first POS: every minute the API is fully down is a minute the store cannot record sales the network will reconcile later.
+
+**Decision**: `loadEnv()` only crashes on boot for env vars without which **no v0 route can serve** — today that is `DATABASE_URL` in production. Every other "required-in-prod" knob is downgraded to a structured startup warning surfaced in three places:
+
+1. A pino `warn` line tagged `event=startup.warning` with a stable `code` (e.g. `missing_session_cookie_secret`).
+2. A Sentry breadcrumb + `captureMessage` so the dashboard shows the degradation without grepping Fly logs.
+3. A `warnings[]` array on `GET /health` exposing the same stable codes — `200` with a non-empty array, never `5xx`. Liveness monitoring (Better Stack synthetic, KASA-198) stays green; ops dashboards filter on the array.
+
+The route that depends on the missing config returns `503 not_configured` per request; the rest of the API is unaffected. `collectStartupWarnings(env)` in `apps/api/src/config.ts` is the single source of truth for which knobs participate.
+
+**Rationale**: The blast radius of a hard fail must match the blast radius of the missing capability. A back-office login secret going AWOL must not take the offline-first sales path down. Making the warning structured (stable codes, not free-form strings) keeps monitoring queries pinnable; making it surface on `/health` keeps it visible to deploy automation without a second alert source. Hard fail stays for `DATABASE_URL` because every `/v1` route would 500 on a null `db`, so booting up just to error every request is worse than failing the deploy.
+
+**Revisit when**: a future env var fails the "no route can serve without it" test (lift it into the `superRefine` block); or monitoring patterns shift such that a non-empty `warnings[]` should fail liveness (introduce `/health?strict=true` for the synthetic and keep public `/health` permissive).
+
 ---
 
 ## 7. What Is Explicitly Out of Scope
@@ -544,3 +560,4 @@ Each milestone produces a deployable increment; no milestone ends with a non-wor
 | 2026-04-26 | Document RBAC role matrix and `allowedRoles` enforcement under §4.1; catalog write paths gated to `owner`/`manager`. | Engineer ([KASA-26](/KASA/issues/KASA-26)) |
 | 2026-04-26 | Gate `POST /v1/auth/enrolment-codes` to `owner`/`manager` via `allowedRoles`; cashier/read_only callers are rejected with 403. RBAC matrix updated. | Engineer ([KASA-123](/KASA/issues/KASA-123)) |
 | 2026-05-08 | Restore runbook commitment in §5.5 closed: `docs/ops/` path retired in favour of [RUNBOOK-DR.md](./RUNBOOK-DR.md) (Neon PITR procedure, S3-dump lifeboat, decision tree, escalation owners). | DevOps ([KASA-181](/KASA/issues/KASA-181)) |
+| 2026-05-11 | Add ADR-011 (degraded-but-up over crash-on-boot for non-critical config). `SESSION_COOKIE_SECRET` is now a startup warning + per-route 503 instead of a boot crash; `DATABASE_URL` stays the only crash-on-boot gate. | Engineer ([KASA-203](/KASA/issues/KASA-203)) |

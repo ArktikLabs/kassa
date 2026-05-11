@@ -1,8 +1,8 @@
 import { createMidtransProvider, type PaymentProvider } from "@kassa/payments";
 import { buildApp } from "./app.js";
-import { loadEnv } from "./config.js";
+import { collectStartupWarnings, loadEnv } from "./config.js";
 import { createDatabase, type DatabaseHandle } from "./db/client.js";
-import { initSentry } from "./lib/sentry.js";
+import { initSentry, Sentry } from "./lib/sentry.js";
 import { EnrolmentService, InMemoryEnrolmentRepository } from "./services/enrolment/index.js";
 import { InMemoryStaffRepository, type StaffRepository } from "./services/staff/index.js";
 import {
@@ -30,6 +30,7 @@ async function main(): Promise<void> {
   initSentry();
 
   const env = loadEnv();
+  const startupWarnings = collectStartupWarnings(env);
 
   // Repository binding lands in KASA-21 (Postgres + Drizzle migrations); until
   // then dev/staging boot with an in-memory store. Outlets must be seeded by
@@ -137,6 +138,7 @@ async function main(): Promise<void> {
       : {}),
     ...(corsAllowedOrigins.length > 0 ? { cors: { allowedOrigins: corsAllowedOrigins } } : {}),
     ...(midtransProvider !== undefined ? { midtransProvider } : {}),
+    ...(startupWarnings.length > 0 ? { startupWarnings } : {}),
   });
 
   if (env.STAFF_BOOTSTRAP_TOKEN === undefined) {
@@ -144,10 +146,22 @@ async function main(): Promise<void> {
       "STAFF_BOOTSTRAP_TOKEN is not set; POST /v1/auth/enrolment-codes will reject all requests with 503.",
     );
   }
-  if (env.SESSION_COOKIE_SECRET === undefined) {
-    app.log.warn(
-      "SESSION_COOKIE_SECRET is not set; POST /v1/auth/session/login will reject all requests with 503.",
-    );
+  // Structured startup warnings (KASA-203 / ADR-011): pino-warn each entry
+  // AND drop a Sentry breadcrumb so the degradation is visible from the
+  // dashboard without grepping Fly logs. Sentry calls are no-ops when
+  // SENTRY_DSN is unset (initSentry returned without instantiating a client).
+  for (const warning of startupWarnings) {
+    app.log.warn({ event: "startup.warning", code: warning.code }, warning.message);
+    Sentry.addBreadcrumb({
+      category: "startup",
+      level: "warning",
+      message: warning.message,
+      data: { code: warning.code },
+    });
+    Sentry.captureMessage(warning.message, {
+      level: "warning",
+      tags: { component: "startup", code: warning.code },
+    });
   }
   if (corsAllowedOrigins.length === 0) {
     app.log.warn(

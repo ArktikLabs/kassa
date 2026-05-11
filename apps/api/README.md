@@ -55,7 +55,7 @@ curl -s http://localhost:3000/docs/json > openapi.json
 
 ## Configuration
 
-All configuration is via environment variables, validated by Zod on boot. Missing or malformed values exit non-zero before the server starts.
+All configuration is via environment variables, validated by Zod on boot. Malformed values (e.g. a 12-char `SESSION_COOKIE_SECRET`) and missing required-in-production values that no `/v1` route can serve without (today: `DATABASE_URL`) exit non-zero before the server starts. Other "required-in-prod" knobs are downgraded to structured startup warnings: pino-warn, Sentry breadcrumb, and a stable code on `GET /health.warnings[]`. The route that needs the missing config still returns 503 `not_configured` per request; the rest of the API stays up. See [ARCHITECTURE.md](../../docs/ARCHITECTURE.md) ADR-011 for the policy and [KASA-201](/KASA/issues/KASA-201) for the incident that motivated softening the gate.
 
 | Var | Default | Notes |
 |-----|---------|-------|
@@ -65,6 +65,7 @@ All configuration is via environment variables, validated by Zod on boot. Missin
 | `LOG_LEVEL` | `info` | Pino log level. |
 | `STAFF_BOOTSTRAP_TOKEN` | _unset_ | Min 16 chars. Bearer token that gates `POST /v1/auth/enrolment-codes` until [KASA-25](/KASA/issues/KASA-25) staff sessions ship. When unset, the endpoint returns 503. |
 | `ENROLMENT_CODE_TTL_MS` | `600000` | TTL for enrolment codes, in ms. |
+| `SESSION_COOKIE_SECRET` | _unset_ | HMAC secret for the staff session cookie (min 32 chars). Optional everywhere — when unset in production the API boots with a `missing_session_cookie_secret` entry in `GET /health.warnings[]` (ADR-011) and `POST /v1/auth/session/login` returns 503 `not_configured` per request. Sales, sync, and `/health` are unaffected. |
 | `MIDTRANS_SERVER_KEY` | _unset_ | Midtrans Core API server key. Blank/absent → `POST /v1/payments/webhooks/midtrans` answers 503 `payments_unavailable` instead of crashing boot. **Never** commit. Local sandbox key lives in `.env`; production key comes from Fly secrets (see rotation below). |
 | `MIDTRANS_ENVIRONMENT` | `sandbox` | `sandbox` \| `production`. Switches the Midtrans base URL. Sandbox (`api.sandbox.midtrans.com`) for all non-production boots; production (`api.midtrans.com`) only on the `prd` Fly app. |
 | `DATABASE_URL` | _unset_ | `postgres://user:pass@host:5432/db`. Optional in `development`/`test` so the enrolment in-memory path still boots; **required** in `production` (boot fails loudly otherwise). Repo swap + migration runner use it; the Fly `release_command` calls `pnpm --filter @kassa/api db:migrate` against it before the new image serves traffic. |
