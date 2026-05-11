@@ -94,6 +94,16 @@ const id: MessageMap = {
   "cart.edit.remove": "Hapus baris",
   "keypad.aria": "Keypad angka",
   "keypad.backspace": "Hapus digit terakhir",
+  "lock.title": "Layar dikunci",
+  "lock.subtitle": "Masukkan PIN kasir untuk melanjutkan.",
+  "lock.attemptsRemaining":
+    "{remaining, plural, =0 {Coba lagi setelah jeda} one {Sisa # percobaan dari {max}} other {Sisa # percobaan dari {max}}}",
+  "lock.error.wrong":
+    "PIN salah. {remaining, plural, =0 {Coba lagi setelah jeda} one {Sisa # percobaan} other {Sisa # percobaan}}.",
+  "lock.cooldown": "Terlalu banyak percobaan. Tunggu {seconds} detik.",
+  "lock.submit": "Buka",
+  "lock.keypad.aria": "Keypad PIN",
+  "lock.key.backspace": "Hapus digit terakhir",
   "tender.cash.heading": "Bayar Tunai",
   "tender.cash.aria": "Bayar tunai",
   "tender.cash.total": "Total",
@@ -389,6 +399,16 @@ const en: MessageMap = {
   "cart.edit.remove": "Remove line",
   "keypad.aria": "Number keypad",
   "keypad.backspace": "Delete last digit",
+  "lock.title": "Screen locked",
+  "lock.subtitle": "Enter the cashier PIN to continue.",
+  "lock.attemptsRemaining":
+    "{remaining, plural, =0 {Locked out — wait to try again} one {# attempt of {max} remaining} other {# attempts of {max} remaining}}",
+  "lock.error.wrong":
+    "Wrong PIN. {remaining, plural, =0 {Locked out — wait to try again} one {# attempt remaining} other {# attempts remaining}}.",
+  "lock.cooldown": "Too many wrong PINs. Wait {seconds}s.",
+  "lock.submit": "Unlock",
+  "lock.keypad.aria": "PIN keypad",
+  "lock.key.backspace": "Delete last digit",
   "tender.cash.heading": "Cash payment",
   "tender.cash.aria": "Cash payment",
   "tender.cash.total": "Total",

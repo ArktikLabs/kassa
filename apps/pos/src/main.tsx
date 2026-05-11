@@ -1,9 +1,10 @@
-import { StrictMode, useEffect, useState, type ComponentType, type ReactNode } from "react";
+import { StrictMode, useEffect, useState, useSyncExternalStore, type ComponentType, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { RouterProvider } from "@tanstack/react-router";
 import { router } from "./router";
 import { IntlProvider } from "./i18n/IntlProvider";
-import { hydrateEnrolment } from "./lib/enrolment";
+import { hydrateEnrolment, getSnapshot, subscribe as subscribeEnrolment } from "./lib/enrolment";
+import { IdleLockProvider } from "./lib/idle-lock-provider";
 import "./styles/index.css";
 
 // Fire-and-forget: warms the in-memory enrolment snapshot from Dexie before
@@ -34,6 +35,25 @@ function LazySyncProvider({ children }: { children: ReactNode }) {
   return <Provider>{children}</Provider>;
 }
 
+/*
+ * KASA-251 — idle auto-lock is only meaningful once the device is
+ * enrolled (the cashier PIN is on the same device). On `/enrol` we
+ * leave the watcher off so the merchant can fill in the code without
+ * fighting a 180-second auto-lock timer.
+ */
+function IdleLockGate({ children }: { children: ReactNode }) {
+  const enrolmentState = useSyncExternalStore(
+    subscribeEnrolment,
+    () => getSnapshot().state,
+    () => "unenrolled" as const,
+  );
+  return (
+    <IdleLockProvider enabled={enrolmentState === "enrolled"}>
+      {children}
+    </IdleLockProvider>
+  );
+}
+
 const rootEl = document.getElementById("root");
 if (!rootEl) throw new Error("Root element #root not found.");
 
@@ -41,7 +61,9 @@ createRoot(rootEl).render(
   <StrictMode>
     <IntlProvider>
       <LazySyncProvider>
-        <RouterProvider router={router} />
+        <IdleLockGate>
+          <RouterProvider router={router} />
+        </IdleLockGate>
       </LazySyncProvider>
     </IntlProvider>
   </StrictMode>,
