@@ -145,10 +145,7 @@ export function LockOverlay({ store }: LockOverlayProps) {
         <div className="min-h-[1.5rem] text-sm" aria-live="polite">
           {inCooldown ? (
             <p data-testid="lock-cooldown" className="font-semibold text-neutral-700">
-              <FormattedMessage
-                id="lock.cooldown"
-                values={{ seconds: cooldownSecondsRemaining }}
-              />
+              <FormattedMessage id="lock.cooldown" values={{ seconds: cooldownSecondsRemaining }} />
             </p>
           ) : errorKey === "wrong" ? (
             <p data-testid="lock-error" role="alert" className="font-semibold text-error-fg">
@@ -176,9 +173,9 @@ export function LockOverlay({ store }: LockOverlayProps) {
           data-testid="lock-keypad"
           className="grid grid-cols-3 gap-2"
         >
-          {KEYPAD_KEYS.map((key, i) =>
+          {KEYPAD_KEYS.map((key) =>
             key === "" ? (
-              <span key={`empty-${i}`} aria-hidden="true" />
+              <span key="keypad-empty" aria-hidden="true" />
             ) : (
               <button
                 key={key}
@@ -187,9 +184,7 @@ export function LockOverlay({ store }: LockOverlayProps) {
                 onClick={() => handleKey(key)}
                 data-testid={`lock-key-${key}`}
                 aria-label={
-                  key === "backspace"
-                    ? intl.formatMessage({ id: "lock.key.backspace" })
-                    : key
+                  key === "backspace" ? intl.formatMessage({ id: "lock.key.backspace" }) : key
                 }
                 className={[
                   "h-16 rounded-md border border-neutral-200 bg-white text-2xl font-bold tabular-nums text-neutral-800",
@@ -220,17 +215,21 @@ export function LockOverlay({ store }: LockOverlayProps) {
 
 function PinDisplay({ value, max }: { value: string; max: number }) {
   const filled = value.length;
-  const dots = Array.from({ length: max }, (_, i) => i < filled);
+  const dots = Array.from({ length: max }, (_, i) => ({
+    id: `pin-pos-${i}`,
+    isFilled: i < filled,
+  }));
   return (
     <div
+      role="group"
       data-testid="lock-pin-display"
       data-pin-length={filled}
       aria-label="PIN"
       className="flex justify-center gap-2"
     >
-      {dots.map((isFilled, i) => (
+      {dots.map(({ id, isFilled }) => (
         <span
-          key={i}
+          key={id}
           className={
             isFilled
               ? "h-3 w-3 rounded-full bg-primary-700"

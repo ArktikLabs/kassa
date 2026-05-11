@@ -156,7 +156,11 @@ export function createIdleLockStore(opts: CreateIdleLockStoreOptions = {}): Idle
 }
 
 type EventTargetLike = {
-  addEventListener: (type: string, listener: (e: Event) => void, options?: boolean | AddEventListenerOptions) => void;
+  addEventListener: (
+    type: string,
+    listener: (e: Event) => void,
+    options?: boolean | AddEventListenerOptions,
+  ) => void;
   removeEventListener: (
     type: string,
     listener: (e: Event) => void,

@@ -183,7 +183,9 @@ describe("startIdleWatcher", () => {
     return {
       target: {
         addEventListener(type: string, listener: (e: Event) => void) {
-          (listeners[type] ??= []).push(listener);
+          const arr = listeners[type] ?? [];
+          arr.push(listener);
+          listeners[type] = arr;
         },
         removeEventListener(type: string, listener: (e: Event) => void) {
           listeners[type] = (listeners[type] ?? []).filter((l) => l !== listener);

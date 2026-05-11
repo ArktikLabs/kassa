@@ -1,4 +1,11 @@
-import { StrictMode, useEffect, useState, useSyncExternalStore, type ComponentType, type ReactNode } from "react";
+import {
+  StrictMode,
+  useEffect,
+  useState,
+  useSyncExternalStore,
+  type ComponentType,
+  type ReactNode,
+} from "react";
 import { createRoot } from "react-dom/client";
 import { RouterProvider } from "@tanstack/react-router";
 import { router } from "./router";
@@ -47,11 +54,7 @@ function IdleLockGate({ children }: { children: ReactNode }) {
     () => getSnapshot().state,
     () => "unenrolled" as const,
   );
-  return (
-    <IdleLockProvider enabled={enrolmentState === "enrolled"}>
-      {children}
-    </IdleLockProvider>
-  );
+  return <IdleLockProvider enabled={enrolmentState === "enrolled"}>{children}</IdleLockProvider>;
 }
 
 const rootEl = document.getElementById("root");
