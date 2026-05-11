@@ -61,9 +61,7 @@ test.describe("KASA-61 cash tender flow", () => {
             const tx = db.transaction("pending_sales", "readonly");
             const req = tx.objectStore("pending_sales").getAll();
             req.onsuccess = () =>
-              resolve(
-                req.result as { localSaleId: string; serverSaleName: string | null }[],
-              );
+              resolve(req.result as { localSaleId: string; serverSaleName: string | null }[]);
             req.onerror = () => reject(req.error);
           },
         );
@@ -90,8 +88,7 @@ test.describe("KASA-61 cash tender flow", () => {
     // outlet name and rupiah total round-trip through decodeURIComponent.
     await expect
       .poll(
-        async () =>
-          share.evaluate((el) => (el.tagName === "A" ? el.getAttribute("href") : null)),
+        async () => share.evaluate((el) => (el.tagName === "A" ? el.getAttribute("href") : null)),
         { timeout: 5_000 },
       )
       .toMatch(/^https:\/\/wa\.me\/\?text=/);

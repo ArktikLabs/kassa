@@ -212,8 +212,7 @@ const id: MessageMap = {
     "Peramban ini tidak mendukung Bluetooth. Gunakan cetak peramban sebagai cadangan.",
   "receipt.share.whatsapp.cta": "Kirim WhatsApp",
   "receipt.share.whatsapp.aria": "Kirim struk via WhatsApp",
-  "receipt.share.whatsapp.pendingTooltip":
-    "Menunggu sinkronisasi sebelum dapat dibagikan.",
+  "receipt.share.whatsapp.pendingTooltip": "Menunggu sinkronisasi sebelum dapat dibagikan.",
   "receipt.share.body.tenderMethod": "Metode bayar: {method}",
   "admin.heading": "Admin",
   "admin.placeholder": "Pengaturan outlet, kasir, dan perangkat.",
@@ -507,8 +506,7 @@ const en: MessageMap = {
     "This browser does not support Bluetooth. Falling back to browser print.",
   "receipt.share.whatsapp.cta": "Send via WhatsApp",
   "receipt.share.whatsapp.aria": "Send receipt via WhatsApp",
-  "receipt.share.whatsapp.pendingTooltip":
-    "Waiting for sync before this can be shared.",
+  "receipt.share.whatsapp.pendingTooltip": "Waiting for sync before this can be shared.",
   "receipt.share.body.tenderMethod": "Payment method: {method}",
   "admin.heading": "Admin",
   "admin.placeholder": "Outlet, cashier and device settings.",

@@ -82,9 +82,7 @@ export function buildWhatsAppReceiptBody({
   });
 
   const totalsLines: string[] = [];
-  totalsLines.push(
-    `${formatMessage({ id: "receipt.subtotal" })}: ${formatIdr(sale.subtotalIdr)}`,
-  );
+  totalsLines.push(`${formatMessage({ id: "receipt.subtotal" })}: ${formatIdr(sale.subtotalIdr)}`);
   if ((sale.discountIdr as number) > 0) {
     totalsLines.push(
       `${formatMessage({ id: "receipt.discount" })}: -${formatIdr(sale.discountIdr)}`,
@@ -97,17 +95,12 @@ export function buildWhatsAppReceiptBody({
   }
   totalsLines.push(`${formatMessage({ id: "receipt.total" })}: ${formatIdr(sale.totalIdr)}`);
 
-  const tendered = sale.tenders.reduce<number>(
-    (acc, t) => acc + (t.amountIdr as number),
-    0,
-  );
+  const tendered = sale.tenders.reduce<number>((acc, t) => acc + (t.amountIdr as number), 0);
   const change = Math.max(0, tendered - (sale.totalIdr as number));
   totalsLines.push(
     `${formatMessage({ id: "receipt.tendered" })}: ${formatIdr(toRupiah(tendered))}`,
   );
-  totalsLines.push(
-    `${formatMessage({ id: "receipt.change" })}: ${formatIdr(toRupiah(change))}`,
-  );
+  totalsLines.push(`${formatMessage({ id: "receipt.change" })}: ${formatIdr(toRupiah(change))}`);
   totalsLines.push(
     formatMessage(
       { id: "receipt.share.body.tenderMethod" },
@@ -115,7 +108,8 @@ export function buildWhatsAppReceiptBody({
     ),
   );
 
-  const footer = merchant?.receiptFooterText?.trim() || formatMessage({ id: "receipt.footer.thanks" });
+  const footer =
+    merchant?.receiptFooterText?.trim() || formatMessage({ id: "receipt.footer.thanks" });
 
   const separator = "------------------------------";
   return [
