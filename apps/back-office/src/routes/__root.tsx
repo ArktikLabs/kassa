@@ -13,6 +13,7 @@ type NavItem = { to: string; labelId: string; ownerOnly?: boolean };
 
 const NAV: readonly NavItem[] = [
   { to: "/admin/dashboard", labelId: "nav.dashboard" },
+  { to: "/admin/sales", labelId: "nav.sales" },
   { to: "/outlets", labelId: "nav.outlets" },
   { to: "/catalog", labelId: "nav.catalog" },
   { to: "/catalog/boms", labelId: "nav.boms" },
