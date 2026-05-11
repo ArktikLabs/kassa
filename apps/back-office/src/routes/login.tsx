@@ -34,7 +34,11 @@ export function LoginScreen() {
         merchantId: session.merchantId,
         issuedAt: session.issuedAt,
       });
-      void router.navigate({ to: "/outlets" });
+      // KASA-237 — the index route's `beforeLoad` redirects owner/manager
+      // sessions to `/admin/dashboard` and cashier/read-only sessions to
+      // `/outlets`. Route through `/` so login stays role-agnostic and the
+      // dashboard is the post-login landing for the staff who can see it.
+      void router.navigate({ to: "/" });
     } catch (err) {
       const messageId = errorMessageId(err);
       setError(intl.formatMessage({ id: messageId }));
