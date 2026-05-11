@@ -1,6 +1,12 @@
+import argon2 from "argon2";
 import { InvalidPageTokenError, decodePageToken } from "../../lib/page-token.js";
 import { uuidv7 } from "../../lib/uuid.js";
-import type { ListLedgerResult, SalesRepository } from "./repository.js";
+import type {
+  ListLedgerResult,
+  ManagerPinReader,
+  OpenShiftReader,
+  SalesRepository,
+} from "./repository.js";
 import type {
   Item,
   RefundSaleInput,
@@ -45,7 +51,10 @@ export class SalesError extends Error {
       | "refund_amount_exceeds_remaining"
       | "refund_idempotency_conflict"
       | "invalid_page_token"
-      | "synthetic_tender_mixed",
+      | "synthetic_tender_mixed"
+      | "void_requires_manager"
+      | "void_outside_open_shift"
+      | "void_idempotency_conflict",
     message: string,
     readonly details?: unknown,
   ) {
@@ -80,19 +89,51 @@ export type SubmitSaleOutcome = SubmitSaleOk | SubmitSaleConflict;
 
 export interface SalesServiceDeps {
   repository: SalesRepository;
+  /**
+   * KASA-236-A — the merchant+outlet's currently-open shift, consulted by
+   * `void()` to enforce the "voids only against the open shift" rule.
+   * Optional: when omitted, the void path is unauthenticated against shift
+   * state and behaves like pre-KASA-236-A (no shift gating). Production
+   * wiring in `app.ts` always passes this so the gate is on.
+   */
+  openShiftReader?: OpenShiftReader;
+  /**
+   * KASA-236-A — staff lookup for the manager-PIN gate. Optional with the
+   * same legacy fallback semantics as `openShiftReader`. Production wiring
+   * always passes the real reader so the gate is on.
+   */
+  managerPinReader?: ManagerPinReader;
   now?: () => Date;
   generateId?: () => string;
   generateSaleName?: (sale: Sale) => string;
 }
 
+/**
+ * KASA-236-A — argon2id options. We hash the timing-decoy at startup with
+ * the same cost so a verify against either a real `pin_hash` or the decoy
+ * costs the same CPU — a "no such manager" lookup can't be distinguished
+ * from a "wrong PIN" by response timing.
+ */
+const PIN_ARGON2_OPTIONS = {
+  type: argon2.argon2id,
+  memoryCost: 19_456,
+  timeCost: 2,
+  parallelism: 1,
+} as const;
+
 export class SalesService {
   private readonly repository: SalesRepository;
+  private readonly openShiftReader: OpenShiftReader | null;
+  private readonly managerPinReader: ManagerPinReader | null;
   private readonly now: () => Date;
   private readonly generateId: () => string;
   private readonly generateSaleName: (sale: Sale) => string;
+  private timingDecoyHash: string | null = null;
 
   constructor(deps: SalesServiceDeps) {
     this.repository = deps.repository;
+    this.openShiftReader = deps.openShiftReader ?? null;
+    this.managerPinReader = deps.managerPinReader ?? null;
     this.now = deps.now ?? (() => new Date());
     this.generateId = deps.generateId ?? uuidv7;
     this.generateSaleName = deps.generateSaleName ?? defaultSaleName;
@@ -337,6 +378,8 @@ export class SalesService {
       voidedAt: null,
       voidBusinessDate: null,
       voidReason: null,
+      localVoidId: null,
+      voidedByStaffId: null,
       refunds: [],
       synthetic,
     };
@@ -368,12 +411,35 @@ export class SalesService {
   }
 
   /**
-   * Cancel an entire sale. Writes balancing positive ledger rows mirroring
-   * the original sale's negative deltas (`reason="sale_void"`). Idempotent on
-   * `saleId` — replaying after a successful void returns the originally
-   * stamped `voidedAt` with empty ledger.
+   * Cancel an entire sale (KASA-236-A). Writes balancing positive ledger rows
+   * mirroring the original sale's negative deltas (`reason="sale_void"`).
+   *
+   * Authorisation gates (in order):
+   *  1. Manager PIN: `managerStaffId` must belong to the caller's merchant,
+   *     hold role owner/manager, and `argon2.verify(pin_hash, managerPin)`
+   *     must succeed. Any failure surfaces as `void_requires_manager` and
+   *     is timing-equalised by always running `argon2.verify` (with a decoy
+   *     hash when the staff row is missing or has no enrolled PIN).
+   *  2. Open-shift restriction: the (merchant, outlet) must have a shift in
+   *     `status="open"` AND its `businessDate` must equal the sale's. Sales
+   *     from a prior shift route through the back-office reconciliation
+   *     flow (KASA-119) and surface here as `void_outside_open_shift`.
+   *  3. `localVoidId` idempotency: a `localVoidId` already bound to a
+   *     different `saleId` is a `void_idempotency_conflict`. The same
+   *     `localVoidId` on the same `saleId` is a replay.
+   *
+   * Idempotent on `saleId` — replaying after a successful void returns the
+   * originally stamped `voidedAt` with empty ledger.
    */
   async void(input: VoidSaleInput): Promise<{ created: boolean; result: VoidSaleResult }> {
+    // 1. Manager PIN gate. Runs first so a "no such sale" response can't
+    //    be used as a probe oracle without first clearing the gate.
+    await this.verifyManagerPin({
+      merchantId: input.merchantId,
+      managerStaffId: input.managerStaffId,
+      managerPin: input.managerPin,
+    });
+
     const sale = await this.repository.findSaleById(input.merchantId, input.saleId);
     if (!sale) {
       throw new SalesError("sale_not_found", `Sale ${input.saleId} not found.`);
@@ -391,6 +457,43 @@ export class SalesService {
           refundCount: sale.refunds.length,
         },
       );
+    }
+
+    // 2. localVoidId idempotency: a different sale already used this
+    //    void id. The same sale reusing it is fine (covered by the
+    //    `sale.voidedAt` short-circuit above).
+    const collision = await this.repository.findSaleByLocalVoidId({
+      merchantId: input.merchantId,
+      localVoidId: input.localVoidId,
+    });
+    if (collision && collision.id !== sale.id) {
+      throw new SalesError(
+        "void_idempotency_conflict",
+        "This localVoidId is already bound to another sale's void.",
+        { saleId: sale.id, conflictingSaleId: collision.id, localVoidId: input.localVoidId },
+      );
+    }
+
+    // 3. Open-shift restriction. Read the (merchant, outlet)'s open shift
+    //    and require sale.businessDate === shift.businessDate. The reader
+    //    is optional so legacy callers (no wiring) keep working; once
+    //    KASA-26 lands the full RBAC the reader will be required.
+    if (this.openShiftReader) {
+      const openShift = await this.openShiftReader.findOpenShiftForOutlet({
+        merchantId: input.merchantId,
+        outletId: sale.outletId,
+      });
+      if (!openShift || openShift.businessDate !== sale.businessDate) {
+        throw new SalesError(
+          "void_outside_open_shift",
+          "Sales can only be voided from the currently open shift on the sale's business date.",
+          {
+            saleId: sale.id,
+            saleBusinessDate: sale.businessDate,
+            openShiftBusinessDate: openShift?.businessDate ?? null,
+          },
+        );
+      }
     }
 
     // Mirror the original sale's stock movements with positive deltas. We
@@ -415,6 +518,8 @@ export class SalesService {
     const persisted = await this.repository.voidSale({
       merchantId: input.merchantId,
       saleId: input.saleId,
+      localVoidId: input.localVoidId,
+      voidedByStaffId: input.managerStaffId,
       voidedAt: input.voidedAt,
       voidBusinessDate: input.voidBusinessDate,
       reason: input.reason,
@@ -425,6 +530,46 @@ export class SalesService {
       return { created: false, result: { sale: persisted.sale, ledger: [] } };
     }
     return { created: true, result: { sale: persisted.sale, ledger: persisted.ledger } };
+  }
+
+  /**
+   * Timing-equalised manager-PIN verify. Always runs `argon2.verify` —
+   * either against the staff row's stored `pin_hash` or against a
+   * one-time decoy hash — so the response time is the same whether the
+   * `managerStaffId` is unknown, belongs to another merchant, holds the
+   * wrong role, has no PIN enrolled, or simply got the PIN wrong.
+   */
+  private async verifyManagerPin(input: {
+    merchantId: string;
+    managerStaffId: string;
+    managerPin: string;
+  }): Promise<void> {
+    if (!this.managerPinReader) return;
+    const staff = await this.managerPinReader.findStaffById({
+      merchantId: input.merchantId,
+      staffId: input.managerStaffId,
+    });
+    const roleOk = staff?.role === "owner" || staff?.role === "manager";
+    const merchantOk = staff?.merchantId === input.merchantId;
+    const hashToCheck = staff?.pinHash ?? (await this.getTimingDecoyHash());
+    let pinOk = false;
+    try {
+      pinOk = await argon2.verify(hashToCheck, input.managerPin);
+    } catch {
+      // argon2 throws on malformed hashes (e.g. a hand-edited row). Treat
+      // as a wrong PIN rather than a 500 so one corrupt row can't take
+      // down the void route.
+      pinOk = false;
+    }
+    if (!staff || !roleOk || !merchantOk || !pinOk) {
+      throw new SalesError("void_requires_manager", "Void requires a valid owner/manager PIN.");
+    }
+  }
+
+  private async getTimingDecoyHash(): Promise<string> {
+    if (this.timingDecoyHash) return this.timingDecoyHash;
+    this.timingDecoyHash = await argon2.hash("kassa-void-pin-timing-decoy", PIN_ARGON2_OPTIONS);
+    return this.timingDecoyHash;
   }
 
   /**

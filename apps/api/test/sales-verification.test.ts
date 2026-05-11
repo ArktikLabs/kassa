@@ -304,6 +304,13 @@ describe("GET /v1/sales/:saleId", () => {
       url: `/v1/sales/${fixture.saleA1}/void`,
       headers: { "x-kassa-merchant-id": MERCHANT, "content-type": "application/json" },
       payload: {
+        // KASA-236-A — body shape now requires manager-PIN + idempotency
+        // key. This fixture's SalesService skips the gates because it's
+        // not wired with `managerPinReader` / `openShiftReader`, so the
+        // values here only need to pass schema validation.
+        localVoidId: "01929d00-0001-7000-8000-000000000001",
+        managerStaffId: "77777777-7777-7777-8777-777777777701",
+        managerPin: "1234",
         voidedAt: "2026-04-24T09:00:00+07:00",
         voidBusinessDate: "2026-04-24",
         reason: "wrong cup",
@@ -467,6 +474,9 @@ describe("GET /v1/sales", () => {
       url: `/v1/sales/${fixture.saleA1}/void`,
       headers: { "x-kassa-merchant-id": MERCHANT, "content-type": "application/json" },
       payload: {
+        localVoidId: "01929d00-0001-7000-8000-000000000002",
+        managerStaffId: "77777777-7777-7777-8777-777777777701",
+        managerPin: "1234",
         voidedAt: "2026-04-24T09:00:00+07:00",
         voidBusinessDate: "2026-04-24",
       },

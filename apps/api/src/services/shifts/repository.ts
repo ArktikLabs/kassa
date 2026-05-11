@@ -61,6 +61,19 @@ export interface ShiftsRepository extends ShiftReader {
     outletId: string;
     cashierStaffId: string;
   }): Promise<ShiftRecord | null>;
+  /**
+   * KASA-236-A — the (merchant, outlet)'s currently-open shift (any
+   * cashier). The sales `void` route consults this to enforce the rule
+   * that only sales from the open shift's `businessDate` can be voided
+   * via the POS path; prior-shift corrections route through the back-
+   * office reconciliation flow (KASA-119). v0 ships single-cashier-per-
+   * outlet so the "any cashier" qualifier is moot; this signature keeps
+   * the contract honest for the multi-cashier follow-up.
+   */
+  findOpenShiftForOutlet(input: {
+    merchantId: string;
+    outletId: string;
+  }): Promise<ShiftRecord | null>;
   insertOpen(record: ShiftRecord): Promise<ShiftRecord>;
   /**
    * Stamp the close fields on an existing open row. Implementations must

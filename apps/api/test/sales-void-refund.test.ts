@@ -1,3 +1,4 @@
+import argon2 from "argon2";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { FastifyInstance } from "fastify";
 import { buildApp } from "../src/app.js";
@@ -8,13 +9,17 @@ import {
   type Item,
   type Outlet,
 } from "../src/services/sales/index.js";
+import { InMemoryShiftsRepository } from "../src/services/shifts/index.js";
+import { InMemoryStaffRepository } from "../src/services/staff/index.js";
 
 /*
- * Contract tests for POST /v1/sales/:saleId/void and /refund (KASA-122 PR2).
+ * Contract tests for POST /v1/sales/:saleId/void and /refund (KASA-122 PR2,
+ * extended for KASA-236-A's manager-PIN + open-shift gates).
  *
- * Each test starts with a freshly seeded merchant + outlets + items + BOMs
- * and submits one canonical "Kopi Susu × 2" sale (cash 50_000) so the void
- * and refund cases have a real saleId + ledger to mirror.
+ * Each test starts with a freshly seeded merchant + outlets + items + BOMs,
+ * submits one canonical "Kopi Susu × 2" sale (cash 50_000), seeds a manager
+ * staff row with a known PIN, and opens a shift on the sale's business date
+ * so the void/refund cases have a real saleId + ledger to mirror.
  */
 
 const MERCHANT = "11111111-1111-7111-8111-111111111111";
@@ -30,10 +35,32 @@ const ITEM_WATER = "44444444-4444-7444-8444-444444444404";
 const ITEM_BOTTLED = "44444444-4444-7444-8444-444444444405";
 const BOM_COFFEE = "66666666-6666-7666-8666-666666666601";
 
+const MANAGER_STAFF_ID = "77777777-7777-7777-8777-777777777701";
+const CASHIER_STAFF_ID = "77777777-7777-7777-8777-777777777702";
+const OTHER_MANAGER_STAFF_ID = "77777777-7777-7777-8777-777777777703";
+const MANAGER_PIN = "1234";
+const CASHIER_PIN = "9999";
+
+const OPEN_SHIFT_ID = "88888888-8888-7888-8888-888888888801";
+const LOCAL_VOID_ID = "01929d00-0001-7000-8000-000000000001";
+const SECONDARY_LOCAL_VOID_ID = "01929d00-0001-7000-8000-000000000002";
+
 interface Fixture {
   app: FastifyInstance;
   repository: InMemorySalesRepository;
+  shifts: InMemoryShiftsRepository;
   saleId: string;
+}
+
+function voidPayload(overrides: Record<string, unknown> = {}) {
+  return {
+    localVoidId: LOCAL_VOID_ID,
+    managerStaffId: MANAGER_STAFF_ID,
+    managerPin: MANAGER_PIN,
+    voidedAt: "2026-04-24T09:00:00+07:00",
+    voidBusinessDate: "2026-04-24",
+    ...overrides,
+  };
 }
 
 function kopiPayload(localSaleId: string, quantity = 2) {
@@ -193,6 +220,61 @@ async function buildFixture(): Promise<Fixture> {
     seedIdGen,
   );
 
+  // KASA-236-A — seed a manager (owner) + cashier so the void route's PIN
+  // gate has real argon2 hashes to verify against, plus an "other manager"
+  // belonging to a different merchant for the cross-tenant rejection case.
+  const staff = new InMemoryStaffRepository();
+  const managerPinHash = await argon2.hash(MANAGER_PIN, { type: argon2.argon2id });
+  const cashierPinHash = await argon2.hash(CASHIER_PIN, { type: argon2.argon2id });
+  staff.seedStaff({
+    id: MANAGER_STAFF_ID,
+    merchantId: MERCHANT,
+    email: "manager@example.com",
+    passwordHash: "unused",
+    displayName: "Manajer",
+    role: "manager",
+    pinHash: managerPinHash,
+  });
+  staff.seedStaff({
+    id: CASHIER_STAFF_ID,
+    merchantId: MERCHANT,
+    email: "cashier@example.com",
+    passwordHash: "unused",
+    displayName: "Kasir",
+    role: "cashier",
+    pinHash: cashierPinHash,
+  });
+  staff.seedStaff({
+    id: OTHER_MANAGER_STAFF_ID,
+    merchantId: OTHER_MERCHANT,
+    email: "other-manager@example.com",
+    passwordHash: "unused",
+    displayName: "Manajer Lain",
+    role: "manager",
+    pinHash: managerPinHash,
+  });
+
+  // KASA-236-A — open shift on the sale's business date so the void route's
+  // open-shift gate passes for the happy path. Tests that want the
+  // negative gate close the shift or skip seeding via the dedicated helper.
+  const shifts = new InMemoryShiftsRepository();
+  await shifts.insertOpen({
+    id: "018f3333-3333-7333-8333-000000000001",
+    merchantId: MERCHANT,
+    outletId: OUTLET,
+    cashierStaffId: CASHIER_STAFF_ID,
+    businessDate: "2026-04-24",
+    status: "open",
+    openShiftId: OPEN_SHIFT_ID,
+    openedAt: "2026-04-24T08:00:00+07:00",
+    openingFloatIdr: 0,
+    closeShiftId: null,
+    closedAt: null,
+    countedCashIdr: null,
+    expectedCashIdr: null,
+    varianceIdr: null,
+  });
+
   let serviceCursor = 0;
   const serviceIdGen = () => {
     serviceCursor += 1;
@@ -200,6 +282,14 @@ async function buildFixture(): Promise<Fixture> {
   };
   const service = new SalesService({
     repository,
+    openShiftReader: shifts,
+    managerPinReader: {
+      async findStaffById(input) {
+        const row = await staff.findById(input);
+        if (!row) return null;
+        return { id: row.id, merchantId: row.merchantId, role: row.role, pinHash: row.pinHash };
+      },
+    },
     generateId: serviceIdGen,
     now: () => new Date("2026-04-24T08:30:01.000Z"),
     generateSaleName: (sale) =>
@@ -221,7 +311,7 @@ async function buildFixture(): Promise<Fixture> {
     throw new Error(`baseline submit failed: ${submitRes.statusCode} ${submitRes.body}`);
   }
   const saleId = (submitRes.json() as { saleId: string }).saleId;
-  return { app, repository, saleId };
+  return { app, repository, shifts, saleId };
 }
 
 describe("POST /v1/sales/:saleId/void", () => {
@@ -239,18 +329,19 @@ describe("POST /v1/sales/:saleId/void", () => {
     const res = await fixture.app.inject({
       method: "POST",
       url: `/v1/sales/${fixture.saleId}/void`,
-      payload: { voidedAt: "2026-04-24T09:00:00+07:00", voidBusinessDate: "2026-04-24" },
+      payload: voidPayload(),
     });
     expect(res.statusCode).toBe(401);
     expect(res.json()).toMatchObject({ error: { code: "unauthorized" } });
   });
 
   it("returns 422 validation_error for a missing voidedAt", async () => {
+    const { voidedAt: _omit, ...partial } = voidPayload();
     const res = await fixture.app.inject({
       method: "POST",
       url: `/v1/sales/${fixture.saleId}/void`,
       headers: { "x-kassa-merchant-id": MERCHANT, "content-type": "application/json" },
-      payload: { voidBusinessDate: "2026-04-24" },
+      payload: partial,
     });
     expect(res.statusCode).toBe(422);
     expect(res.json()).toMatchObject({ error: { code: "validation_error" } });
@@ -261,7 +352,7 @@ describe("POST /v1/sales/:saleId/void", () => {
       method: "POST",
       url: "/v1/sales/not-a-uuid/void",
       headers: { "x-kassa-merchant-id": MERCHANT, "content-type": "application/json" },
-      payload: { voidedAt: "2026-04-24T09:00:00+07:00", voidBusinessDate: "2026-04-24" },
+      payload: voidPayload(),
     });
     expect(res.statusCode).toBe(422);
     expect(res.json()).toMatchObject({ error: { code: "validation_error" } });
@@ -272,21 +363,26 @@ describe("POST /v1/sales/:saleId/void", () => {
       method: "POST",
       url: "/v1/sales/018f1111-1111-7111-8111-000000999999/void",
       headers: { "x-kassa-merchant-id": MERCHANT, "content-type": "application/json" },
-      payload: { voidedAt: "2026-04-24T09:00:00+07:00", voidBusinessDate: "2026-04-24" },
+      payload: voidPayload(),
     });
     expect(res.statusCode).toBe(404);
     expect(res.json()).toMatchObject({ error: { code: "sale_not_found" } });
   });
 
-  it("returns 404 sale_not_found when called by a different merchant", async () => {
+  it("returns 403 void_requires_manager when managerStaffId belongs to a different merchant", async () => {
+    // Caller's merchant is MERCHANT, but the manager id is bound to
+    // OTHER_MERCHANT. `findStaffById` gates on (merchantId, staffId) so
+    // the cross-tenant id resolves to null and the PIN gate fails ahead
+    // of any sale lookup — the response has no way to leak whether the
+    // sale exists.
     const res = await fixture.app.inject({
       method: "POST",
       url: `/v1/sales/${fixture.saleId}/void`,
-      headers: { "x-kassa-merchant-id": OTHER_MERCHANT, "content-type": "application/json" },
-      payload: { voidedAt: "2026-04-24T09:00:00+07:00", voidBusinessDate: "2026-04-24" },
+      headers: { "x-kassa-merchant-id": MERCHANT, "content-type": "application/json" },
+      payload: voidPayload({ managerStaffId: OTHER_MANAGER_STAFF_ID }),
     });
-    expect(res.statusCode).toBe(404);
-    expect(res.json()).toMatchObject({ error: { code: "sale_not_found" } });
+    expect(res.statusCode).toBe(403);
+    expect(res.json()).toMatchObject({ error: { code: "void_requires_manager" } });
   });
 
   it("voids a sale, mirroring the original ledger with positive sale_void rows", async () => {
@@ -294,21 +390,19 @@ describe("POST /v1/sales/:saleId/void", () => {
       method: "POST",
       url: `/v1/sales/${fixture.saleId}/void`,
       headers: { "x-kassa-merchant-id": MERCHANT, "content-type": "application/json" },
-      payload: {
-        voidedAt: "2026-04-24T09:00:00+07:00",
-        voidBusinessDate: "2026-04-24",
-        reason: "wrong cup",
-      },
+      payload: voidPayload({ reason: "wrong cup" }),
     });
     expect(res.statusCode).toBe(201);
     const body = res.json() as {
       saleId: string;
+      localVoidId: string;
       voidedAt: string;
       voidBusinessDate: string;
       reason: string | null;
       ledger: { itemId: string; delta: number; reason: string; refType: string; refId: string }[];
     };
     expect(body.saleId).toBe(fixture.saleId);
+    expect(body.localVoidId).toBe(LOCAL_VOID_ID);
     expect(body.voidedAt).toBe("2026-04-24T09:00:00+07:00");
     expect(body.voidBusinessDate).toBe("2026-04-24");
     expect(body.reason).toBe("wrong cup");
@@ -333,29 +427,32 @@ describe("POST /v1/sales/:saleId/void", () => {
   });
 
   it("is idempotent on saleId: a second void returns 200 with empty ledger", async () => {
-    const payload = {
-      voidedAt: "2026-04-24T09:00:00+07:00",
-      voidBusinessDate: "2026-04-24",
-      reason: "wrong cup",
-    };
     const first = await fixture.app.inject({
       method: "POST",
       url: `/v1/sales/${fixture.saleId}/void`,
       headers: { "x-kassa-merchant-id": MERCHANT, "content-type": "application/json" },
-      payload,
+      payload: voidPayload({ reason: "wrong cup" }),
     });
     expect(first.statusCode).toBe(201);
 
+    // Replay with a different `localVoidId` AND a different `voidedAt` —
+    // the sale.voidedAt short-circuit means we still get 200 with the
+    // originally stamped values back, never a double-balanced ledger.
     const second = await fixture.app.inject({
       method: "POST",
       url: `/v1/sales/${fixture.saleId}/void`,
       headers: { "x-kassa-merchant-id": MERCHANT, "content-type": "application/json" },
-      payload: { ...payload, voidedAt: "2026-04-24T10:00:00+07:00" },
+      payload: voidPayload({
+        localVoidId: SECONDARY_LOCAL_VOID_ID,
+        voidedAt: "2026-04-24T10:00:00+07:00",
+        reason: "wrong cup",
+      }),
     });
     expect(second.statusCode).toBe(200);
-    const body = second.json() as { voidedAt: string; ledger: unknown[] };
-    // Server keeps the originally stamped voidedAt; replay is a read.
+    const body = second.json() as { localVoidId: string; voidedAt: string; ledger: unknown[] };
+    // Server keeps the originally stamped voidedAt + localVoidId; replay is a read.
     expect(body.voidedAt).toBe("2026-04-24T09:00:00+07:00");
+    expect(body.localVoidId).toBe(LOCAL_VOID_ID);
     expect(body.ledger).toEqual([]);
 
     // No double balancing — only the original three sale_void entries exist.
@@ -363,7 +460,156 @@ describe("POST /v1/sales/:saleId/void", () => {
     const voidEntries = ledger.filter((row) => row.reason === "sale_void");
     expect(voidEntries).toHaveLength(3);
   });
+
+  it("returns 403 void_requires_manager when the role is cashier", async () => {
+    const res = await fixture.app.inject({
+      method: "POST",
+      url: `/v1/sales/${fixture.saleId}/void`,
+      headers: { "x-kassa-merchant-id": MERCHANT, "content-type": "application/json" },
+      payload: voidPayload({ managerStaffId: CASHIER_STAFF_ID, managerPin: CASHIER_PIN }),
+    });
+    expect(res.statusCode).toBe(403);
+    expect(res.json()).toMatchObject({ error: { code: "void_requires_manager" } });
+  });
+
+  it("returns 403 void_requires_manager when the manager PIN is wrong", async () => {
+    const res = await fixture.app.inject({
+      method: "POST",
+      url: `/v1/sales/${fixture.saleId}/void`,
+      headers: { "x-kassa-merchant-id": MERCHANT, "content-type": "application/json" },
+      payload: voidPayload({ managerPin: "0000" }),
+    });
+    expect(res.statusCode).toBe(403);
+    expect(res.json()).toMatchObject({ error: { code: "void_requires_manager" } });
+  });
+
+  it("returns 403 void_requires_manager when the managerStaffId is unknown", async () => {
+    const res = await fixture.app.inject({
+      method: "POST",
+      url: `/v1/sales/${fixture.saleId}/void`,
+      headers: { "x-kassa-merchant-id": MERCHANT, "content-type": "application/json" },
+      payload: voidPayload({ managerStaffId: "77777777-7777-7777-8777-7777777777ff" }),
+    });
+    expect(res.statusCode).toBe(403);
+    expect(res.json()).toMatchObject({ error: { code: "void_requires_manager" } });
+  });
+
+  it("returns 422 void_outside_open_shift when the sale's outlet has no open shift", async () => {
+    // Build a separate fixture where no open shift is seeded. The PIN
+    // gate still passes; the shift gate is the only thing that fails.
+    const f = await buildFixtureWithoutOpenShift();
+    try {
+      const res = await f.app.inject({
+        method: "POST",
+        url: `/v1/sales/${f.saleId}/void`,
+        headers: { "x-kassa-merchant-id": MERCHANT, "content-type": "application/json" },
+        payload: voidPayload(),
+      });
+      expect(res.statusCode).toBe(422);
+      expect(res.json()).toMatchObject({ error: { code: "void_outside_open_shift" } });
+    } finally {
+      await f.app.close();
+    }
+  });
+
+  it("returns 422 void_outside_open_shift when sale.businessDate does not match the open shift's businessDate", async () => {
+    // Seeded sale is on 2026-04-24. Build a fresh fixture with an open
+    // shift on a different business date so the cross-shift case fires.
+    const f = await buildFixtureWithCrossDayShift();
+    try {
+      const res = await f.app.inject({
+        method: "POST",
+        url: `/v1/sales/${f.saleId}/void`,
+        headers: { "x-kassa-merchant-id": MERCHANT, "content-type": "application/json" },
+        payload: voidPayload(),
+      });
+      expect(res.statusCode).toBe(422);
+      expect(res.json()).toMatchObject({ error: { code: "void_outside_open_shift" } });
+    } finally {
+      await f.app.close();
+    }
+  });
+
+  it("returns 409 void_idempotency_conflict when the same localVoidId targets a different sale", async () => {
+    // Submit a second sale so we have two saleIds to test against.
+    const secondSubmit = await fixture.app.inject({
+      method: "POST",
+      url: "/v1/sales/submit",
+      headers: { "x-kassa-merchant-id": MERCHANT, "content-type": "application/json" },
+      payload: kopiPayload("01929b2d-1e01-7f00-80aa-000000000002", 2),
+    });
+    expect(secondSubmit.statusCode).toBe(201);
+    const secondSaleId = (secondSubmit.json() as { saleId: string }).saleId;
+
+    // First void on sale #1 with LOCAL_VOID_ID.
+    const first = await fixture.app.inject({
+      method: "POST",
+      url: `/v1/sales/${fixture.saleId}/void`,
+      headers: { "x-kassa-merchant-id": MERCHANT, "content-type": "application/json" },
+      payload: voidPayload(),
+    });
+    expect(first.statusCode).toBe(201);
+
+    // Reuse LOCAL_VOID_ID against sale #2 → 409.
+    const second = await fixture.app.inject({
+      method: "POST",
+      url: `/v1/sales/${secondSaleId}/void`,
+      headers: { "x-kassa-merchant-id": MERCHANT, "content-type": "application/json" },
+      payload: voidPayload(),
+    });
+    expect(second.statusCode).toBe(409);
+    expect(second.json()).toMatchObject({ error: { code: "void_idempotency_conflict" } });
+  });
 });
+
+async function buildFixtureWithoutOpenShift(): Promise<Fixture> {
+  const f = await buildFixture();
+  // Drop the seeded shift so the open-shift gate fails. The in-memory
+  // shifts repo doesn't expose a delete, so we close it via recordClose.
+  await f.shifts.recordClose({
+    merchantId: MERCHANT,
+    openShiftId: OPEN_SHIFT_ID,
+    closeShiftId: "88888888-8888-7888-8888-888888888899",
+    closedAt: "2026-04-24T20:00:00+07:00",
+    countedCashIdr: 50_000,
+    expectedCashIdr: 50_000,
+    varianceIdr: 0,
+  });
+  return f;
+}
+
+async function buildFixtureWithCrossDayShift(): Promise<Fixture> {
+  const f = await buildFixture();
+  // Close the same-day shift and open a new one on a different day so the
+  // (merchant, outlet) has an open shift but its businessDate does not
+  // match the sale's. The seeded sale is on 2026-04-24.
+  await f.shifts.recordClose({
+    merchantId: MERCHANT,
+    openShiftId: OPEN_SHIFT_ID,
+    closeShiftId: "88888888-8888-7888-8888-888888888899",
+    closedAt: "2026-04-24T20:00:00+07:00",
+    countedCashIdr: 50_000,
+    expectedCashIdr: 50_000,
+    varianceIdr: 0,
+  });
+  await f.shifts.insertOpen({
+    id: "018f3333-3333-7333-8333-000000000002",
+    merchantId: MERCHANT,
+    outletId: OUTLET,
+    cashierStaffId: CASHIER_STAFF_ID,
+    businessDate: "2026-04-25",
+    status: "open",
+    openShiftId: "88888888-8888-7888-8888-888888888802",
+    openedAt: "2026-04-25T08:00:00+07:00",
+    openingFloatIdr: 0,
+    closeShiftId: null,
+    closedAt: null,
+    countedCashIdr: null,
+    expectedCashIdr: null,
+    varianceIdr: null,
+  });
+  return f;
+}
 
 describe("POST /v1/sales/:saleId/refund", () => {
   let fixture: Fixture;
@@ -567,7 +813,7 @@ describe("POST /v1/sales/:saleId/refund", () => {
       method: "POST",
       url: `/v1/sales/${fixture.saleId}/void`,
       headers: { "x-kassa-merchant-id": MERCHANT, "content-type": "application/json" },
-      payload: { voidedAt: "2026-04-24T09:00:00+07:00", voidBusinessDate: "2026-04-24" },
+      payload: voidPayload(),
     });
     expect(voidRes.statusCode).toBe(201);
 
@@ -613,7 +859,7 @@ describe("POST /v1/sales/:saleId/void after refunds", () => {
       method: "POST",
       url: `/v1/sales/${fixture.saleId}/void`,
       headers: { "x-kassa-merchant-id": MERCHANT, "content-type": "application/json" },
-      payload: { voidedAt: "2026-04-24T10:00:00+07:00", voidBusinessDate: "2026-04-24" },
+      payload: voidPayload({ voidedAt: "2026-04-24T10:00:00+07:00" }),
     });
     expect(voidRes.statusCode).toBe(422);
     expect(voidRes.json()).toMatchObject({ error: { code: "sale_has_refunds" } });

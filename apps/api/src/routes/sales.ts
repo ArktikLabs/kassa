@@ -149,15 +149,22 @@ export function salesRoutes(deps: SalesRouteDeps) {
           tags: ["sales"],
           summary: "Void a sale",
           description:
-            "Idempotent on `saleId` — a second void returns 200 with the " +
-            "originally recorded `voidedAt` and an empty ledger. The first " +
-            "call returns 201 with balancing ledger writes. Variance is " +
-            "owned by `voidBusinessDate`, not the original sale's date.",
+            "Manager-PIN gated. Idempotent on `localVoidId` — a replayed " +
+            "void with the same `localVoidId` returns 200 with empty " +
+            "ledger; a different `localVoidId` against an already-voided " +
+            "sale still returns 200 (the sale's `voidedAt` short-circuits " +
+            "the second call). The first call returns 201 with balancing " +
+            "ledger writes. Variance is owned by `voidBusinessDate`, not " +
+            "the original sale's date. Only sales from the currently-open " +
+            "shift on the sale's `businessDate` are voidable here; prior " +
+            "shifts route through the back-office reconciliation flow.",
           response: {
             200: saleVoidResponse,
             201: saleVoidResponse,
             401: errorBodySchema,
+            403: errorBodySchema,
             404: errorBodySchema,
+            409: errorBodySchema,
             422: errorBodySchema,
           },
         },
@@ -173,6 +180,9 @@ export function salesRoutes(deps: SalesRouteDeps) {
           const outcome = await deps.service.void({
             merchantId,
             saleId: req.params.saleId,
+            localVoidId: req.body.localVoidId,
+            managerStaffId: req.body.managerStaffId,
+            managerPin: req.body.managerPin,
             voidedAt: req.body.voidedAt,
             voidBusinessDate: req.body.voidBusinessDate,
             reason: req.body.reason ?? null,
@@ -180,6 +190,7 @@ export function salesRoutes(deps: SalesRouteDeps) {
           const { sale, ledger } = outcome.result;
           const body: SaleVoidResponse = {
             saleId: sale.id,
+            localVoidId: sale.localVoidId as string,
             voidedAt: sale.voidedAt as string,
             voidBusinessDate: sale.voidBusinessDate as string,
             reason: sale.voidReason,
@@ -383,6 +394,7 @@ function toSaleWire(sale: import("../services/sales/index.js").Sale): SaleRespon
     voidedAt: sale.voidedAt,
     voidBusinessDate: sale.voidBusinessDate,
     voidReason: sale.voidReason,
+    localVoidId: sale.localVoidId,
     refunds: sale.refunds.map((refund) => ({
       id: refund.id,
       clientRefundId: refund.clientRefundId,
@@ -423,6 +435,14 @@ function mapSalesError(err: unknown, reply: import("fastify").FastifyReply) {
       sendError(reply, 404, err.code, err.message, err.details);
       return reply;
     }
+    if (err.code === "void_requires_manager") {
+      sendError(reply, 403, err.code, err.message, err.details);
+      return reply;
+    }
+    if (err.code === "void_outside_open_shift") {
+      sendError(reply, 422, err.code, err.message, err.details);
+      return reply;
+    }
     if (
       err.code === "sale_voided" ||
       err.code === "sale_has_refunds" ||
@@ -433,7 +453,7 @@ function mapSalesError(err: unknown, reply: import("fastify").FastifyReply) {
       sendError(reply, 422, err.code, err.message, err.details);
       return reply;
     }
-    if (err.code === "refund_idempotency_conflict") {
+    if (err.code === "refund_idempotency_conflict" || err.code === "void_idempotency_conflict") {
       sendError(reply, 409, err.code, err.message, err.details);
       return reply;
     }

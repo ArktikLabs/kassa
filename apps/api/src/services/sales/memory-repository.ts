@@ -155,6 +155,8 @@ export class InMemorySalesRepository implements SalesRepository {
       voidedAt: input.sale.voidedAt ?? null,
       voidBusinessDate: input.sale.voidBusinessDate ?? null,
       voidReason: input.sale.voidReason ?? null,
+      localVoidId: input.sale.localVoidId ?? null,
+      voidedByStaffId: input.sale.voidedByStaffId ?? null,
       refunds: input.sale.refunds ?? [],
       synthetic: input.sale.synthetic ?? false,
     };
@@ -228,9 +230,22 @@ export class InMemorySalesRepository implements SalesRepository {
     return { records: page.map((r) => ({ ...r })), nextCursor, nextPageToken };
   }
 
+  async findSaleByLocalVoidId(input: {
+    merchantId: string;
+    localVoidId: string;
+  }): Promise<Sale | null> {
+    for (const sale of this.sales.values()) {
+      if (sale.merchantId !== input.merchantId) continue;
+      if (sale.localVoidId === input.localVoidId) return sale;
+    }
+    return null;
+  }
+
   async voidSale(input: {
     merchantId: string;
     saleId: string;
+    localVoidId: string;
+    voidedByStaffId: string;
     voidedAt: string;
     voidBusinessDate: string;
     reason: string | null;
@@ -252,6 +267,8 @@ export class InMemorySalesRepository implements SalesRepository {
       voidedAt: input.voidedAt,
       voidBusinessDate: input.voidBusinessDate,
       voidReason: input.reason,
+      localVoidId: input.localVoidId,
+      voidedByStaffId: input.voidedByStaffId,
     };
     this.sales.set(sale.id, updated);
     const written: StockLedgerEntry[] = input.ledger.map((entry) => ({

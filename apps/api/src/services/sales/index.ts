@@ -14,6 +14,8 @@ export type {
 } from "./service.js";
 export { InMemorySalesRepository } from "./memory-repository.js";
 export type {
+  ManagerPinReader,
+  OpenShiftReader,
   SalesRepository,
   LedgerAppendInput,
   ListLedgerInput,
