@@ -20,6 +20,15 @@ import type { ListOutletsInput, ListOutletsResult, OutletsRepository } from "./r
 export class PgOutletsRepository implements OutletsRepository {
   constructor(private readonly db: Database) {}
 
+  async findById(input: { merchantId: string; outletId: string }): Promise<Outlet | null> {
+    const rows = await this.db
+      .select()
+      .from(outlets)
+      .where(and(eq(outlets.id, input.outletId), eq(outlets.merchantId, input.merchantId)))
+      .limit(1);
+    return rows[0] ?? null;
+  }
+
   async listOutlets(input: ListOutletsInput): Promise<ListOutletsResult> {
     const { merchantId, limit } = input;
     const scanLimit = limit + 1;

@@ -166,6 +166,9 @@ const id: MessageMap = {
   "reconciliation.col.settled": "Settled",
   "reconciliation.col.variance": "Selisih",
   "reconciliation.col.status": "Status",
+  "reconciliation.col.csv": "Unduh CSV",
+  "reconciliation.csv.download": "Unduh CSV",
+  "reconciliation.csv.unavailable": "—",
   "reconciliation.empty":
     "Belum ada hari yang direkonsiliasi. Rekonsiliasi akan muncul di sini setelah EOD ditutup.",
   "nav.admin_reconciliation": "Rekonsiliasi manual",

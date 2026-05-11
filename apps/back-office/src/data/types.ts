@@ -107,6 +107,14 @@ export type ReconciliationRow = {
   midtransSettled: number;
   variance: number;
   status: "zero_variance" | "variance" | "pending";
+  /**
+   * Server-generated EOD record id for the (outlet, businessDate). Null
+   * until the day has been closed via `POST /v1/eod/close`. KASA-250 —
+   * the "Unduh CSV" affordance is keyed off this id; rows without one
+   * render the action disabled so the table layout stays stable while
+   * the close is still pending.
+   */
+  eodId: string | null;
 };
 
 /* Unverified static-QRIS tender awaiting manual or settlement match.
