@@ -32,12 +32,18 @@ import {
   ItemsService,
   UomsService,
 } from "./services/catalog/index.js";
+import { DashboardService, InMemoryDashboardRepository } from "./services/dashboard/index.js";
 import {
   EodService,
   InMemoryEodRepository,
   SalesRepositoryEodSyntheticReconciler,
   SalesRepositorySalesReader,
 } from "./services/eod/index.js";
+import {
+  InMemoryShiftsRepository,
+  ShiftsService,
+  type ShiftsRepository,
+} from "./services/shifts/index.js";
 import { InMemoryOutletsRepository, OutletsService } from "./services/outlets/index.js";
 import {
   InMemoryReconciliationRepository,
@@ -104,9 +110,30 @@ export interface BuildAppOptions {
     service: ReconciliationService;
     staffBootstrapToken?: string;
   };
+  /**
+   * Back-office reports surface (KASA-237). When omitted the dashboard route
+   * binds to an in-memory repository (zero-data shape) so deploys without a
+   * configured dashboard service still register cleanly. The
+   * `staffBootstrapToken` mirrors `reconciliation` and gates the same
+   * `X-Staff-*` header tier.
+   */
+  reports?: {
+    service: DashboardService;
+    staffBootstrapToken?: string;
+  };
   sales?: {
     service: SalesService;
     repository: SalesRepository;
+  };
+  /**
+   * Cashier shift open/close (KASA-235). Defaults to an in-memory
+   * `ShiftsService` reading sales through the same `SalesRepository` the
+   * EOD service uses, so a `buildApp({})` boot has a self-consistent
+   * shift open → cash sale → shift close flow without further wiring.
+   */
+  shifts?: {
+    service: ShiftsService;
+    repository: ShiftsRepository;
   };
   /**
    * Device-authentication repository. Defaults to the same in-memory store
@@ -276,11 +303,20 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   const salesService = options.sales?.service ?? new SalesService({ repository: salesRepository });
   const resolveRequestMerchantId = options.resolveMerchantId ?? defaultMerchantResolver;
 
+  const shiftsRepository = options.shifts?.repository ?? new InMemoryShiftsRepository();
+  const shiftsService =
+    options.shifts?.service ??
+    new ShiftsService({
+      repository: shiftsRepository,
+      salesReader: new SalesRepositorySalesReader(salesRepository),
+    });
+
   const eod = options.eod ?? {
     service: new EodService({
       salesReader: new SalesRepositorySalesReader(salesRepository),
       eodRepository: new InMemoryEodRepository(),
       syntheticReconciler: new SalesRepositoryEodSyntheticReconciler(salesRepository),
+      shiftReader: shiftsRepository,
     }),
   };
   const resolveEodMerchantId = eod.resolveMerchantId ?? (() => BOOTSTRAP_MERCHANT_ID);
@@ -293,6 +329,10 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       repository: new InMemoryReconciliationRepository(),
       provider: options.midtransProvider ?? makeNoSettlementProvider(),
     }),
+  };
+
+  const reports = options.reports ?? {
+    service: new DashboardService({ repository: new InMemoryDashboardRepository() }),
   };
 
   const v1Deps: V1RouteDeps = {
@@ -343,10 +383,17 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       resolveMerchantId: resolveRequestMerchantId,
     },
     eod: { service: eod.service, resolveMerchantId: resolveEodMerchantId },
+    shifts: { service: shiftsService, resolveMerchantId: resolveRequestMerchantId },
     reconciliation: {
       service: reconciliation.service,
       ...(reconciliation.staffBootstrapToken !== undefined
         ? { staffBootstrapToken: reconciliation.staffBootstrapToken }
+        : {}),
+    },
+    reports: {
+      service: reports.service,
+      ...(reports.staffBootstrapToken !== undefined
+        ? { staffBootstrapToken: reports.staffBootstrapToken }
         : {}),
     },
   };

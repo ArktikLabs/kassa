@@ -20,6 +20,10 @@
       "types": "./dist/catalog.d.ts",
       "import": "./dist/catalog.js"
     },
+    "./dashboard": {
+      "types": "./dist/dashboard.d.ts",
+      "import": "./dist/dashboard.js"
+    },
     "./eod": {
       "types": "./dist/eod.d.ts",
       "import": "./dist/eod.js"
@@ -39,6 +43,10 @@
     "./reconciliation": {
       "types": "./dist/reconciliation.d.ts",
       "import": "./dist/reconciliation.js"
+    },
+    "./shifts": {
+      "types": "./dist/shifts.d.ts",
+      "import": "./dist/shifts.js"
     }
   },
   "files": [
@@ -55,7 +63,7 @@
   },
   "devDependencies": {
     "typescript": "^5.6.3",
-    "vitest": "^2.1.4"
+    "vitest": "^3.2.0"
   },
   "engines": {
     "node": ">=22.0.0"

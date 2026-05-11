@@ -172,13 +172,21 @@ test.describe("KASA-63 QRIS dynamic tender flow", () => {
     await addItemAndOpenQris(page);
 
     // First click starts the create flow; the button immediately flips into the
-    // "creating…" loading state so a rapid second click should be a no-op.
+    // "creating…" loading state and detaches once we move to "waiting", so a
+    // rapid second click should be a no-op. The synchronous `creatingRef`
+    // guard inside `handleCreate` is what actually prevents a second POST —
+    // this test asserts that semantic regardless of where the second click
+    // lands relative to React committing the next step.
     const button = page.getByTestId("tender-qris-create");
     await button.click();
-    await button.click({ force: true }).catch(() => {
-      /* button may already be detached after state transitions to "waiting" */
+    // Bound the second click: the button may already be detached by now, and
+    // an unbounded force-click would burn the entire test budget waiting for
+    // it to reappear, leaving zero time for the visibility assertion below.
+    await button.click({ force: true, timeout: 1_000 }).catch(() => {
+      /* button already detached after step transitioned to "waiting" */
     });
+    // Guard semantic: only one POST regardless of how the second click landed.
+    await expect.poll(() => state.createCalls, { timeout: 5_000 }).toBe(1);
     await expect(page.getByTestId("tender-qris-qr")).toBeVisible();
-    expect(state.createCalls).toBe(1);
   });
 });

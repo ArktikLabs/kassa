@@ -1,5 +1,6 @@
 import type { EodMissingSalesDetails } from "@kassa/schemas/eod";
 import { uuidv7 } from "../../lib/uuid.js";
+import type { ShiftReader } from "../shifts/repository.js";
 import type { EodRepository, EodSyntheticReconciler, SalesReader } from "./repository.js";
 import type { EodRecord, EodRecordBreakdown, SaleRecord, SaleTender } from "./types.js";
 
@@ -48,6 +49,14 @@ export interface EodServiceDeps {
    * tenders.
    */
   syntheticReconciler?: EodSyntheticReconciler;
+  /**
+   * KASA-235 — resolves the shift opened on the (outlet, businessDate)
+   * tuple so the close pulls `openingFloatIdr` into the expected-cash
+   * calculation. Optional: when omitted EOD treats the float as zero,
+   * which preserves the pre-KASA-235 behaviour for environments that do
+   * not run the shifts pipeline.
+   */
+  shiftReader?: ShiftReader;
   now?: () => Date;
   generateEodId?: () => string;
 }
@@ -65,6 +74,7 @@ export class EodService {
   private readonly salesReader: SalesReader;
   private readonly eodRepository: EodRepository;
   private readonly syntheticReconciler: EodSyntheticReconciler | null;
+  private readonly shiftReader: ShiftReader | null;
   private readonly now: () => Date;
   private readonly generateEodId: () => string;
 
@@ -72,6 +82,7 @@ export class EodService {
     this.salesReader = deps.salesReader;
     this.eodRepository = deps.eodRepository;
     this.syntheticReconciler = deps.syntheticReconciler ?? null;
+    this.shiftReader = deps.shiftReader ?? null;
     this.now = deps.now ?? (() => new Date());
     this.generateEodId = deps.generateEodId ?? uuidv7;
   }
@@ -116,8 +127,22 @@ export class EodService {
     const merchantSales = serverSales.filter((s) => !s.synthetic);
     const syntheticSales = serverSales.filter((s) => s.synthetic);
 
+    // KASA-235 — pull the opening float for this (outlet, businessDate).
+    // The shift's `opening_float_idr` pre-funds the drawer, so EOD must
+    // include it in expected cash; without it the variance always
+    // reflects the float and can never hit zero. Days with no shift
+    // record default to zero — the pre-KASA-235 behaviour.
+    const shiftRecord = this.shiftReader
+      ? await this.shiftReader.findShiftForBusinessDate({
+          merchantId: input.merchantId,
+          outletId: input.outletId,
+          businessDate: input.businessDate,
+        })
+      : null;
+    const openingFloatIdr = shiftRecord?.openingFloatIdr ?? 0;
+
     const breakdown = computeBreakdown(merchantSales);
-    const expectedCashIdr = computeExpectedCash(merchantSales);
+    const expectedCashIdr = computeExpectedCash(merchantSales) + openingFloatIdr;
     const varianceIdr = input.countedCashIdr - expectedCashIdr;
 
     if (varianceIdr !== 0) {
@@ -152,6 +177,7 @@ export class EodService {
       closedAt,
       countedCashIdr: input.countedCashIdr,
       expectedCashIdr,
+      openingFloatIdr,
       varianceIdr,
       varianceReason: input.varianceReason,
       breakdown,
