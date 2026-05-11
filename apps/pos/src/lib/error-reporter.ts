@@ -44,3 +44,19 @@ export function reportException(err: unknown, ctx?: ReportContext): void {
       console.error("[reportException] sentry chunk load failed", err, loadErr);
     });
 }
+
+export function addBreadcrumb(breadcrumb: {
+  category: string;
+  message?: string;
+  level?: "info" | "warning" | "error" | "debug";
+  data?: Record<string, unknown>;
+}): void {
+  void loadSentryModule()
+    .then((m) => {
+      m.initSentry();
+      m.addBreadcrumb(breadcrumb);
+    })
+    .catch(() => {
+      // Breadcrumbs are best-effort; swallow load errors.
+    });
+}
