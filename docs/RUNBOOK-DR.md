@@ -135,6 +135,19 @@ If the operator prefers the dashboard: Neon console → Project → Branches →
 ### 3.4 Cut the staging API to the restored branch (drill only)
 
 ```sh
+# Capture the pre-drill DATABASE_URL BEFORE overwriting it — §3.7 teardown
+# needs this to roll staging back. flyctl secrets list redacts values, so the
+# source-of-truth is the local provisioning record. By convention, the same
+# DATABASE_URL secret value lives in this repo's GitHub `staging` env (set
+# during initial provisioning per RUNBOOK-DEPLOY.md §2). Pull it from the
+# operator's password manager / 1Password vault item "Kassa Neon staging
+# DATABASE_URL" — do NOT shell-out to GitHub here (the secret is masked in
+# Actions logs and unreadable from the API).
+ORIGINAL_STAGING_DATABASE_URL="<paste from password manager>"
+test -n "$ORIGINAL_STAGING_DATABASE_URL" || { echo "refusing: capture rollback URL first"; exit 1; }
+
+CUTOVER_START=$(date +%s)
+
 # Override DATABASE_URL on the staging Fly app. This triggers a rolling
 # restart; both web and worker process groups pick up the new value.
 flyctl secrets set --app kassa-api-staging \
@@ -145,7 +158,7 @@ flyctl status --app kassa-api-staging
 # Repeat until both `web` machines show `passing` on the new release.
 
 END_CUTOVER=$(date +%s)
-echo "cutover_seconds=$((END_CUTOVER - START))"
+echo "cutover_seconds=$((END_CUTOVER - CUTOVER_START))"
 ```
 
 > **Production cutover** uses the identical command against `kassa-api-prod` — but only after the CTO has signed off (§2 escalation contract) AND the operator has paused traffic by stopping the worker process group:
@@ -222,8 +235,10 @@ Selective restore stays inside the existing app/branch — no Fly cutover requir
 Drill branches are billed per active hour like any Neon compute. Delete after the drill closes:
 
 ```sh
-# Cut staging back to the parent branch first (read DATABASE_URL from the
-# pre-drill secret backup — capture this BEFORE §3.4 in production).
+# Cut staging back to the parent branch using the URL captured at the top of
+# §3.4. If you started this shell after the cutover (operator handoff), re-pull
+# it from the same source §3.4 names (password manager / 1Password item
+# "Kassa Neon staging DATABASE_URL").
 flyctl secrets set --app kassa-api-staging DATABASE_URL="$ORIGINAL_STAGING_DATABASE_URL"
 
 # Then delete the drill branch.
@@ -257,9 +272,23 @@ If the original Neon project is intact but you want a clean substrate, create a 
 neonctl branches create --project-id "$NEON_PROJECT_ID" \
   --name "restore-$(date -u +%Y%m%dT%H%M%SZ)" --output json > /tmp/restore-branch.json
 
+# Build the restored DATABASE_URL the same way §3.3 does — Neon shares the
+# role across branches, so role/password/dbname come from the parent.
+RESTORED_HOST=$(jq -r '.endpoints[0].host' /tmp/restore-branch.json)
+RESTORED_DATABASE_URL="postgres://<role>:<password>@${RESTORED_HOST}/<db>?sslmode=require"
+
 # Path B — new project (only if the old project is unrecoverable):
 neonctl projects create --name kassa-restored --region-id aws-ap-southeast-1 \
   --output json > /tmp/restore-project.json
+
+# A brand-new project has fresh role+password+db; `neonctl projects create`
+# returns them inline under `connection_uris[].connection_uri` (the only
+# field with the password — `endpoints[].host` is also present but lacks
+# credentials). Prefer the canonical URI.
+RESTORED_DATABASE_URL=$(jq -r '.connection_uris[0].connection_uri' /tmp/restore-project.json)
+# Sanity check before piping a multi-GB dump into it.
+test -n "$RESTORED_DATABASE_URL" && [ "$RESTORED_DATABASE_URL" != "null" ] \
+  || { echo "refusing: connection_uris missing — re-check neonctl output"; exit 1; }
 ```
 
 The dump is plain SQL, so the target needs the same Postgres major version the dump was taken on (Neon defaults track Postgres 16 in v0). Verify before piping:
