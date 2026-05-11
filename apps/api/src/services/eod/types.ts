@@ -105,11 +105,20 @@ export interface EodRecordBreakdown {
   qrisStaticUnverifiedCount: number;
   cardIdr: number;
   otherIdr: number;
+  /**
+   * Sum of every non-voided merchant sale's `totalIdr` — i.e. the
+   * customer-paid (gross) amount for the close, including PPN. The
+   * tax-base "net" the bookkeeper records is `netIdr − taxIdr`.
+   * Despite the field name, this is the gross omset, not the tax-base
+   * net; the name predates KASA-218 when PPN had not yet been broken
+   * out and is preserved for back-compat with the close screen.
+   */
   netIdr: number;
   /**
    * KASA-218 — sum of every non-voided merchant sale's `taxIdr` for the
-   * close. For an inclusive merchant the amount is already inside
-   * `netIdr`; for an exclusive merchant it sits on top. Surfaced
+   * close. PPN is always embedded inside `sale.totalIdr` (and therefore
+   * inside `netIdr`) for both inclusive and exclusive merchants in this
+   * codebase, so subtract from `netIdr` to derive the tax-base. Surfaced
    * separately so the close screen and back-office can break PPN out
    * without re-walking the sale list.
    */

@@ -141,15 +141,17 @@ function buildRow(input: EodCsvInput): Record<EodCsvColumn, string> {
   const cashVariance = eod.varianceIdr;
 
   /**
-   * Gross is the receipted total the merchant collected from
-   * customers; for an inclusive (`ppn_11`) merchant `netIdr` already
-   * contains the tax, so gross == net. For a future exclusive
-   * merchant the tax sits on top and gross == net + tax. We compute
-   * `net + tax` against the close so today's inclusive merchants get
-   * gross == netIdr (taxIdr is zero) and the column stays correct
-   * once exclusive merchants ship.
+   * `breakdown.netIdr` is `sum(sale.totalIdr)` — the customer-paid
+   * total for the close (`apps/api/src/services/eod/service.ts:226`).
+   * For both inclusive and exclusive merchants `sale.totalIdr` already
+   * includes PPN (`subtotal − discount + taxIdr`,
+   * `apps/api/src/services/sales/service.ts`), so it is the gross
+   * (omset) the merchant collected from customers. The tax-base "net"
+   * the bookkeeper books against income is therefore
+   * `breakdown.netIdr − breakdown.taxIdr`.
    */
-  const gross = breakdown.netIdr + breakdown.taxIdr;
+  const gross = breakdown.netIdr;
+  const net = breakdown.netIdr - breakdown.taxIdr;
 
   return {
     outlet: outlet.name,
@@ -165,7 +167,7 @@ function buildRow(input: EodCsvInput): Record<EodCsvColumn, string> {
     qris_variance: formatRupiahInteger(qrisVariance),
     gross: formatRupiahInteger(gross),
     ppn: formatRupiahInteger(breakdown.taxIdr),
-    net: formatRupiahInteger(breakdown.netIdr),
+    net: formatRupiahInteger(net),
     sale_count: String(breakdown.saleCount),
     void_count: String(breakdown.voidCount),
   };

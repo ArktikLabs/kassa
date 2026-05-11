@@ -83,8 +83,10 @@ describe("buildEodCsv (KASA-250)", () => {
     expect(byCol.get("counted_cash")).toBe("1250000");
     expect(byCol.get("cash_variance")).toBe("10000");
     expect(byCol.get("ppn")).toBe("200000");
-    expect(byCol.get("net")).toBe("2040000");
-    expect(byCol.get("gross")).toBe("2240000");
+    // `netIdr` is the customer-paid gross (sum of `sale.totalIdr`);
+    // `gross` mirrors it and `net` is the tax base (netIdr − taxIdr).
+    expect(byCol.get("gross")).toBe("2040000");
+    expect(byCol.get("net")).toBe("1840000");
     expect(byCol.get("sale_count")).toBe("42");
     expect(byCol.get("void_count")).toBe("1");
   });
