@@ -35,6 +35,16 @@ export class OutletsService {
     this.repository = deps.repository;
   }
 
+  /**
+   * Resolve a single outlet by id, scoped to `merchantId`. Returns `null`
+   * for unknown ids and for ids that belong to another tenant. Added for
+   * the KASA-250 EOD CSV export, which needs the outlet's display name +
+   * `code` slug.
+   */
+  async findById(input: { merchantId: string; outletId: string }): Promise<Outlet | null> {
+    return this.repository.findById(input);
+  }
+
   async list(cmd: ListOutletsCommand): Promise<ListOutletsResult> {
     const rawLimit = cmd.limit ?? DEFAULT_OUTLET_PAGE_LIMIT;
     const limit = Math.max(1, Math.min(MAX_OUTLET_PAGE_LIMIT, rawLimit));

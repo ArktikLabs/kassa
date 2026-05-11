@@ -98,6 +98,13 @@ export interface BuildAppOptions {
   eod?: {
     service: EodService;
     resolveMerchantId?: () => string;
+    /**
+     * KASA-250 — gates the per-outlet CSV export at `GET /v1/eod/:eodId/export.csv`.
+     * Mirrors the `reports` / `reconciliation` bootstrap-window token; without
+     * it the export route returns 503 and the close + read endpoints continue
+     * to work against the device session.
+     */
+    staffBootstrapToken?: string;
   };
   catalog?: {
     items: ItemsService;
@@ -424,7 +431,24 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       service: salesService,
       resolveMerchantId: resolveRequestMerchantId,
     },
-    eod: { service: eod.service, resolveMerchantId: resolveEodMerchantId },
+    eod: {
+      service: eod.service,
+      resolveMerchantId: resolveEodMerchantId,
+      ...(eod.staffBootstrapToken !== undefined
+        ? { staffBootstrapToken: eod.staffBootstrapToken }
+        : {}),
+      // KASA-250 — narrow readers reuse the in-memory / Pg backings the
+      // other domains already wire. `outletReader` is mandatory for the
+      // CSV route to render `outlet` / filename slug; `shiftReader` and
+      // `staffReader` are optional joins (shift open/close + cashier
+      // display name) and the CSV degrades gracefully when either is
+      // absent (empty `shift_open_at` / `cashier` cells).
+      outletReader: outletsCfg.service,
+      shiftReader: shiftsRepository,
+      ...(options.staffSession?.repository !== undefined
+        ? { staffReader: options.staffSession.repository }
+        : {}),
+    },
     shifts: { service: shiftsService, resolveMerchantId: resolveRequestMerchantId },
     reconciliation: {
       service: reconciliation.service,

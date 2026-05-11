@@ -33,6 +33,12 @@ export class InMemoryOutletsRepository implements OutletsRepository {
     this.outlets.set(row.id, row);
   }
 
+  async findById(input: { merchantId: string; outletId: string }): Promise<Outlet | null> {
+    const row = this.outlets.get(input.outletId);
+    if (!row || row.merchantId !== input.merchantId) return null;
+    return { ...row };
+  }
+
   async listOutlets(input: ListOutletsInput): Promise<ListOutletsResult> {
     let tokenBoundary: { updatedAt: Date; id: string } | null = null;
     if (input.pageToken) {
