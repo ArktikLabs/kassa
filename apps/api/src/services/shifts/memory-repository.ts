@@ -77,6 +77,23 @@ export class InMemoryShiftsRepository implements ShiftsRepository {
     return latest;
   }
 
+  async findOpenShiftForOutlet(input: {
+    merchantId: string;
+    outletId: string;
+  }): Promise<ShiftRecord | null> {
+    let latest: ShiftRecord | null = null;
+    for (const row of this.byId.values()) {
+      if (
+        row.merchantId === input.merchantId &&
+        row.outletId === input.outletId &&
+        row.status === "open"
+      ) {
+        if (!latest || row.openedAt > latest.openedAt) latest = row;
+      }
+    }
+    return latest;
+  }
+
   async insertOpen(record: ShiftRecord): Promise<ShiftRecord> {
     const openKey = InMemoryShiftsRepository.openKey(record.merchantId, record.openShiftId);
     if (this.byOpenKey.has(openKey)) {

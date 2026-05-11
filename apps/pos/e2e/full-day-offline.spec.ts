@@ -676,9 +676,18 @@ async function voidSale(
   creds: DeviceCreds,
   saleId: string,
 ): Promise<void> {
+  // KASA-236-A added required `localVoidId` / `managerStaffId` / `managerPin`
+  // wire fields. The e2e harness does not seed a `managerPinReader` or
+  // `openShiftReader` on its `SalesService`, so the route accepts the body
+  // but skips both gates — this keeps the full-day-offline acceptance test
+  // exercising the void ledger / variance contract without dragging in the
+  // shift open/close + staff seed dance owned by KASA-241 (KASA-236-C).
   const resp = await request.post(`${HARNESS_BASE_URL}/v1/sales/${saleId}/void`, {
     headers: { ...deviceHeaders(creds), "content-type": "application/json" },
     data: {
+      localVoidId: newUuidV7(),
+      managerStaffId: newUuidV7(),
+      managerPin: "1234",
       voidedAt: new Date().toISOString(),
       voidBusinessDate: FIXTURE_BUSINESS_DATE,
       reason: "qa-suite",

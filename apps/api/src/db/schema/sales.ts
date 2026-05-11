@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import {
   boolean,
   date,
@@ -66,6 +67,22 @@ export const sales = pgTable(
     taxIdr: rupiah("tax_idr").notNull().default(0),
     voidedAt: timestamp("voided_at", { withTimezone: true }),
     /**
+     * KASA-236-A — business date the void counts against in EOD variance.
+     * The original sale stays on `business_date`; voids may straddle a day
+     * boundary (e.g. a 23:55 sale voided at 00:05) so the void owns its own
+     * date, written by the POS at void time.
+     */
+    voidBusinessDate: date("void_business_date"),
+    voidReason: text("void_reason"),
+    /**
+     * KASA-236-A — client-generated UUIDv7 idempotency key for the void
+     * event. Paired with `merchant_id` in `sales_merchant_local_void_id_uniq`
+     * so a retried void push collapses to the same row instead of producing
+     * a double-balanced ledger.
+     */
+    localVoidId: uuid("local_void_id"),
+    voidedByStaffId: uuid("voided_by_staff_id").references(() => staff.id),
+    /**
      * KASA-151 — set when the row originated from the KASA-71 production
      * uptime probe (see `synthetic` tender method). EOD close excludes
      * `synthetic = true` rows from breakdown / expected-cash / variance and
@@ -83,6 +100,12 @@ export const sales = pgTable(
       table.merchantId,
       table.localSaleId,
     ),
+    // KASA-236-A — void idempotency key. Partial-unique on (merchant_id,
+    // local_void_id) where `local_void_id IS NOT NULL` so unvoided sales
+    // don't collide on the null sentinel.
+    merchantLocalVoidIdUniq: uniqueIndex("sales_merchant_local_void_id_uniq")
+      .on(table.merchantId, table.localVoidId)
+      .where(sql`${table.localVoidId} IS NOT NULL`),
     // EOD query path: sum tenders by outlet + business_date.
     outletBusinessDateIdx: index("sales_outlet_business_date_idx").on(
       table.outletId,

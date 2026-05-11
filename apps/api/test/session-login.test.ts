@@ -37,6 +37,7 @@ async function setup(opts: { withCors?: boolean } = {}): Promise<Harness> {
     passwordHash,
     displayName: DISPLAY_NAME,
     role: "owner",
+    pinHash: null,
   });
   const now = { value: new Date("2026-05-03T12:00:00Z") };
   const app = await buildApp({

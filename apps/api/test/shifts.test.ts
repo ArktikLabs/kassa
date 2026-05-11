@@ -137,6 +137,8 @@ async function seedCashSale(repository: InMemorySalesRepository, amountIdr: numb
     voidedAt: null,
     voidBusinessDate: null,
     voidReason: null,
+    localVoidId: null,
+    voidedByStaffId: null,
     refunds: [],
     synthetic: false,
   };

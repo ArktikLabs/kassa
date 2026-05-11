@@ -305,8 +305,40 @@ export type SaleSubmitResponse = z.infer<typeof saleSubmitResponse>;
  */
 const voidReason = z.string().min(1).max(256).optional();
 
+/**
+ * KASA-236-A — manager PIN is 4–8 digits, hashed server-side with argon2.
+ * The wire schema only checks shape; the actual `argon2.verify` against
+ * the stored `pin_hash` runs in `SalesService.void` and surfaces as a
+ * `void_requires_manager` 403 on any failure (unknown manager, wrong
+ * merchant, wrong role, wrong PIN — all collapse to the same error so
+ * a brute-force attacker can't distinguish "no such manager" from
+ * "wrong PIN").
+ */
+const managerPin = z.string().regex(/^\d{4,8}$/, "must be 4–8 digits");
+
 export const saleVoidRequest = z
   .object({
+    /**
+     * KASA-236-A — client-generated UUIDv7 keying void-event idempotency.
+     * A retried POST with the same `localVoidId` against the same `saleId`
+     * is a replay and returns 200 with empty ledger. Reusing the same
+     * `localVoidId` against a different `saleId` is a 409
+     * `void_idempotency_conflict`.
+     */
+    localVoidId: uuidV7Typed,
+    /**
+     * KASA-236-A — the manager who authorised the void. The server reads
+     * `staff.pin_hash` for this id and runs `argon2.verify(pin_hash,
+     * managerPin)`. Must belong to the caller's merchant and hold role
+     * `owner` or `manager`.
+     */
+    managerStaffId: uuidV7Typed,
+    /**
+     * KASA-236-A — the manager's lock-screen PIN (4–8 digits). Sent in
+     * the body, not a header, because the route is also reachable from
+     * the offline outbox where headers don't survive replay rehydration.
+     */
+    managerPin,
     voidedAt: isoTimestamp,
     voidBusinessDate: businessDate,
     reason: voidReason,
@@ -317,6 +349,8 @@ export type SaleVoidRequest = z.infer<typeof saleVoidRequest>;
 export const saleVoidResponse = z
   .object({
     saleId: uuidV7Typed,
+    /** Echoed back so the client can map the response onto the outbox row. */
+    localVoidId: uuidV7Typed,
     voidedAt: isoTimestamp,
     voidBusinessDate: businessDate,
     reason: z.string().nullable(),
@@ -409,6 +443,8 @@ export const saleResponse = z
     voidedAt: isoTimestamp.nullable(),
     voidBusinessDate: businessDate.nullable(),
     voidReason: z.string().nullable(),
+    /** KASA-236-A — non-null on a voided sale; echoes the void event's idempotency key. */
+    localVoidId: uuidV7Typed.nullable(),
     refunds: z.array(saleRefundRecord),
   })
   .strict();

@@ -24,7 +24,7 @@ import { createDomainEventBus, type DomainEventBus } from "./lib/events.js";
 import { registerOpenapi } from "./lib/openapi.js";
 import { createInMemoryDedupeStore, type WebhookDedupeStore } from "./lib/webhook-dedupe.js";
 import { EnrolmentService, InMemoryEnrolmentRepository } from "./services/enrolment/index.js";
-import type { StaffRepository } from "./services/staff/index.js";
+import { InMemoryStaffRepository, type StaffRepository } from "./services/staff/index.js";
 import {
   BomsService,
   InMemoryBomsRepository,
@@ -54,6 +54,7 @@ import {
 import {
   InMemorySalesRepository,
   SalesService,
+  type ManagerPinReader,
   type SalesRepository,
 } from "./services/sales/index.js";
 
@@ -318,7 +319,6 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   };
 
   const salesRepository = options.sales?.repository ?? new InMemorySalesRepository();
-  const salesService = options.sales?.service ?? new SalesService({ repository: salesRepository });
   const resolveRequestMerchantId = options.resolveMerchantId ?? defaultMerchantResolver;
 
   const shiftsRepository = options.shifts?.repository ?? new InMemoryShiftsRepository();
@@ -327,6 +327,24 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     new ShiftsService({
       repository: shiftsRepository,
       salesReader: new SalesRepositorySalesReader(salesRepository),
+    });
+
+  // KASA-236-A — plumb the open-shift reader + manager-PIN reader into the
+  // SalesService so the void route gates against (a) the (merchant, outlet)
+  // open shift's businessDate and (b) the manager's PIN. The staff repo
+  // here doubles as the auth route's `staffRepository`; falling back to
+  // an empty in-memory store when neither is wired keeps `buildApp({})`
+  // booting (every void will then 403 with `void_requires_manager`,
+  // which is the right answer for an unconfigured deploy).
+  const managerPinReader: ManagerPinReader = options.staffSession?.repository
+    ? makeManagerPinReader(options.staffSession.repository)
+    : makeManagerPinReader(new InMemoryStaffRepository());
+  const salesService =
+    options.sales?.service ??
+    new SalesService({
+      repository: salesRepository,
+      openShiftReader: shiftsRepository,
+      managerPinReader,
     });
 
   const eod = options.eod ?? {
@@ -429,6 +447,28 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   await app.register(async (instance) => registerV1Routes(instance, v1Deps), { prefix: "/v1" });
 
   return app;
+}
+
+/**
+ * KASA-236-A — adapter from the `StaffRepository` (used by the staff session
+ * login route) to the narrow `ManagerPinReader` the SalesService.void path
+ * consumes. Keeps the two surfaces decoupled: a future Postgres staff repo
+ * implements `findById` once and feeds both routes without either coupling
+ * to the other's payload shape.
+ */
+function makeManagerPinReader(repo: StaffRepository): ManagerPinReader {
+  return {
+    async findStaffById(input) {
+      const row = await repo.findById(input);
+      if (!row) return null;
+      return {
+        id: row.id,
+        merchantId: row.merchantId,
+        role: row.role,
+        pinHash: row.pinHash,
+      };
+    },
+  };
 }
 
 // Prefers the merchantId derived from a verified device session

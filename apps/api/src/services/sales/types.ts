@@ -168,6 +168,14 @@ export interface Sale {
   /** Business date the void counts against in EOD variance; null on a live sale. */
   voidBusinessDate: string | null;
   voidReason: string | null;
+  /**
+   * KASA-236-A — client-supplied UUIDv7 idempotency key for the void event.
+   * Non-null on a voided sale; null on a live sale. Stored so a retried
+   * void push from the offline outbox collapses onto the same row.
+   */
+  localVoidId: string | null;
+  /** Staff (owner/manager) whose PIN authorised the void; null on a live sale. */
+  voidedByStaffId: string | null;
   /** Booked refunds, ordered by `refundedAt` ascending. */
   refunds: readonly SaleRefund[];
   /**
@@ -202,6 +210,12 @@ export interface SubmitSaleResult {
 export interface VoidSaleInput {
   merchantId: string;
   saleId: string;
+  /** KASA-236-A — void-event idempotency key (UUIDv7). */
+  localVoidId: string;
+  /** Manager (owner/manager role) authorising the void. */
+  managerStaffId: string;
+  /** Manager's lock-screen PIN (4–8 digits). Hashed verified server-side. */
+  managerPin: string;
   voidedAt: string;
   voidBusinessDate: string;
   reason: string | null;

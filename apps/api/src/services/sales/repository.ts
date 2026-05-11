@@ -1,4 +1,34 @@
+import type { StaffRole } from "../../db/schema/staff.js";
 import type { Bom, Item, Merchant, Outlet, Sale, SaleRefund, StockLedgerEntry } from "./types.js";
+
+/**
+ * KASA-236-A — narrow read port the sales service consults to enforce the
+ * "voids are only allowed against the currently-open shift on the sale's
+ * outlet, on the same business date" rule. The full `ShiftsRepository`
+ * implements this; tests can substitute a tiny stub.
+ */
+export interface OpenShiftReader {
+  findOpenShiftForOutlet(input: {
+    merchantId: string;
+    outletId: string;
+  }): Promise<{ outletId: string; businessDate: string } | null>;
+}
+
+/**
+ * KASA-236-A — narrow read port the sales service uses to verify the
+ * manager's PIN at void time. Returns the manager's role + argon2id
+ * `pinHash`; the actual `argon2.verify` runs inside the service so the
+ * security boundary is one file. Returns null when the staff id is
+ * unknown OR belongs to a different merchant — the service still calls
+ * argon2.verify against a timing-decoy hash so the response time is
+ * indistinguishable from a wrong-PIN case.
+ */
+export interface ManagerPinReader {
+  findStaffById(input: {
+    merchantId: string;
+    staffId: string;
+  }): Promise<{ id: string; merchantId: string; role: StaffRole; pinHash: string | null } | null>;
+}
 
 /*
  * Storage contract. Every method is async so a Postgres implementation (KASA-21)
@@ -90,14 +120,25 @@ export interface SalesRepository {
    */
   listLedger(input: ListLedgerInput): Promise<ListLedgerResult>;
   /**
+   * KASA-236-A — resolve a sale by (merchantId, localVoidId). The service
+   * uses this to enforce void-event idempotency: a `localVoidId` already
+   * bound to a different `saleId` is a 409 `void_idempotency_conflict`
+   * rather than a silent overwrite. Returns null when the localVoidId is
+   * unknown or belongs to another merchant.
+   */
+  findSaleByLocalVoidId(input: { merchantId: string; localVoidId: string }): Promise<Sale | null>;
+  /**
    * Atomically stamp the void on the sale row and append the balancing
    * ledger entries. If the sale is already voided the implementation must
    * return `{ kind: "already_voided", sale }` so the route can answer 200
-   * idempotently — never re-write the ledger.
+   * idempotently — never re-write the ledger. `localVoidId` /
+   * `voidedByStaffId` are persisted on the sale row at first-void time.
    */
   voidSale(input: {
     merchantId: string;
     saleId: string;
+    localVoidId: string;
+    voidedByStaffId: string;
     voidedAt: string;
     voidBusinessDate: string;
     reason: string | null;
