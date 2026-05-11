@@ -128,6 +128,11 @@ export async function seedEnrolledDevice(page: Page, item: SeedItem): Promise<vo
           uomId,
           bomId: null,
           isStockTracked: true,
+          // KASA-218 made `Item.taxRate` required; the finalize path passes it
+          // to `computeSaleTaxIdr`, which crashes on undefined rates because
+          // `toRupiah(NaN)` throws. Mirror the production sync default so the
+          // seeded item matches a real catalog row.
+          taxRate: 11,
           isActive: true,
           updatedAt: "2026-04-23T00:00:00.000Z",
         });
@@ -137,6 +142,22 @@ export async function seedEnrolledDevice(page: Page, item: SeedItem): Promise<vo
           itemId,
           onHand,
           updatedAt: "2026-04-23T00:00:00.000Z",
+        });
+        // KASA-235 added a boot guard on /catalog, /cart, /tender/* that
+        // redirects to /shift/open until `shift_state` has an unclosed row.
+        // Seed the singleton so the tender specs can land directly on the
+        // sale flow the same way they did before the guard existed.
+        await put(db, "shift_state", {
+          id: "singleton",
+          localShiftId: "66666666-6666-7666-8666-666666666666",
+          outletId,
+          cashierStaffId: "77777777-7777-7777-8777-777777777777",
+          businessDate: "2026-04-23",
+          openShiftId: "66666666-6666-7666-8666-666666666666",
+          openedAt: "2026-04-23T00:00:00.000Z",
+          openingFloatIdr: 0,
+          serverShiftId: null,
+          closedAt: null,
         });
       } finally {
         db.close();
