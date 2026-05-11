@@ -4,6 +4,7 @@ import { ReceiptPreview } from "./ReceiptPreview.tsx";
 import { usePaperWidthStore, type PaperWidth } from "./paperWidth.ts";
 import { usePendingSale } from "./usePendingSale.ts";
 import { usePrintReceipt } from "./printing.ts";
+import { ShareWhatsAppButton } from "./ShareWhatsAppButton.tsx";
 
 export function ReceiptScreen() {
   const intl = useIntl();
@@ -85,6 +86,7 @@ export function ReceiptScreen() {
             {print.message}
           </p>
         ) : null}
+        <ShareWhatsAppButton sale={sale} outlet={outlet} />
       </div>
     </section>
   );

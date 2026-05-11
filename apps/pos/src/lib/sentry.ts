@@ -129,4 +129,13 @@ export function reportException(
   Sentry.captureException(err, ctx);
 }
 
+export function addBreadcrumb(breadcrumb: {
+  category: string;
+  message?: string;
+  level?: "info" | "warning" | "error" | "debug";
+  data?: Record<string, unknown>;
+}): void {
+  Sentry.addBreadcrumb(breadcrumb);
+}
+
 export const _scrubStringForTest = scrubString;
