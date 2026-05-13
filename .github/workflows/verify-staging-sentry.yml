@@ -1,0 +1,110 @@
+name: Verify staging Sentry config
+
+# Read-only verification that the Sentry env vars (`SENTRY_DSN`,
+# `SENTRY_TRACES_SAMPLE_RATE`, `SENTRY_ENVIRONMENT`) reach the running
+# `kassa-api-staging` Fly app. Step 1 of the KASA-196 DoD checklist
+# (apps/api Sentry wiring per ADR-010); the remaining steps (synthetic
+# 500 + Sentry dashboard event inspection) live in the issue thread
+# because they require Sentry dashboard access, which CI does not have.
+#
+# Why a workflow and not a manual `fly secrets list`:
+#   - The Fly token lives in the GitHub `production` environment. Driving
+#     the check through GH gives an audit trail (who triggered, when, what
+#     the env looked like) without a human having to hold the token locally.
+#   - The job prints env-var **names only** — `flyctl secrets list` never
+#     emits values, and `flyctl config show` only exposes the non-secret
+#     `[env]` block authored in `apps/api/fly.toml`.
+#
+# Triggers:
+#   - `workflow_dispatch`: manual UI dispatch (operator with `actions:write`).
+#   - `push` of an `ops/verify-staging-sentry/<suffix>` tag: fallback for
+#     credentialed agents whose PAT carries `contents:write` but not
+#     `actions:write`. Pattern mirrors `rotate-staging-secret.yml`.
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "ops/verify-staging-sentry/**"
+
+concurrency:
+  group: verify-staging-sentry
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Assert SENTRY_* env on kassa-api-staging
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment:
+      name: production
+      url: https://kassa-api-staging.fly.dev
+    env:
+      FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+    steps:
+      - name: Install flyctl
+        uses: superfly/flyctl-actions/setup-flyctl@fc53c09e1bc3be6f54706524e3b82c4f462f77be # 1.5
+        with:
+          version: 0.4.39
+
+      - name: List Fly app secrets (names + digest only)
+        id: secrets
+        run: |
+          set -euo pipefail
+          SECRETS_JSON="$(flyctl secrets list --app kassa-api-staging --json)"
+          echo "## Fly app secrets — kassa-api-staging" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "$SECRETS_JSON" \
+            | jq -r '.[] | "- `\(.Name)` (digest `\(.Digest)`, created \(.CreatedAt))"' \
+            >> "$GITHUB_STEP_SUMMARY"
+          echo "$SECRETS_JSON" | jq -r '.[] | .Name' | sort -u > /tmp/secret-names.txt
+
+      - name: Show fly config env (non-secret env block)
+        run: |
+          set -euo pipefail
+          flyctl config show --app kassa-api-staging > /tmp/fly-config.json
+          echo "## Fly config \\[env] — kassa-api-staging" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo '```json' >> "$GITHUB_STEP_SUMMARY"
+          jq '.env // {}' /tmp/fly-config.json >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          jq -r '(.env // {}) | keys[]' /tmp/fly-config.json | sort -u > /tmp/env-names.txt
+
+      - name: Assert required Sentry env vars are present
+        run: |
+          set -euo pipefail
+          # Union of secrets + [env] names is the runtime env surface for
+          # the deployed app.
+          sort -u /tmp/secret-names.txt /tmp/env-names.txt > /tmp/runtime-env.txt
+          MISSING=()
+          for var in SENTRY_DSN SENTRY_TRACES_SAMPLE_RATE SENTRY_ENVIRONMENT; do
+            if ! grep -qxF "$var" /tmp/runtime-env.txt; then
+              MISSING+=("$var")
+            fi
+          done
+          echo "## Assertion" >> "$GITHUB_STEP_SUMMARY"
+          if [ ${#MISSING[@]} -eq 0 ]; then
+            {
+              echo ""
+              echo "All three Sentry env vars are present on kassa-api-staging:"
+              echo ""
+              echo "- \`SENTRY_DSN\` (Fly secret — values never logged)"
+              echo "- \`SENTRY_TRACES_SAMPLE_RATE\`"
+              echo "- \`SENTRY_ENVIRONMENT\`"
+            } >> "$GITHUB_STEP_SUMMARY"
+            echo "::notice::All three Sentry env vars are present on kassa-api-staging."
+          else
+            {
+              echo ""
+              echo "**FAIL** — the following env vars are not set on kassa-api-staging:"
+              echo ""
+              for v in "${MISSING[@]}"; do echo "- \`$v\`"; done
+              echo ""
+              echo "Set the missing names via \`flyctl secrets set --app kassa-api-staging <NAME>=<VALUE>\` (for \`SENTRY_DSN\`) or add to \`apps/api/fly.toml\` \`[env]\` (for the non-secret pair). Re-run this workflow to confirm."
+            } >> "$GITHUB_STEP_SUMMARY"
+            echo "::error::Missing Sentry env vars on kassa-api-staging: ${MISSING[*]}"
+            exit 1
+          fi
