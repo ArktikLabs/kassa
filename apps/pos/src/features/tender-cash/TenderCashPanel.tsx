@@ -27,7 +27,6 @@ export function TenderCashPanel() {
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: lines.length is an intentional re-run trigger — reset stale error when cart contents change, not a captured value.
   useEffect(() => {
     setError(null);
   }, []);

@@ -43,13 +43,12 @@ export async function runMigrationsFromUrl(url: string, ssl: boolean): Promise<v
 async function main(): Promise<void> {
   const url = process.env.DATABASE_URL;
   if (!url) {
-    // eslint-disable-next-line no-console
     console.error("DATABASE_URL is not set; aborting migrate.");
     process.exit(1);
   }
   const ssl = process.env.DATABASE_SSL !== "false";
   await runMigrationsFromUrl(url, ssl);
-  // eslint-disable-next-line no-console
+  // biome-ignore lint/suspicious/noConsole: release_command runs this script without a logger; the Fly job log is the operator's only signal that migrations completed.
   console.log("migrations applied");
 }
 
