@@ -66,6 +66,7 @@ function seed(): State {
         uom: "porsi",
         imageUrl: null,
         isStockTracked: false,
+        availability: "available",
         isActive: true,
       },
       {
@@ -76,6 +77,7 @@ function seed(): State {
         uom: "porsi",
         imageUrl: null,
         isStockTracked: true,
+        availability: "available",
         isActive: true,
       },
       {
@@ -86,6 +88,7 @@ function seed(): State {
         uom: "g",
         imageUrl: null,
         isStockTracked: true,
+        availability: "available",
         isActive: true,
       },
       {
@@ -96,6 +99,7 @@ function seed(): State {
         uom: "g",
         imageUrl: null,
         isStockTracked: true,
+        availability: "available",
         isActive: true,
       },
     ],

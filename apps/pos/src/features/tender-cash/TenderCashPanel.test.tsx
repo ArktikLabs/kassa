@@ -62,6 +62,7 @@ async function seedDb() {
       bomId: null,
       isStockTracked: true,
       taxRate: 11,
+      availability: "available",
       isActive: true,
       updatedAt: "2026-04-23T00:00:00.000Z",
     },

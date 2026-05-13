@@ -1,7 +1,7 @@
 import { and, asc, eq, getTableColumns, gt, sql } from "drizzle-orm";
 import type { Database } from "../../db/client.js";
 import { boms } from "../../db/schema/boms.js";
-import type { Item } from "../../db/schema/items.js";
+import type { Item, ItemAvailability } from "../../db/schema/items.js";
 import { items } from "../../db/schema/items.js";
 import { uoms } from "../../db/schema/uoms.js";
 import {
@@ -163,6 +163,7 @@ export class PgItemsRepository implements ItemsRepository {
           bomId: input.bomId ?? null,
           ...(input.isStockTracked !== undefined ? { isStockTracked: input.isStockTracked } : {}),
           ...(input.taxRate !== undefined ? { taxRate: input.taxRate } : {}),
+          ...(input.availability !== undefined ? { availability: input.availability } : {}),
           ...(input.isActive !== undefined ? { isActive: input.isActive } : {}),
           createdAt: input.now,
           updatedAt: input.now,
@@ -193,6 +194,7 @@ export class PgItemsRepository implements ItemsRepository {
       bomId: string | null;
       isStockTracked: boolean;
       taxRate: number;
+      availability: ItemAvailability;
       isActive: boolean;
       updatedAt: Date;
     }> = { updatedAt: input.now };
@@ -203,6 +205,7 @@ export class PgItemsRepository implements ItemsRepository {
     if (input.patch.bomId !== undefined) patch.bomId = input.patch.bomId;
     if (input.patch.isStockTracked !== undefined) patch.isStockTracked = input.patch.isStockTracked;
     if (input.patch.taxRate !== undefined) patch.taxRate = input.patch.taxRate;
+    if (input.patch.availability !== undefined) patch.availability = input.patch.availability;
     if (input.patch.isActive !== undefined) patch.isActive = input.patch.isActive;
 
     try {

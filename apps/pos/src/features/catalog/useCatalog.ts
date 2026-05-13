@@ -6,7 +6,18 @@ import { getDatabase } from "../../data/db/index.ts";
 
 export interface CatalogTileData {
   item: Item;
+  /**
+   * Either the inventory derivation in `tileOutOfStock` flagged the row as
+   * out of stock, or the manual `item.availability === 'sold_out'` flag is
+   * set. Tile uses this for greying + cart-add rejection; for distinguishing
+   * the two reasons in the long-press flow, read `markedSoldOut`.
+   */
   outOfStock: boolean;
+  /**
+   * KASA-248 — set when the inventory was fine but the cashier manually
+   * marked the item sold-out via the catalog tile's long-press toggle.
+   */
+  markedSoldOut: boolean;
 }
 
 interface CatalogQueryResult {
@@ -82,10 +93,15 @@ export function useCatalog(): {
     const bomIds = items.map((item) => item.bomId).filter((id): id is string => id !== null);
     const boms = await db.repos.boms.listByIds(bomIds);
     const bomById = new Map(boms.map((bom) => [bom.id, bom]));
-    const tiles: CatalogTileData[] = items.map((item) => ({
-      item,
-      outOfStock: tileOutOfStock(item, stockByItem, bomById),
-    }));
+    const tiles: CatalogTileData[] = items.map((item) => {
+      const inventoryOut = tileOutOfStock(item, stockByItem, bomById);
+      const markedSoldOut = item.availability === "sold_out";
+      return {
+        item,
+        outOfStock: inventoryOut || markedSoldOut,
+        markedSoldOut,
+      };
+    });
     return { tiles, items, stockByItem };
   }, [db]);
 

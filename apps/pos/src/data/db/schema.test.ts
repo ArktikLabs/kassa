@@ -39,6 +39,7 @@ function makeItem(overrides: Partial<Item> = {}): Item {
     bomId: overrides.bomId ?? null,
     isStockTracked: overrides.isStockTracked ?? true,
     taxRate: overrides.taxRate ?? 11,
+    availability: overrides.availability ?? "available",
     isActive: overrides.isActive ?? true,
     updatedAt: overrides.updatedAt ?? "2026-04-23T00:00:00.000Z",
   };
@@ -56,7 +57,7 @@ describe("KassaDexie schema", () => {
   });
 
   it("migrates from an empty database to the current schema version", async () => {
-    expect(fixture.db.verno).toBe(5);
+    expect(fixture.db.verno).toBe(6);
     const tableNames = fixture.db.tables.map((t) => t.name).sort();
     expect(tableNames).toEqual(
       [
@@ -66,6 +67,7 @@ describe("KassaDexie schema", () => {
         "eod_closures",
         "items",
         "outlets",
+        "pending_catalog_mutations",
         "pending_sales",
         "pending_shift_events",
         "printed_qris",
@@ -124,7 +126,7 @@ describe("KassaDexie schema", () => {
     });
 
     expect(attempts).toBe(2);
-    expect(recovered.verno).toBe(5);
+    expect(recovered.verno).toBe(6);
     await expect(recovered.items.count()).resolves.toBe(0);
     recovered.close();
     await Dexie.delete(name);

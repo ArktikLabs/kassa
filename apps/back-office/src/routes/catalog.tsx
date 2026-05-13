@@ -18,6 +18,12 @@ const EMPTY_DRAFT: Draft = {
   uom: "pcs",
   imageUrl: null,
   isStockTracked: false,
+  /**
+   * KASA-248 — new items start `available`; the mid-shift sold-out flag
+   * is owned by the POS tile's long-press toggle, so this form keeps it
+   * read-only.
+   */
+  availability: "available",
   isActive: true,
 };
 
@@ -43,6 +49,9 @@ export function CatalogScreen() {
       uom: row.uom,
       imageUrl: row.imageUrl,
       isStockTracked: row.isStockTracked,
+      // KASA-248 — mid-shift availability rides through the form unchanged;
+      // it is read-only on this screen.
+      availability: row.availability,
       isActive: row.isActive,
     });
     setOpen(true);
@@ -95,6 +104,22 @@ export function CatalogScreen() {
           <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-xs font-semibold text-neutral-600">
             —
           </span>
+        ),
+    },
+    {
+      key: "availability",
+      header: <FormattedMessage id="catalog.col.availability" />,
+      align: "center",
+      render: (r) =>
+        r.availability === "sold_out" ? (
+          <span
+            data-testid={`catalog-availability-${r.id}`}
+            className="rounded-full border border-danger-border bg-danger-surface px-2 py-0.5 text-xs font-semibold text-danger-fg"
+          >
+            <FormattedMessage id="catalog.badge.soldOut" />
+          </span>
+        ) : (
+          <span className="text-xs text-neutral-400">—</span>
         ),
     },
     {

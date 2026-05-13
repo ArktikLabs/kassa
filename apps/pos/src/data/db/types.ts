@@ -3,6 +3,13 @@ import type { Rupiah } from "../../shared/money/index.ts";
 export type ReferenceTable = "items" | "boms" | "uoms" | "outlets" | "stock_snapshot";
 export type SyncTable = ReferenceTable | "pending_sales";
 
+/**
+ * KASA-248 — mid-shift availability flag. `sold_out` greys the tile and blocks
+ * cart-add; `available` is the normal state. Server-canonical and round-tripped
+ * via the items delta pull.
+ */
+export type ItemAvailability = "available" | "sold_out";
+
 export interface Uom {
   id: string;
   code: string;
@@ -25,6 +32,15 @@ export interface Item {
    * to break out the PPN line locally before the server confirms.
    */
   taxRate: number;
+  /**
+   * KASA-248 — mid-shift availability. The catalog tile's long-press
+   * "Tandai sebagai habis" sheet flips this between `available` and
+   * `sold_out`. Sync-pull overwrites the local value with the server's
+   * canonical state once the queued PATCH lands; until then the local
+   * row is the source of truth so the tile greys before the network
+   * round-trip.
+   */
+  availability: ItemAvailability;
   isActive: boolean;
   updatedAt: string;
 }
@@ -266,6 +282,40 @@ export interface PendingShiftEvent {
   attempts: number;
   lastError: string | null;
   lastAttemptAt: string | null;
+}
+
+/**
+ * Outbox row for a queued `PATCH /v1/catalog/items/:itemId` (KASA-248).
+ *
+ * The catalog tile's long-press toggle writes the new `availability` to
+ * the local `items` row immediately (so the tile greys before the
+ * network round-trip) and enqueues this row to drain later. The drain
+ * loop replays each row through the existing offline-buffered HTTP
+ * client; 2xx and 4xx-terminal both clear the row, retriable failures
+ * keep it queued for the next cycle.
+ *
+ * Idempotency: a duplicate replay against the same `(itemId, availability)`
+ * is a no-op on the server because PATCH is naturally idempotent on this
+ * field. We dedupe locally too — `enqueue` collapses any queued/error
+ * row for the same `itemId` into the latest desired state so a flip-flop
+ * (sold-out → available → sold-out) does not blow up the queue.
+ */
+export type PendingCatalogMutationStatus =
+  | "queued"
+  | "sending"
+  | "error"
+  | "needs_attention"
+  | "synced";
+
+export interface PendingCatalogMutation {
+  itemId: string;
+  /** Desired availability state to PATCH to the server. */
+  availability: ItemAvailability;
+  status: PendingCatalogMutationStatus;
+  attempts: number;
+  lastError: string | null;
+  lastAttemptAt: string | null;
+  createdAt: string;
 }
 
 /**

@@ -67,6 +67,15 @@ export const uomRecord = z
   .strict();
 export type UomRecord = z.infer<typeof uomRecord>;
 
+/**
+ * KASA-248 — mid-shift availability flag. `sold_out` greys the tile in the POS
+ * and blocks cart-add; `available` is the default. Distinct from `isActive`
+ * (which removes the item from the catalog entirely) and from BOM/stock-derived
+ * `outOfStock` (which the POS computes locally from `stock_snapshot`).
+ */
+export const itemAvailability = z.enum(["available", "sold_out"]);
+export type ItemAvailability = z.infer<typeof itemAvailability>;
+
 export const itemRecord = z
   .object({
     id: uuidV7,
@@ -86,6 +95,12 @@ export const itemRecord = z
      * rate; new server responses always emit it explicitly.
      */
     taxRate: z.number().int().min(0).max(100).default(11),
+    /**
+     * KASA-248 — mid-shift availability toggle. Defaulted so pre-KASA-248
+     * server payloads still parse as `available`; new server responses
+     * always emit it explicitly.
+     */
+    availability: itemAvailability.default("available"),
     isActive: z.boolean(),
     updatedAt: isoTimestamp,
   })

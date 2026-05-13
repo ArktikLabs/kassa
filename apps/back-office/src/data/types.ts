@@ -23,6 +23,15 @@ export const UNIT_OF_MEASURE_OPTIONS: readonly UnitOfMeasure[] = [
   "porsi",
 ];
 
+/**
+ * KASA-248 — mid-shift availability flag. Mirrors the POS Dexie type
+ * (`apps/pos/src/data/db/types.ts`) so the back-office can display the
+ * same state the cashier sees once the catalog tile's long-press
+ * toggle has synced. v0 back-office surfaces this as a read-only badge
+ * only — single-tile flips happen on the POS.
+ */
+export type ItemAvailability = "available" | "sold_out";
+
 export type CatalogItem = {
   id: string;
   sku: string;
@@ -31,6 +40,7 @@ export type CatalogItem = {
   uom: UnitOfMeasure;
   imageUrl: string | null;
   isStockTracked: boolean;
+  availability: ItemAvailability;
   isActive: boolean;
 };
 
