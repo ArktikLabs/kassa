@@ -1,10 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import {
-  AdminSalesScreen,
-  applyClientFilters,
-} from "../src/routes/admin.sales";
+import { AdminSalesScreen, applyClientFilters } from "../src/routes/admin.sales";
 import { enumerateBusinessDays } from "../src/data/api/sales";
 import { renderAt } from "./harness";
 import { getSnapshot, resetStore } from "../src/data/store";
@@ -399,9 +396,7 @@ describe("AdminSalesScreen", () => {
         component: () => (roleCanManage(session.role) ? <AdminSalesScreen /> : <Forbidden />),
       },
     ]);
-    expect(
-      await screen.findByRole("heading", { name: "Akses dibatasi" }),
-    ).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Akses dibatasi" })).toBeInTheDocument();
     expect(fetchMock).not.toHaveBeenCalled();
   });
 

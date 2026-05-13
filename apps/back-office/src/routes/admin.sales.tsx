@@ -38,11 +38,7 @@ import { formatRupiah, shortId } from "../lib/format";
 const JAKARTA_TZ = "Asia/Jakarta";
 
 type TenderFilterKey = "cash" | "qris_dynamic" | "qris_static";
-const TENDER_FILTERS: readonly TenderFilterKey[] = [
-  "cash",
-  "qris_dynamic",
-  "qris_static",
-];
+const TENDER_FILTERS: readonly TenderFilterKey[] = ["cash", "qris_dynamic", "qris_static"];
 
 /**
  * Map UI tender keys to the wire `method` values used by
@@ -55,7 +51,7 @@ function tenderMatches(saleTender: SaleSubmitTender["method"], key: TenderFilter
   return saleTender === "qris_static";
 }
 
-function jakartaToday(now: Date = new Date()): string {
+function jakartaToday(now: Date = new Date(Date.now())): string {
   const parts = new Intl.DateTimeFormat("en-CA", {
     timeZone: JAKARTA_TZ,
     year: "numeric",
@@ -100,13 +96,35 @@ export function applyClientFilters(
       return false;
     }
     if (filters.tenders.length > 0) {
-      const has = sale.tenders.some((t) =>
-        filters.tenders.some((k) => tenderMatches(t.method, k)),
-      );
+      const has = sale.tenders.some((t) => filters.tenders.some((k) => tenderMatches(t.method, k)));
       if (!has) return false;
     }
     return true;
   });
+}
+
+/* React-key helpers — derive a stable composite from each row's
+ * content so the list keys survive sale re-fetches and don't lean on
+ * array index (Biome `noArrayIndexKey`). Same sale-row may carry
+ * several lines of the same item at different prices, so price and
+ * quantity participate in the key too. */
+function lineItemKey(line: SaleResponse["items"][number]): string {
+  return [
+    line.itemId,
+    line.bomId ?? "no-bom",
+    line.unitPriceIdr,
+    line.quantity,
+    line.lineTotalIdr,
+  ].join("|");
+}
+
+function tenderKey(tender: SaleSubmitTender): string {
+  return [
+    tender.method,
+    tender.amountIdr,
+    tender.reference ?? "no-ref",
+    tender.buyerRefLast4 ?? "no-tail",
+  ].join("|");
 }
 
 function errorMessageId(code: SalesFetchErrorCode): string {
@@ -179,15 +197,9 @@ export function AdminSalesScreen() {
     return () => controller.abort();
   }, [filters.from, filters.to, targetOutletIds]);
 
-  const filtered = useMemo(
-    () => applyClientFilters(records, filters),
-    [records, filters],
-  );
+  const filtered = useMemo(() => applyClientFilters(records, filters), [records, filters]);
 
-  const outletById = useMemo(
-    () => new Map(outlets.map((o) => [o.id, o])),
-    [outlets],
-  );
+  const outletById = useMemo(() => new Map(outlets.map((o) => [o.id, o])), [outlets]);
   const staffById = useMemo(() => new Map(staff.map((s) => [s.id, s])), [staff]);
 
   const selectedSale = useMemo(
@@ -222,10 +234,7 @@ export function AdminSalesScreen() {
       key: "createdAt",
       header: <FormattedMessage id="sales.col.time" />,
       render: (r) => (
-        <time
-          dateTime={r.createdAt}
-          className={r.voidedAt ? "text-neutral-400 line-through" : ""}
-        >
+        <time dateTime={r.createdAt} className={r.voidedAt ? "text-neutral-400 line-through" : ""}>
           {new Date(r.createdAt).toLocaleString(intl.locale, {
             dateStyle: "short",
             timeStyle: "short",
@@ -237,9 +246,7 @@ export function AdminSalesScreen() {
       key: "localSaleId",
       header: <FormattedMessage id="sales.col.local_id" />,
       render: (r) => (
-        <span className="font-mono text-xs text-neutral-600">
-          {shortId(r.localSaleId, 10)}
-        </span>
+        <span className="font-mono text-xs text-neutral-600">{shortId(r.localSaleId, 10)}</span>
       ),
     },
     {
@@ -250,8 +257,7 @@ export function AdminSalesScreen() {
     {
       key: "cashier",
       header: <FormattedMessage id="sales.col.cashier" />,
-      render: (r) =>
-        staffById.get(r.clerkId)?.displayName ?? shortId(r.clerkId),
+      render: (r) => staffById.get(r.clerkId)?.displayName ?? shortId(r.clerkId),
     },
     {
       key: "items",
@@ -304,11 +310,7 @@ export function AdminSalesScreen() {
         <h1 className="text-2xl font-bold text-neutral-900">
           <FormattedMessage id="sales.heading" />
         </h1>
-        <Button
-          variant="ghost"
-          onClick={clearFilters}
-          disabled={!hasNonDefaultFilters}
-        >
+        <Button variant="ghost" onClick={clearFilters} disabled={!hasNonDefaultFilters}>
           <FormattedMessage id="sales.filters.clear" />
         </Button>
       </header>
@@ -317,10 +319,7 @@ export function AdminSalesScreen() {
         data-testid="sales-filter-bar"
         className="grid gap-4 rounded-lg border border-neutral-200 bg-white p-4 shadow-sm laptop:grid-cols-4"
       >
-        <Field
-          label={<FormattedMessage id="sales.filters.from" />}
-          htmlFor="sales-filter-from"
-        >
+        <Field label={<FormattedMessage id="sales.filters.from" />} htmlFor="sales-filter-from">
           <TextInput
             id="sales-filter-from"
             type="date"
@@ -331,10 +330,7 @@ export function AdminSalesScreen() {
             }}
           />
         </Field>
-        <Field
-          label={<FormattedMessage id="sales.filters.to" />}
-          htmlFor="sales-filter-to"
-        >
+        <Field label={<FormattedMessage id="sales.filters.to" />} htmlFor="sales-filter-to">
           <TextInput
             id="sales-filter-to"
             type="date"
@@ -345,10 +341,7 @@ export function AdminSalesScreen() {
             }}
           />
         </Field>
-        <Field
-          label={<FormattedMessage id="sales.filters.outlet" />}
-          htmlFor="sales-filter-outlet"
-        >
+        <Field label={<FormattedMessage id="sales.filters.outlet" />} htmlFor="sales-filter-outlet">
           <SelectInput
             id="sales-filter-outlet"
             multiple
@@ -446,9 +439,7 @@ export function AdminSalesScreen() {
         getRowId={(r) => r.saleId}
         selectedId={selectedSaleId}
         onSelect={(row) =>
-          setSelectedSaleId((current) =>
-            current === row.saleId ? null : row.saleId,
-          )
+          setSelectedSaleId((current) => (current === row.saleId ? null : row.saleId))
         }
         emptyState={<FormattedMessage id="sales.empty" />}
         caption={intl.formatMessage({ id: "sales.heading" })}
@@ -458,9 +449,7 @@ export function AdminSalesScreen() {
         <SaleDetailPanel
           sale={selectedSale}
           outletName={outletById.get(selectedSale.outletId)?.name ?? ""}
-          cashierName={
-            staffById.get(selectedSale.clerkId)?.displayName ?? selectedSale.clerkId
-          }
+          cashierName={staffById.get(selectedSale.clerkId)?.displayName ?? selectedSale.clerkId}
         />
       ) : null}
     </section>
@@ -533,14 +522,10 @@ function SaleDetailPanel({
               </tr>
             </thead>
             <tbody>
-              {sale.items.map((line, idx) => (
-                <tr key={`${line.itemId}-${idx}`} className="text-neutral-800">
-                  <td className="py-1 font-mono text-xs">
-                    {shortId(line.itemId, 10)}
-                  </td>
-                  <td className="py-1 text-right tabular-nums">
-                    {line.quantity}
-                  </td>
+              {sale.items.map((line) => (
+                <tr key={lineItemKey(line)} className="text-neutral-800">
+                  <td className="py-1 font-mono text-xs">{shortId(line.itemId, 10)}</td>
+                  <td className="py-1 text-right tabular-nums">{line.quantity}</td>
                   <td className="py-1 text-right tabular-nums">
                     {formatRupiah(line.lineTotalIdr)}
                   </td>
@@ -593,8 +578,8 @@ function SaleDetailPanel({
           </div>
           <hr className="my-2 border-dashed border-neutral-300" />
           <ul className="space-y-1">
-            {sale.tenders.map((t, idx) => (
-              <li key={idx} className="flex justify-between">
+            {sale.tenders.map((t) => (
+              <li key={tenderKey(t)} className="flex justify-between">
                 <span>
                   <FormattedMessage id={`sales.tender.${methodToFilterKey(t.method)}`} />
                 </span>
@@ -631,12 +616,7 @@ function Row({
   emphasised?: boolean;
 }) {
   return (
-    <div
-      className={[
-        "flex justify-between",
-        emphasised ? "font-semibold" : "",
-      ].join(" ")}
-    >
+    <div className={["flex justify-between", emphasised ? "font-semibold" : ""].join(" ")}>
       <span>{label}</span>
       <span className="tabular-nums">{value}</span>
     </div>

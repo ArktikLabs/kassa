@@ -153,9 +153,7 @@ export async function fetchSalesHistory(
       buckets.push({ outletId, businessDate });
     }
   }
-  const pages = await Promise.all(
-    buckets.map((b) => fetchSalesBucket(b, options)),
-  );
+  const pages = await Promise.all(buckets.map((b) => fetchSalesBucket(b, options)));
   const records = pages.flatMap((p) => p.records);
   records.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
   return { records };
