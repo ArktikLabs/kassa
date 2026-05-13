@@ -83,17 +83,25 @@ test.describe("KASA-61 cash tender flow", () => {
       }
     });
 
-    // The live query re-renders the screen; the same testid now resolves
-    // to an <a target="_blank" href="https://wa.me/?text=…">. Assert the
-    // outlet name and rupiah total round-trip through decodeURIComponent.
-    await expect
-      .poll(
-        async () => share.evaluate((el) => (el.tagName === "A" ? el.getAttribute("href") : null)),
-        { timeout: 5_000 },
-      )
-      .toMatch(/^https:\/\/wa\.me\/\?text=/);
-    await expect(share).toHaveAttribute("target", "_blank");
-    const href = await share.getAttribute("href");
+    // Reload so the receipt screen re-mounts and reads the just-patched
+    // row on a cold live query. The raw IDB write above bypasses Dexie
+    // entirely — `useLiveQuery` only observes mutations routed through
+    // its own connection (or via Dexie's own `storagemutated` broadcast),
+    // so without a reload the in-tab subscription never re-fires and the
+    // share CTA stays pinned on the <button> branch.
+    await page.reload();
+
+    const shareConfirmed = page.getByTestId("receipt-share-whatsapp");
+    // 10 s headroom: post-reload the route chunk has to come back from
+    // the SW precache, Dexie has to reopen, and the live query has to
+    // hand back the patched row before the <a> renders. The default 5 s
+    // expect timeout was the budget that flaked the original poll on
+    // push-to-main (KASA-264).
+    await expect(shareConfirmed).toHaveAttribute("href", /^https:\/\/wa\.me\/\?text=/, {
+      timeout: 10_000,
+    });
+    await expect(shareConfirmed).toHaveAttribute("target", "_blank");
+    const href = await shareConfirmed.getAttribute("href");
     if (!href) throw new Error("share button missing href once confirmed");
     const body = decodeURIComponent(href.replace("https://wa.me/?text=", ""));
     expect(body).toContain("Warung Maju");
@@ -110,7 +118,13 @@ test.describe("KASA-61 cash tender flow", () => {
     await page.getByTestId("chip-tender.cash.chip.100k").click();
     await expect(page.getByTestId("tender-change")).toHaveText(/75\.000/);
     await page.getByTestId("tender-submit").click();
-    await expect(page.getByTestId("receipt-preview")).toBeVisible();
+    // CI under parallel test load can take >5 s from submit click to
+    // ReceiptScreen mount (Dexie commit → route chunk hand-off from SW
+    // precache → React mount → first live query tick). The default 5 s
+    // expect timeout flaked on push-to-main (KASA-264); 15 s preserves
+    // the assertion without hiding the regression behind a Playwright
+    // retry.
+    await expect(page.getByTestId("receipt-preview")).toBeVisible({ timeout: 15_000 });
     await expect(page.locator('[data-state="offline"]')).toBeVisible();
   });
 
