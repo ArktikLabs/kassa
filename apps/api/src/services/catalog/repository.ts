@@ -1,4 +1,4 @@
-import type { Item } from "../../db/schema/items.js";
+import type { Item, ItemAvailability } from "../../db/schema/items.js";
 
 export interface CreateItemInput {
   id: string;
@@ -11,6 +11,8 @@ export interface CreateItemInput {
   isStockTracked?: boolean;
   /** KASA-218 — integer percent (0..100); defaults to 11 (statutory PPN). */
   taxRate?: number;
+  /** KASA-248 — defaults to `available`. */
+  availability?: ItemAvailability;
   isActive?: boolean;
   now: Date;
 }
@@ -27,6 +29,8 @@ export interface UpdateItemInput {
     isStockTracked?: boolean;
     /** KASA-218 — integer percent (0..100). */
     taxRate?: number;
+    /** KASA-248 — mid-shift availability flag. */
+    availability?: ItemAvailability;
     isActive?: boolean;
   };
   now: Date;

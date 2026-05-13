@@ -89,6 +89,8 @@ interface ItemBody {
   uomId: string;
   bomId: string | null;
   isStockTracked: boolean;
+  /** KASA-248 — `available` (default) | `sold_out`. */
+  availability: "available" | "sold_out";
   isActive: boolean;
   updatedAt: string;
 }
@@ -460,6 +462,41 @@ describe("PATCH /v1/catalog/items/:itemId", () => {
     });
     expect(res.statusCode).toBe(200);
     expect((res.json() as ItemBody).bomId).toBeNull();
+  });
+
+  it("KASA-248: defaults availability to `available` on create and flips it via PATCH", async () => {
+    const created = await createItem("AVAIL-1");
+    expect(created.availability).toBe("available");
+
+    const soldOut = await h.app.inject({
+      method: "PATCH",
+      url: `/v1/catalog/items/${created.id}`,
+      headers: headers(),
+      payload: { availability: "sold_out" },
+    });
+    expect(soldOut.statusCode).toBe(200);
+    expect((soldOut.json() as ItemBody).availability).toBe("sold_out");
+
+    const reEnabled = await h.app.inject({
+      method: "PATCH",
+      url: `/v1/catalog/items/${created.id}`,
+      headers: headers(),
+      payload: { availability: "available" },
+    });
+    expect(reEnabled.statusCode).toBe(200);
+    expect((reEnabled.json() as ItemBody).availability).toBe("available");
+  });
+
+  it("KASA-248: rejects unknown availability values with 422", async () => {
+    const created = await createItem("AVAIL-2");
+    const res = await h.app.inject({
+      method: "PATCH",
+      url: `/v1/catalog/items/${created.id}`,
+      headers: headers(),
+      payload: { availability: "out_of_stock" },
+    });
+    expect(res.statusCode).toBe(422);
+    expect((res.json() as { error: { code: string } }).error.code).toBe("validation_error");
   });
 });
 

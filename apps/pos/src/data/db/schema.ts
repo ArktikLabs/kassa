@@ -6,6 +6,7 @@ import type {
   EodClosure,
   Item,
   Outlet,
+  PendingCatalogMutation,
   PendingSale,
   PendingShiftEvent,
   PrintedQris,
@@ -16,7 +17,7 @@ import type {
 } from "./types.ts";
 
 export const DB_NAME = "kassa-pos";
-export const DB_VERSION = 5;
+export const DB_VERSION = 6;
 
 export class KassaDexie extends Dexie {
   items!: Table<Item, string>;
@@ -32,6 +33,7 @@ export class KassaDexie extends Dexie {
   printed_qris!: Table<PrintedQris, string>;
   pending_shift_events!: Table<PendingShiftEvent, string>;
   shift_state!: Table<ShiftState, string>;
+  pending_catalog_mutations!: Table<PendingCatalogMutation, string>;
 
   constructor(name: string = DB_NAME) {
     super(name);
@@ -120,6 +122,37 @@ export class KassaDexie extends Dexie {
       pending_shift_events: "eventId, status, outletId, createdAt, kind",
       shift_state: "id",
     });
+    // v6 — KASA-248. `pending_catalog_mutations` is the outbox for the
+    // catalog tile's long-press availability toggle; rows are keyed by
+    // `itemId` so a flip-flop collapses to the latest desired state.
+    // Existing `items` rows are backfilled to `availability='available'`
+    // so the catalog screen renders identically until the next sync pull
+    // overwrites them with the server's canonical state.
+    this.version(6)
+      .stores({
+        items: "id, code, name, isActive, updatedAt",
+        boms: "id, itemId, updatedAt",
+        uoms: "id, code, updatedAt",
+        outlets: "id, code, updatedAt",
+        stock_snapshot: "key, outletId, itemId, updatedAt",
+        pending_sales: "localSaleId, status, outletId, createdAt",
+        sync_state: "table",
+        device_secret: "id",
+        device_meta: "id",
+        eod_closures: "key, outletId, businessDate, closedAt",
+        printed_qris: "outletId, fetchedAt",
+        pending_shift_events: "eventId, status, outletId, createdAt, kind",
+        shift_state: "id",
+        pending_catalog_mutations: "itemId, status, createdAt",
+      })
+      .upgrade(async (tx) => {
+        await tx
+          .table("items")
+          .toCollection()
+          .modify((row: { availability?: string }) => {
+            if (row.availability === undefined) row.availability = "available";
+          });
+      });
   }
 }
 

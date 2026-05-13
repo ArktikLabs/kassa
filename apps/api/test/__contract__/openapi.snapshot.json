@@ -984,6 +984,14 @@
                             "maximum": 100,
                             "default": 11
                           },
+                          "availability": {
+                            "type": "string",
+                            "enum": [
+                              "available",
+                              "sold_out"
+                            ],
+                            "default": "available"
+                          },
                           "isActive": {
                             "type": "boolean"
                           },
@@ -1231,6 +1239,14 @@
                       "minimum": 0,
                       "maximum": 100,
                       "default": 11
+                    },
+                    "availability": {
+                      "type": "string",
+                      "enum": [
+                        "available",
+                        "sold_out"
+                      ],
+                      "default": "available"
                     },
                     "isActive": {
                       "type": "boolean"
@@ -1548,6 +1564,14 @@
                       "maximum": 100,
                       "default": 11
                     },
+                    "availability": {
+                      "type": "string",
+                      "enum": [
+                        "available",
+                        "sold_out"
+                      ],
+                      "default": "available"
+                    },
                     "isActive": {
                       "type": "boolean"
                     },
@@ -1747,6 +1771,14 @@
                       "minimum": 0,
                       "maximum": 100,
                       "default": 11
+                    },
+                    "availability": {
+                      "type": "string",
+                      "enum": [
+                        "available",
+                        "sold_out"
+                      ],
+                      "default": "available"
                     },
                     "isActive": {
                       "type": "boolean"

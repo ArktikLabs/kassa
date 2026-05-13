@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { itemAvailability } from "./sync.js";
 
 const uuidV7 = z.string().uuid();
 const isoTimestamp = z.string().datetime({ offset: true });
@@ -28,6 +29,13 @@ export const itemCreateRequest = z
      * the same default with no behaviour change.
      */
     taxRate: z.number().int().min(0).max(100).optional(),
+    /**
+     * KASA-248 — mid-shift availability flag. Optional on create; omitting
+     * means `available`. Owner/manager-only writes via PATCH are the primary
+     * path; create-time is included so seed scripts can land items with a
+     * pre-set state.
+     */
+    availability: itemAvailability.optional(),
     isActive: z.boolean().optional(),
   })
   .strict();
@@ -47,6 +55,13 @@ export const itemUpdateRequest = z
     isStockTracked: z.boolean().optional(),
     /** KASA-218 — Indonesian PPN rate as integer percent (0..100). */
     taxRate: z.number().int().min(0).max(100).optional(),
+    /**
+     * KASA-248 — mid-shift availability flag. The POS catalog tile's long-press
+     * "Tandai sebagai habis" sheet PATCHes this field; the server stores it
+     * and echoes it back in the items sync stream so other devices grey out
+     * the same tile within one sync cycle.
+     */
+    availability: itemAvailability.optional(),
     isActive: z.boolean().optional(),
   })
   .strict()

@@ -2,6 +2,7 @@ import type { Database } from "../db/index.ts";
 import type { PendingShiftEvent } from "../db/types.ts";
 import { pullAll, type PullAllResult } from "./pull.ts";
 import { pushOutbox, type PushOptions, type PushResult } from "./push.ts";
+import { pushCatalogMutations, type PushCatalogOptions } from "./push-catalog.ts";
 import {
   pushShiftEvents,
   type PushShiftOptions,
@@ -54,6 +55,8 @@ export interface RunnerOptions {
   pushImpl?: (database: Database, opts: PushOptions) => Promise<PushResult>;
   /** Injected so tests can assert what the runner drives push-shifts.ts with. */
   pushShiftsImpl?: (database: Database, opts: PushShiftOptions) => Promise<PushShiftResult>;
+  /** Injected so tests can assert what the runner drives push-catalog.ts with. */
+  pushCatalogImpl?: (database: Database, opts: PushCatalogOptions) => Promise<PushResult>;
 }
 
 export interface SyncRunner {
@@ -70,6 +73,7 @@ export function createSyncRunner(opts: RunnerOptions): SyncRunner {
   const onlineSource = opts.onlineSource ?? browserOnlineSource();
   const pushImpl = opts.pushImpl ?? pushOutbox;
   const pushShiftsImpl = opts.pushShiftsImpl ?? pushShiftEvents;
+  const pushCatalogImpl = opts.pushCatalogImpl ?? pushCatalogMutations;
   let timer: ReturnType<typeof setInterval> | null = null;
   let unsubOnline: (() => void) | null = null;
   let running = false;
@@ -110,6 +114,12 @@ export function createSyncRunner(opts: RunnerOptions): SyncRunner {
       // in this order keeps the local sync-state coherent for the boot
       // guard and the EOD float lookup.
       await pushShiftsImpl(opts.database, await buildShiftPushOptions());
+      // KASA-248 — drain catalog tile availability toggles before sales
+      // so a "Tandai sebagai habis" tap lands on the server before the
+      // next reference-pull window. Failures here are best-effort: the
+      // local row already reflects the toggle, and the next pull will
+      // reconcile against the server's canonical value.
+      await pushCatalogImpl(opts.database, await buildCatalogPushOptions());
       const result = await pushImpl(opts.database, await buildPushOptions());
       await refreshNeedsAttention();
       return result;
@@ -148,6 +158,18 @@ export function createSyncRunner(opts: RunnerOptions): SyncRunner {
     if (opts.fetchImpl) shiftPushOpts.fetchImpl = opts.fetchImpl;
     if (opts.clock) shiftPushOpts.clock = opts.clock;
     return shiftPushOpts;
+  };
+
+  const buildCatalogPushOptions = async (): Promise<PushCatalogOptions> => {
+    const auth = opts.auth ? await opts.auth() : null;
+    const catalogPushOpts: PushCatalogOptions = {
+      baseUrl: opts.baseUrl,
+      isOnline: onlineSource.isOnline,
+      auth,
+    };
+    if (opts.fetchImpl) catalogPushOpts.fetchImpl = opts.fetchImpl;
+    if (opts.clock) catalogPushOpts.clock = opts.clock;
+    return catalogPushOpts;
   };
 
   const runOnce = (): Promise<RunnerCycleResult | null> => {

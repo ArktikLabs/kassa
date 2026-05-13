@@ -48,10 +48,11 @@ export function CatalogGrid({ onLongPress }: { onLongPress?: (item: Item) => voi
       className="grid grid-cols-2 gap-3 tablet:grid-cols-4 landscape:tablet:grid-cols-6"
       data-testid="catalog-grid"
     >
-      {tiles.map(({ item, outOfStock }) => {
+      {tiles.map(({ item, outOfStock, markedSoldOut }) => {
         const tileProps = {
           item,
           outOfStock,
+          markedSoldOut,
           onAdd: handleAdd,
           ...(onLongPress ? { onLongPress } : {}),
         };

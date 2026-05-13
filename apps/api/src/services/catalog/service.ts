@@ -1,5 +1,5 @@
 import { uuidv7 } from "../../lib/uuid.js";
-import type { Item } from "../../db/schema/items.js";
+import type { Item, ItemAvailability } from "../../db/schema/items.js";
 import type { CreateItemInput, ItemsRepository, UpdateItemInput } from "./repository.js";
 
 export const DEFAULT_ITEM_PAGE_LIMIT = 100;
@@ -70,6 +70,8 @@ export interface CreateItemCommand {
   isStockTracked?: boolean | undefined;
   /** KASA-218 — integer percent (0..100); defaults to 11 (statutory PPN). */
   taxRate?: number | undefined;
+  /** KASA-248 — defaults to `available`. */
+  availability?: ItemAvailability | undefined;
   isActive?: boolean | undefined;
 }
 
@@ -170,6 +172,7 @@ export class ItemsService {
       ...(cmd.bomId !== undefined ? { bomId: cmd.bomId } : {}),
       ...(cmd.isStockTracked !== undefined ? { isStockTracked: cmd.isStockTracked } : {}),
       ...(cmd.taxRate !== undefined ? { taxRate: cmd.taxRate } : {}),
+      ...(cmd.availability !== undefined ? { availability: cmd.availability } : {}),
       ...(cmd.isActive !== undefined ? { isActive: cmd.isActive } : {}),
       now: this.now(),
     };
@@ -315,6 +318,7 @@ export function toItemResponse(row: Item): {
   bomId: string | null;
   isStockTracked: boolean;
   taxRate: number;
+  availability: ItemAvailability;
   isActive: boolean;
   updatedAt: string;
 } {
@@ -327,6 +331,7 @@ export function toItemResponse(row: Item): {
     bomId: row.bomId,
     isStockTracked: row.isStockTracked,
     taxRate: row.taxRate,
+    availability: row.availability,
     isActive: row.isActive,
     updatedAt: row.updatedAt.toISOString(),
   };

@@ -101,6 +101,7 @@ export class InMemoryItemsRepository implements ItemsRepository {
       isStockTracked: input.isStockTracked ?? true,
       allowNegative: false,
       taxRate: input.taxRate ?? 11,
+      availability: input.availability ?? "available",
       isActive: input.isActive ?? true,
       createdAt: input.now,
       updatedAt: input.now,
@@ -134,6 +135,7 @@ export class InMemoryItemsRepository implements ItemsRepository {
         ? { isStockTracked: input.patch.isStockTracked }
         : {}),
       ...(input.patch.taxRate !== undefined ? { taxRate: input.patch.taxRate } : {}),
+      ...(input.patch.availability !== undefined ? { availability: input.patch.availability } : {}),
       ...(input.patch.isActive !== undefined ? { isActive: input.patch.isActive } : {}),
       updatedAt: input.now,
     };

@@ -1,7 +1,25 @@
-import { boolean, integer, index, pgTable, text, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import {
+  boolean,
+  integer,
+  index,
+  pgEnum,
+  pgTable,
+  text,
+  uniqueIndex,
+  uuid,
+} from "drizzle-orm/pg-core";
 import { createdAtCol, rupiah, updatedAtCol } from "./shared.js";
 import { merchants } from "./merchants.js";
 import { uoms } from "./uoms.js";
+
+/**
+ * KASA-248 — mid-shift availability flag (see `items.availability`).
+ * Kept here next to the column that consumes it; exported so the migration
+ * generator and any tooling that introspects the schema can find it.
+ */
+export const itemAvailabilityValues = ["available", "sold_out"] as const;
+export type ItemAvailability = (typeof itemAvailabilityValues)[number];
+export const itemAvailabilityEnum = pgEnum("item_availability", itemAvailabilityValues);
 
 /**
  * Catalog row. `price_idr` is integer rupiah at rest (ARCHITECTURE.md §3.2
@@ -44,6 +62,15 @@ export const items = pgTable(
      * scope per KASA-218.
      */
     taxRate: integer("tax_rate").notNull().default(11),
+    /**
+     * KASA-248 — mid-shift availability flag toggled from the POS catalog
+     * tile's long-press sheet ("Tandai sebagai habis"). `sold_out` greys the
+     * tile in the POS and blocks cart-add; `available` (the default) is the
+     * normal state. Distinct from `is_active` (which removes the item from
+     * the catalog entirely) and from BOM/stock-derived `out_of_stock`
+     * (computed locally on the POS).
+     */
+    availability: itemAvailabilityEnum("availability").notNull().default("available"),
     isActive: boolean("is_active").notNull().default(true),
     createdAt: createdAtCol(),
     updatedAt: updatedAtCol(),

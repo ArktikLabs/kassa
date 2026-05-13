@@ -13,6 +13,7 @@ import {
   itemRecord,
   referencePullQuery,
   uomPullResponse,
+  type ItemAvailability,
   type ReferencePullQuery,
 } from "@kassa/schemas";
 import { notImplemented, sendError } from "../lib/errors.js";
@@ -243,6 +244,7 @@ export function catalogRoutes(deps: CatalogRouteDeps) {
               ? { isStockTracked: req.body.isStockTracked }
               : {}),
             ...(req.body.taxRate !== undefined ? { taxRate: req.body.taxRate } : {}),
+            ...(req.body.availability !== undefined ? { availability: req.body.availability } : {}),
             ...(req.body.isActive !== undefined ? { isActive: req.body.isActive } : {}),
           });
           reply.code(201).send(toItemResponse(row));
@@ -295,6 +297,7 @@ export function catalogRoutes(deps: CatalogRouteDeps) {
             bomId?: string | null;
             isStockTracked?: boolean;
             taxRate?: number;
+            availability?: ItemAvailability;
             isActive?: boolean;
           } = {};
           if (req.body.code !== undefined) patch.code = req.body.code;
@@ -304,6 +307,7 @@ export function catalogRoutes(deps: CatalogRouteDeps) {
           if (req.body.bomId !== undefined) patch.bomId = req.body.bomId;
           if (req.body.isStockTracked !== undefined) patch.isStockTracked = req.body.isStockTracked;
           if (req.body.taxRate !== undefined) patch.taxRate = req.body.taxRate;
+          if (req.body.availability !== undefined) patch.availability = req.body.availability;
           if (req.body.isActive !== undefined) patch.isActive = req.body.isActive;
           const row = await deps.items.update({
             merchantId: principal.merchantId,

@@ -17,11 +17,24 @@ function initials(name: string): string {
 export interface CatalogTileProps {
   item: Item;
   outOfStock: boolean;
+  /**
+   * KASA-248 — set when the tile is greyed because of the manual
+   * `availability='sold_out'` flag (as opposed to inventory). Manual
+   * sold-outs still accept long-press so the cashier can flip the
+   * tile back to `available` from the catalog screen.
+   */
+  markedSoldOut?: boolean;
   onAdd(item: Item): void;
   onLongPress?(item: Item): void;
 }
 
-export function CatalogTile({ item, outOfStock, onAdd, onLongPress }: CatalogTileProps) {
+export function CatalogTile({
+  item,
+  outOfStock,
+  markedSoldOut,
+  onAdd,
+  onLongPress,
+}: CatalogTileProps) {
   const intl = useIntl();
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const longPressed = useRef(false);
@@ -34,7 +47,10 @@ export function CatalogTile({ item, outOfStock, onAdd, onLongPress }: CatalogTil
   }
 
   function handlePointerDown() {
-    if (outOfStock) return;
+    // Manual sold-out (`markedSoldOut`) keeps long-press alive so the cashier
+    // can re-enable the tile; inventory-driven `outOfStock` does not — there
+    // is nothing for the long-press to do until stock comes back.
+    if (outOfStock && !markedSoldOut) return;
     longPressed.current = false;
     clearTimer();
     longPressTimer.current = setTimeout(() => {

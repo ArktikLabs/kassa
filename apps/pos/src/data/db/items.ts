@@ -1,5 +1,5 @@
 import type { KassaDexie } from "./schema.ts";
-import type { Item } from "./types.ts";
+import type { Item, ItemAvailability } from "./types.ts";
 
 export interface ItemsRepo {
   getById(id: string): Promise<Item | undefined>;
@@ -8,6 +8,15 @@ export interface ItemsRepo {
   listActive(limit?: number): Promise<Item[]>;
   upsertMany(items: readonly Item[]): Promise<void>;
   count(): Promise<number>;
+  /**
+   * KASA-248 — flip the local `availability` for one row. The catalog tile
+   * calls this from its long-press sheet *before* enqueueing the outbox
+   * PATCH, so the greyed state is visible inside the 200 ms optimistic
+   * window. The next sync pull overwrites this with the server's
+   * canonical value (the round-trip is idempotent because the field's
+   * domain is two values).
+   */
+  setAvailability(id: string, availability: ItemAvailability): Promise<void>;
 }
 
 export function itemsRepo(db: KassaDexie): ItemsRepo {
@@ -54,6 +63,11 @@ export function itemsRepo(db: KassaDexie): ItemsRepo {
     },
     count() {
       return db.items.count();
+    },
+    async setAvailability(id, availability) {
+      const row = await db.items.get(id);
+      if (!row) return;
+      await db.items.put({ ...row, availability });
     },
   };
 }

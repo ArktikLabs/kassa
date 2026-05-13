@@ -13,6 +13,7 @@ function makeItem(overrides: Partial<Item> = {}): Item {
     bomId: overrides.bomId ?? null,
     isStockTracked: overrides.isStockTracked ?? false,
     taxRate: overrides.taxRate ?? 11,
+    availability: overrides.availability ?? "available",
     isActive: overrides.isActive ?? true,
     updatedAt: overrides.updatedAt ?? "2026-04-26T00:00:00.000Z",
   };
@@ -98,5 +99,18 @@ describe("tileOutOfStock", () => {
   it("BOM parent with a missing BOM record falls back to sellable (server is source of truth)", () => {
     const parent = makeItem({ id: "parent", isStockTracked: false, bomId: "bom-missing" });
     expect(tileOutOfStock(parent, {}, new Map())).toBe(false);
+  });
+
+  it("KASA-248: ignores `availability` — that flag is owned by the catalog hook, not the inventory derivation", () => {
+    // tileOutOfStock answers "does inventory say this is out?". The manual
+    // `sold_out` flag is a separate dimension that useCatalog combines into
+    // the tile's final greyed state.
+    const item = makeItem({
+      id: "item-1",
+      isStockTracked: false,
+      bomId: null,
+      availability: "sold_out",
+    });
+    expect(tileOutOfStock(item, {}, new Map())).toBe(false);
   });
 });

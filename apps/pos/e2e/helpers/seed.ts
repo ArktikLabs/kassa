@@ -133,6 +133,8 @@ export async function seedEnrolledDevice(page: Page, item: SeedItem): Promise<vo
           // `toRupiah(NaN)` throws. Mirror the production sync default so the
           // seeded item matches a real catalog row.
           taxRate: 11,
+          // KASA-248 — mid-shift availability flag; default for seeded rows.
+          availability: "available",
           isActive: true,
           updatedAt: "2026-04-23T00:00:00.000Z",
         });
