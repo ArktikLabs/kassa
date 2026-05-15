@@ -70,6 +70,15 @@ const envSchema = z
     // origins. Defaults to the Cloudflare-Pages preview pattern; set to a
     // blank string to disable previews.
     CORS_PREVIEW_ORIGIN_PATTERN: optionalTrimmedString,
+    // OTEL OTLP/HTTP base URL (KASA-284). When unset the API does not boot a
+    // trace SDK and `withSpan` falls back to the OTEL API's NoOp tracer —
+    // same "warn and run" pattern as SESSION_COOKIE_SECRET (ADR-011), so a
+    // missing endpoint never paints the floor with crash loops.
+    OTEL_EXPORTER_OTLP_ENDPOINT: optionalTrimmedString,
+    // Optional override for the service.name resource attribute. Defaults to
+    // `kassa-api` when unset; staging deploys typically leave this default
+    // and let SENTRY_ENVIRONMENT split prod vs preview events instead.
+    OTEL_SERVICE_NAME: optionalTrimmedString,
   })
   .superRefine((env, ctx) => {
     // DATABASE_URL stays a hard fail in production: no /v1 route can serve
@@ -101,7 +110,7 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): Env {
  * `/health` and Sentry breadcrumbs. New entries should be added here so
  * monitoring queries can match a finite, documented set of codes.
  */
-export type StartupWarningCode = "missing_session_cookie_secret";
+export type StartupWarningCode = "missing_session_cookie_secret" | "missing_otel_endpoint";
 
 export interface StartupWarning {
   code: StartupWarningCode;
@@ -121,6 +130,13 @@ export function collectStartupWarnings(env: Env): StartupWarning[] {
       code: "missing_session_cookie_secret",
       message:
         "SESSION_COOKIE_SECRET is unset in production; POST /v1/auth/session/login will respond 503 not_configured.",
+    });
+  }
+  if (env.NODE_ENV === "production" && !env.OTEL_EXPORTER_OTLP_ENDPOINT) {
+    warnings.push({
+      code: "missing_otel_endpoint",
+      message:
+        "OTEL_EXPORTER_OTLP_ENDPOINT is unset in production; sale.submit and eod.close spans run against a NoOp tracer (no traces exported).",
     });
   }
   return warnings;

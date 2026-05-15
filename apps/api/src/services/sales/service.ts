@@ -1,4 +1,5 @@
 import argon2 from "argon2";
+import { withSpan } from "../../lib/otel.js";
 import { InvalidPageTokenError, decodePageToken } from "../../lib/page-token.js";
 import { uuidv7 } from "../../lib/uuid.js";
 import type {
@@ -140,6 +141,25 @@ export class SalesService {
   }
 
   async submit(input: SubmitSaleInput): Promise<SubmitSaleOutcome> {
+    // KASA-284 — `sale.submit` is the trace root for the offline-drain hot
+    // path. `sale_id` is unknown until the idempotency check clears, so it
+    // is stamped on the parent span after generation. Sub-spans cover the
+    // four phases called out in the issue: validation, idempotency lookup,
+    // BOM explosion, and the ledger write.
+    return withSpan(
+      "sale.submit",
+      {
+        outlet_id: input.outletId,
+        tender_count: input.tenders.length,
+      },
+      (parentSpan) => this.submitInner(input, parentSpan),
+    );
+  }
+
+  private async submitInner(
+    input: SubmitSaleInput,
+    parentSpan: import("@opentelemetry/api").Span,
+  ): Promise<SubmitSaleOutcome> {
     // KASA-151: a sale is synthetic iff every tender on it is `synthetic`.
     // Mixing synthetic with real tenders breaks the auto-reconcile contract
     // (real cash/QRIS shouldn't be excluded from EOD totals), so we reject
@@ -153,8 +173,14 @@ export class SalesService {
       );
     }
 
-    const existing = await this.repository.findSaleByLocalId(input.merchantId, input.localSaleId);
+    const existing = await withSpan("sale.submit.idempotency", {}, async (span) => {
+      const row = await this.repository.findSaleByLocalId(input.merchantId, input.localSaleId);
+      span.setAttribute("hit", row !== null);
+      return row;
+    });
     if (existing) {
+      parentSpan.setAttribute("idempotent_hit", true);
+      parentSpan.setAttribute("sale_id", existing.id);
       if (!salesAgreeOnShape(existing, input)) {
         throw new SalesError(
           "idempotency_conflict",
@@ -163,6 +189,7 @@ export class SalesService {
       }
       return { kind: "conflict", existing };
     }
+    parentSpan.setAttribute("idempotent_hit", false);
 
     const outlet = await this.repository.findOutlet(input.merchantId, input.outletId);
     if (!outlet) {
@@ -175,72 +202,79 @@ export class SalesService {
     // Resolve every item referenced by the sale (including BOM components).
     // The set is a union of (line.itemId, each component.componentItemId for
     // line.bomId).
-    const saleItems = await this.repository.findItemsByIds(
-      input.merchantId,
-      input.items.map((line) => line.itemId),
+    const { saleItemById } = await withSpan(
+      "sale.submit.validation",
+      { item_count: input.items.length },
+      async () => {
+        const saleItems = await this.repository.findItemsByIds(
+          input.merchantId,
+          input.items.map((line) => line.itemId),
+        );
+        const map = new Map(saleItems.map((item) => [item.id, item]));
+        for (const line of input.items) {
+          const item = map.get(line.itemId);
+          if (!item) {
+            throw new SalesError(
+              "item_not_found",
+              `Item ${line.itemId} is not registered to this merchant.`,
+            );
+          }
+          if (!item.isActive) {
+            throw new SalesError("item_inactive", `Item ${item.code} is no longer sold.`);
+          }
+        }
+        // Pricing arithmetic validation (KASA-113). Once JWT auth (KASA-25)
+        // opens this endpoint to non-PWA callers, a compromised device can
+        // no longer under-charge by sending mismatched line totals — the
+        // server checks the client's numbers against itself and then
+        // replaces the per-line price with the catalog truth before
+        // persisting.
+        for (let i = 0; i < input.items.length; i += 1) {
+          const line = input.items[i] as SaleLine;
+          const expectedLineTotal = line.unitPriceIdr * line.quantity;
+          if (expectedLineTotal !== line.lineTotalIdr) {
+            throw new SalesError(
+              "pricing_mismatch",
+              `Line ${i}: unitPriceIdr * quantity does not equal lineTotalIdr.`,
+              {
+                lineIndex: i,
+                unitPriceIdr: line.unitPriceIdr,
+                quantity: line.quantity,
+                lineTotalIdr: line.lineTotalIdr,
+                expected: expectedLineTotal,
+              },
+            );
+          }
+        }
+        const sumLineTotals = input.items.reduce((sum, line) => sum + line.lineTotalIdr, 0);
+        if (sumLineTotals !== input.subtotalIdr) {
+          throw new SalesError(
+            "pricing_mismatch",
+            "subtotalIdr does not equal the sum of line totals.",
+            { subtotalIdr: input.subtotalIdr, expected: sumLineTotals },
+          );
+        }
+        if (input.discountIdr > input.subtotalIdr) {
+          throw new SalesError("pricing_mismatch", "discountIdr exceeds subtotalIdr.", {
+            subtotalIdr: input.subtotalIdr,
+            discountIdr: input.discountIdr,
+          });
+        }
+        if (input.subtotalIdr - input.discountIdr !== input.totalIdr) {
+          throw new SalesError(
+            "pricing_mismatch",
+            "subtotalIdr - discountIdr does not equal totalIdr.",
+            {
+              subtotalIdr: input.subtotalIdr,
+              discountIdr: input.discountIdr,
+              totalIdr: input.totalIdr,
+              expected: input.subtotalIdr - input.discountIdr,
+            },
+          );
+        }
+        return { saleItemById: map };
+      },
     );
-    const saleItemById = new Map(saleItems.map((item) => [item.id, item]));
-    for (const line of input.items) {
-      const item = saleItemById.get(line.itemId);
-      if (!item) {
-        throw new SalesError(
-          "item_not_found",
-          `Item ${line.itemId} is not registered to this merchant.`,
-        );
-      }
-      if (!item.isActive) {
-        throw new SalesError("item_inactive", `Item ${item.code} is no longer sold.`);
-      }
-    }
-
-    // Pricing arithmetic validation (KASA-113). Once JWT auth (KASA-25) opens
-    // this endpoint to non-PWA callers, a compromised device can no longer
-    // under-charge by sending mismatched line totals — the server checks the
-    // client's numbers against itself and then replaces the per-line price
-    // with the catalog truth before persisting.
-    for (let i = 0; i < input.items.length; i += 1) {
-      const line = input.items[i] as SaleLine;
-      const expectedLineTotal = line.unitPriceIdr * line.quantity;
-      if (expectedLineTotal !== line.lineTotalIdr) {
-        throw new SalesError(
-          "pricing_mismatch",
-          `Line ${i}: unitPriceIdr * quantity does not equal lineTotalIdr.`,
-          {
-            lineIndex: i,
-            unitPriceIdr: line.unitPriceIdr,
-            quantity: line.quantity,
-            lineTotalIdr: line.lineTotalIdr,
-            expected: expectedLineTotal,
-          },
-        );
-      }
-    }
-    const sumLineTotals = input.items.reduce((sum, line) => sum + line.lineTotalIdr, 0);
-    if (sumLineTotals !== input.subtotalIdr) {
-      throw new SalesError(
-        "pricing_mismatch",
-        "subtotalIdr does not equal the sum of line totals.",
-        { subtotalIdr: input.subtotalIdr, expected: sumLineTotals },
-      );
-    }
-    if (input.discountIdr > input.subtotalIdr) {
-      throw new SalesError("pricing_mismatch", "discountIdr exceeds subtotalIdr.", {
-        subtotalIdr: input.subtotalIdr,
-        discountIdr: input.discountIdr,
-      });
-    }
-    if (input.subtotalIdr - input.discountIdr !== input.totalIdr) {
-      throw new SalesError(
-        "pricing_mismatch",
-        "subtotalIdr - discountIdr does not equal totalIdr.",
-        {
-          subtotalIdr: input.subtotalIdr,
-          discountIdr: input.discountIdr,
-          totalIdr: input.totalIdr,
-          expected: input.subtotalIdr - input.discountIdr,
-        },
-      );
-    }
 
     // Catalog price is authoritative (KASA-113 AC). Rebuild per-line and
     // header amounts from `catalog.priceIdr * quantity` so a client reading a
@@ -277,76 +311,80 @@ export class SalesService {
       ? authoritativeSubtotal - authoritativeDiscount
       : authoritativeSubtotal - authoritativeDiscount + taxIdr;
 
-    // Resolve BOMs once per referenced id. `line.bomId` is a hint — the
-    // server authoritatively picks the item's current `bomId`, so if the
-    // client is stale the server explodes against the active version.
-    const bomIds = new Set<string>();
-    for (const line of input.items) {
-      const item = saleItemById.get(line.itemId) as Item;
-      if (item.bomId) bomIds.add(item.bomId);
-    }
-    const bomById = new Map(
-      await Promise.all(
-        [...bomIds].map(async (id) => [id, await this.repository.findBomById(id)] as const),
-      ),
-    );
-    for (const [id, bom] of bomById) {
-      if (!bom) {
-        throw new SalesError("bom_not_found", `BOM ${id} is not registered.`);
+    const componentTotals = await withSpan("sale.submit.bom_explosion", {}, async (span) => {
+      // Resolve BOMs once per referenced id. `line.bomId` is a hint — the
+      // server authoritatively picks the item's current `bomId`, so if the
+      // client is stale the server explodes against the active version.
+      const bomIds = new Set<string>();
+      for (const line of input.items) {
+        const item = saleItemById.get(line.itemId) as Item;
+        if (item.bomId) bomIds.add(item.bomId);
       }
-    }
-
-    // 1. Build exploded component list keyed by itemId, summing across lines.
-    const componentTotals = new Map<string, number>();
-    for (const line of input.items) {
-      const item = saleItemById.get(line.itemId) as Item;
-      if (item.bomId) {
-        const bom = bomById.get(item.bomId);
+      span.setAttribute("bom_count", bomIds.size);
+      const bomById = new Map(
+        await Promise.all(
+          [...bomIds].map(async (id) => [id, await this.repository.findBomById(id)] as const),
+        ),
+      );
+      for (const [id, bom] of bomById) {
         if (!bom) {
+          throw new SalesError("bom_not_found", `BOM ${id} is not registered.`);
+        }
+      }
+
+      // 1. Build exploded component list keyed by itemId, summing across lines.
+      const totals = new Map<string, number>();
+      for (const line of input.items) {
+        const item = saleItemById.get(line.itemId) as Item;
+        if (item.bomId) {
+          const bom = bomById.get(item.bomId);
+          if (!bom) {
+            throw new SalesError(
+              "bom_not_found",
+              `BOM ${item.bomId} is not registered for item ${item.code}.`,
+            );
+          }
+          for (const component of bom.components) {
+            totals.set(
+              component.componentItemId,
+              (totals.get(component.componentItemId) ?? 0) + component.quantity * line.quantity,
+            );
+          }
+        } else if (item.isStockTracked) {
+          totals.set(item.id, (totals.get(item.id) ?? 0) + line.quantity);
+        }
+      }
+      span.setAttribute("component_count", totals.size);
+
+      // 2. Load the moved items (components, plus the finished good for
+      // non-BOM tracked items) and enforce allow_negative.
+      const movedIds = [...totals.keys()];
+      const movedItems = await this.repository.findItemsByIds(input.merchantId, movedIds);
+      const movedItemById = new Map(movedItems.map((item) => [item.id, item]));
+      for (const id of movedIds) {
+        if (!movedItemById.has(id)) {
           throw new SalesError(
-            "bom_not_found",
-            `BOM ${item.bomId} is not registered for item ${item.code}.`,
+            "item_not_found",
+            `Stock-moved item ${id} is not registered to this merchant.`,
           );
         }
-        for (const component of bom.components) {
-          componentTotals.set(
-            component.componentItemId,
-            (componentTotals.get(component.componentItemId) ?? 0) +
-              component.quantity * line.quantity,
+      }
+
+      const onHand = await this.repository.onHandForMany(input.outletId, movedIds);
+      for (const [itemId, moved] of totals) {
+        const item = movedItemById.get(itemId) as Item;
+        if (item.allowNegative) continue;
+        const current = onHand.get(itemId) ?? 0;
+        if (current - moved < 0) {
+          throw new SalesError(
+            "insufficient_stock",
+            `Insufficient stock for ${item.code} at outlet ${input.outletId}: on_hand=${current}, requested=${moved}.`,
+            { itemId, itemCode: item.code, onHand: current, requested: moved },
           );
         }
-      } else if (item.isStockTracked) {
-        componentTotals.set(item.id, (componentTotals.get(item.id) ?? 0) + line.quantity);
       }
-    }
-
-    // 2. Load the moved items (components, plus the finished good for
-    // non-BOM tracked items) and enforce allow_negative.
-    const movedIds = [...componentTotals.keys()];
-    const movedItems = await this.repository.findItemsByIds(input.merchantId, movedIds);
-    const movedItemById = new Map(movedItems.map((item) => [item.id, item]));
-    for (const id of movedIds) {
-      if (!movedItemById.has(id)) {
-        throw new SalesError(
-          "item_not_found",
-          `Stock-moved item ${id} is not registered to this merchant.`,
-        );
-      }
-    }
-
-    const onHand = await this.repository.onHandForMany(input.outletId, movedIds);
-    for (const [itemId, moved] of componentTotals) {
-      const item = movedItemById.get(itemId) as Item;
-      if (item.allowNegative) continue;
-      const current = onHand.get(itemId) ?? 0;
-      if (current - moved < 0) {
-        throw new SalesError(
-          "insufficient_stock",
-          `Insufficient stock for ${item.code} at outlet ${input.outletId}: on_hand=${current}, requested=${moved}.`,
-          { itemId, itemCode: item.code, onHand: current, requested: moved },
-        );
-      }
-    }
+      return totals;
+    });
 
     // 3. Build the sale row + ledger entries. One entry per moved item,
     // summed across cart lines so a two-cup Kopi Susu order writes a single
@@ -398,11 +436,17 @@ export class SalesService {
       });
     }
 
-    const persisted = await this.repository.recordSale({
-      sale,
-      ledger: ledgerInputs,
-      idGenerator: this.generateId,
-    });
+    parentSpan.setAttribute("sale_id", saleId);
+    const persisted = await withSpan(
+      "sale.submit.ledger_write",
+      { ledger_entry_count: ledgerInputs.length },
+      () =>
+        this.repository.recordSale({
+          sale,
+          ledger: ledgerInputs,
+          idGenerator: this.generateId,
+        }),
+    );
     return {
       kind: "ok",
       created: true,
