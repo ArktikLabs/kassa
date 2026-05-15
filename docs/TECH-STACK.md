@@ -343,6 +343,8 @@ packages/
 
 Synthetic checks on POS shell and API `/health` are the two monitors we run. Everything else (DB health, Redis health, Midtrans webhook replay lag) is observable from inside Sentry + logs and does not need to wake an engineer.
 
+How a fired alert becomes an incident response — severity ladder, paging, comms, post-mortem flow — is defined in [RUNBOOK-INCIDENT.md](./RUNBOOK-INCIDENT.md); the tactical "an alert just fired, what do I type" playbook lives in [RUNBOOK-ONCALL.md](./RUNBOOK-ONCALL.md). The Better Stack workspace and monitor provisioning ticket is [KASA-198](/KASA/issues/KASA-198).
+
 ---
 
 ## 13. Security and secrets
@@ -354,7 +356,7 @@ Synthetic checks on POS shell and API `/health` are the two monitors we run. Eve
 - **Rate limits**: `@fastify/rate-limit` applies per-device budgets (tighter on `POST /v1/auth/*` and `POST /v1/sales*`).
 - **CORS**: allow-list of the PWA origin(s) only. No wildcard origin, no `Access-Control-Allow-Credentials: true` without an explicit origin match.
 - **Dependencies**: see §10.2 dependency policy.
-- **Incidents**: documented in `docs/ops/on-call.md` when it lands.
+- **Incidents**: see [RUNBOOK-INCIDENT.md](./RUNBOOK-INCIDENT.md) (policy) and [RUNBOOK-ONCALL.md](./RUNBOOK-ONCALL.md) (pilot-week tactical playbook).
 
 ---
 

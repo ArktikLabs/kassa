@@ -9,7 +9,7 @@
 **Filed:** YYYY-MM-DD
 **Source incident issue:** KASA-XXX
 
-> Copy this file to `docs/post-mortems/YYYY-MM-DD-<short-slug>.md` and fill in. Add a row to [RUNBOOK-INCIDENT.md §8](../RUNBOOK-INCIDENT.md#8-post-mortem-index) in the same PR.
+> Copy this file to `docs/post-mortems/YYYY-MM-DD-<short-slug>.md` and fill in. Add a row to [RUNBOOK-INCIDENT.md §9](../RUNBOOK-INCIDENT.md#9-post-mortem-index) in the same PR.
 
 ---
 
