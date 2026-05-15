@@ -355,7 +355,7 @@ Each drill / restore appends one row. Fill the four timing fields from §3.3 / �
 | Fly app secrets / deploy | DevOps                | CTO                   | `FLY_API_TOKEN` is in the GitHub `production` env; rotation lives in [`.github/workflows/rotate-staging-secret.yml`](../.github/workflows/rotate-staging-secret.yml). |
 | AWS S3 backup bucket     | DevOps                | CTO                   | Bucket `kassa-backups` (`ap-southeast-1`); access via OIDC role `AWS_BACKUP_ROLE_ARN` in `production-prod` env.   |
 | Decision: restore vs. fix-forward | CTO         | CEO (if CTO unreachable >15 min, P0 only) | See §2 escalation contract.                                                                       |
-| Merchant comms during cutover | CEO              | CTO                   | Pilot is single-merchant; comms template in [RUNBOOK-INCIDENT.md §6](./RUNBOOK-INCIDENT.md#6-comms-templates).    |
+| Merchant comms during cutover | CEO              | CTO                   | Pilot is single-merchant; comms template in [RUNBOOK-INCIDENT.md §7](./RUNBOOK-INCIDENT.md#7-comms-templates).    |
 
 ---
 

@@ -115,7 +115,7 @@ Key deliverables:
 - Production deploy: Fly.io production app + Neon production branch + Cloudflare Pages `main` target + Midtrans production keys (rotated from sandbox).
 - Sentry release tagging, source-map upload, and alert routing.
 - Uptime checks (Better Stack) on `GET /health` and PWA shell URL.
-- Incident runbook + on-call rotation for the pilot week.
+- Incident runbook + on-call rotation for the pilot week. See [RUNBOOK-INCIDENT.md](./RUNBOOK-INCIDENT.md) (policy: severity ladder, comms, post-mortem flow) and [RUNBOOK-ONCALL.md](./RUNBOOK-ONCALL.md) (tactical: alert routing, rollback matrix, merchant contact card).
 
 Exit criteria: pilot merchant opens their shop on Day 31 with Kassa as their only POS and closes the day with zero variance and zero P0 incidents.
 

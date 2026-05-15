@@ -17,12 +17,16 @@ If the two operational runbooks disagree with this doc on a definition (severity
 
 The ladder is **scope-of-impact-based**, not effort-based. A 2-line code fix that restores a P0 is still a P0 retrospectively.
 
-| Sev  | Definition                                                      | Examples                                                                                       | Page on-call?       | Wake CTO          | Wake CEO              |
-|:-----|:----------------------------------------------------------------|:-----------------------------------------------------------------------------------------------|:--------------------|:------------------|:----------------------|
-| P0   | POS down for **any** merchant during business hours, or **any** suspected data loss / financial impact, or any suspected security incident. Revenue stops or merchant cannot trust the system. | API down, POS fails to load, EOD close fails, payments offline, secret leaked, double-charge | Yes, immediately    | Immediately       | At 15 min unresolved (immediately if data-loss, financial, or security) |
-| P1   | Sync degraded **>15 min**, elevated error rate (Sentry ≥1% on a critical endpoint), or partial functionality loss that the merchant can work around. Pilot merchant can still transact but with risk or degraded UX. | `/v1/sales/submit` error rate ≥1%, sync queue backing up, frontend `TypeError` spike | Yes, immediately    | At 30 min unresolved | No                    |
-| P2   | Single-merchant cosmetic issue or operational concern with no merchant-visible impact. Not blocking transactions. | One outlet's printer stopped, backup job missed, source-map upload failed, single Better Stack flap | No (ticket only)    | No                | No                    |
-| P3   | Telemetry-only / FYI. The system noticed something; no human action required this shift. | Deploy succeeded, weekly metric report, expected log volume                                    | No                  | No                | No                    |
+**Vision-metric framing.** The ladder triggers off the two vision metrics from the company goal ("operate a full sales day offline" + "zero rupiah variance at EOD" — see [ROADMAP.md §1](./ROADMAP.md)) — not generic uptime SLA percentages. We do not promise four-nines availability; we promise that a merchant can ring sales for a full shift offline and close the day with zero rupiah variance. The Sev definitions below name the vision-metric break each one represents.
+
+**Naming.** Some external docs (including the KASA-285 ticket and shared backlog templates) refer to Sev0 / Sev1 / Sev2 / Sev3. Those map 1:1 onto P0 / P1 / P2 / P3 in this table — the labels are interchangeable, this doc uses P-numbers because they match the alert-rule severity field in [`infra/observability/sentry-alert-rules.json`](../infra/observability/sentry-alert-rules.json).
+
+| Sev (alias)  | Vision-metric break                                                                                  | Definition                                                      | Examples                                                                                       | Page on-call?       | Wake CTO          | Wake CEO              |
+|:-------------|:-----------------------------------------------------------------------------------------------------|:----------------------------------------------------------------|:-----------------------------------------------------------------------------------------------|:--------------------|:------------------|:----------------------|
+| P0 (Sev0)    | Offline operation broken — merchant cannot transact at all, **or** zero-variance EOD at risk (data loss, double-charge, EOD close fails). | POS down for **any** merchant during business hours, or **any** suspected data loss / financial impact, or any suspected security incident. Revenue stops or merchant cannot trust the system. | API down, POS fails to load, EOD close fails, payments offline, secret leaked, double-charge | Yes, immediately    | Immediately       | At 15 min unresolved (immediately if data-loss, financial, or security) |
+| P1 (Sev1)    | Offline operation degraded — merchant can transact but with risk, EOD numbers still trustworthy.     | Sync degraded **>15 min**, elevated error rate (Sentry ≥1% on a critical endpoint), or partial functionality loss that the merchant can work around. Pilot merchant can still transact but with risk or degraded UX. | `/v1/sales/submit` error rate ≥1%, sync queue backing up, frontend `TypeError` spike | Yes, immediately    | At 30 min unresolved | No                    |
+| P2 (Sev2)    | Neither vision metric impacted — operational concern, no merchant-visible transaction or reconciliation impact. | Single-merchant cosmetic issue or operational concern with no merchant-visible impact. Not blocking transactions. | One outlet's printer stopped, backup job missed, source-map upload failed, single Better Stack flap | No (ticket only)    | No                | No                    |
+| P3 (Sev3)    | Telemetry-only — no vision metric implicated.                                                        | The system noticed something; no human action required this shift. | Deploy succeeded, weekly metric report, expected log volume                                    | No                  | No                | No                    |
 
 **Promotion rules.** A P1 that has been unresolved for 60 minutes auto-promotes to P0 (the merchant has now lost a meaningful transaction window). A P2 that recurs ≥3× in a week auto-promotes to P1 — the noise is the signal.
 
@@ -45,6 +49,8 @@ We do not rely on humans to notice outages. Three independent paths feed the on-
 A merchant report is **never** lower than P2 on first triage. Promote up if a synthetic check confirms.
 
 The dry-run procedure that proves all three paths work end-to-end before pilot day lives at [RUNBOOK-ONCALL.md §3.4](./RUNBOOK-ONCALL.md#34-dry-run-run-before-any-pilot-day). Run it after any change to alert rules, monitors, or the on-call channel.
+
+The architectural choice of "Better Stack + Sentry, two channels, no PagerDuty" is documented in [TECH-STACK.md §12.4](./TECH-STACK.md#124-synthetic-checks-and-uptime). The Better Stack workspace and synthetic-check provisioning ticket is [KASA-198](/KASA/issues/KASA-198) — until that ticket lands the production monitors in `infra/observability/better-stack-monitors.json`, this detection path is paper-only and the pilot does **not** start.
 
 ---
 
@@ -82,7 +88,55 @@ The pilot-week rotation lives at [RUNBOOK-ONCALL.md §2](./RUNBOOK-ONCALL.md#2-o
 
 ---
 
-## 5. Rollback procedures
+## 5. Response flow — first 15 minutes
+
+This is the on-call's playbook for the **first 15 minutes** after a page fires. It is what to do *before* picking a rollback procedure (§6) or drafting the initial comms post (§7.1). The objective in the first 15 minutes is not to *fix* — it is to *ack, scope, contain, and tell the right people*.
+
+### 5.1 The five-step flow
+
+| Step | Time budget | Action                                                                                                  | Done when …                                                              |
+|:-----|:------------|:--------------------------------------------------------------------------------------------------------|:-------------------------------------------------------------------------|
+| 1    | 0–2 min     | **Ack the page.** Click `ack` in Better Stack / Slack so it stops paging the secondary. No diagnosis yet. | Better Stack shows the page acknowledged.                                |
+| 2    | 2–5 min     | **Identify blast radius.** Open Sentry, Better Stack, and `flyctl status --app kassa-api-prod` in three tabs. Answer: *which surface, which endpoint, since when, how many merchants*. | You can state the blast radius in one sentence.                          |
+| 3    | 5–7 min     | **Comms-out.** Post the §7.1 initial template in `#kassa-pilot-oncall`. File the incident issue in Paperclip with `incident` label even if details are thin. | Slack post is up; issue id is in the post.                               |
+| 4    | 7–12 min    | **Triage decision.** Look at the deploy timeline: did anything land in the last 10 min? If yes → §6 rollback path, do not pass go. If no → continue investigating; classify per §1 severity ladder. | You have either started a rollback OR posted a follow-up update naming the suspected scope. |
+| 5    | 12–15 min   | **Escalate per §3 table.** P0 → wake CTO; data-loss/financial/security → wake CTO + CEO regardless of sev. P1 → start the 30-min CTO timer. | The right people know.                                                   |
+
+**The 15-min contract.** If steps 1–5 are not done at the 15-min mark, the on-call **must** explicitly flag in the Slack thread that they are off-pace and ask the secondary to take steps 3 or 5. Pride about doing it solo is how incidents become post-mortems with "the secondary was never paged" in the *what didn't go well* column.
+
+**What the first 15 minutes is not.** It is not the time to read code, draft a hotfix, or write the root cause. The hardest discipline at 02:00 with a page screaming is to *not* dive into the bug. Restore service first; understand it after.
+
+### 5.2 Worked example — KASA-201 (staging /health crash → config fallback)
+
+[KASA-201](/KASA/issues/KASA-201) is the canonical worked example, even though it was staging-only (so neither a vision-metric break nor a real Sev0 page). The shape is exactly what a prod equivalent would look like. Replay it here as the on-call training case for "a deploy landed, a downstream env var was missing, every machine crashes on boot".
+
+**The setup.** [KASA-183](/KASA/issues/KASA-183) added a Zod `superRefine` requiring `SESSION_COOKIE_SECRET` (min 32 chars) when `NODE_ENV === "production"`. The secret was provisioned on prod but not on staging. Every web machine on `kassa-api-staging` exited non-zero on boot; Fly considered `stopped` machines "good state" so the deploy reported success while the proxy had zero live upstreams. `/health` 502'd for hours.
+
+**Detection.** CD smoke step (`API /health unreachable — did not return status=ok after 5 attempts`) flagged on four consecutive `main` runs. If this had been production, Better Stack `api-prod-health` monitor would have paged in <2 min per §2.
+
+**How the 15-min flow would have played out (prod equivalent):**
+
+| WIB     | Step                | What the on-call did                                                                                                                      |
+|:--------|:--------------------|:------------------------------------------------------------------------------------------------------------------------------------------|
+| 11:07   | Better Stack page   | `api-prod-health` red ×2 → on-call paged in Slack `#kassa-pilot-oncall`.                                                                  |
+| 11:08   | **Step 1 — Ack**    | On-call acks in Better Stack. CTO timer starts at T+0 for §3 P0 hop-2 escalation (5 min unack would have notified CTO via WhatsApp).      |
+| 11:10   | **Step 2 — Scope**  | `flyctl status --app kassa-api-prod` shows all 4 web machines `stopped`. `flyctl logs --app kassa-api-prod` shows `SESSION_COOKIE_SECRET is required when NODE_ENV=production` Zod error on boot. Blast radius: **API entirely down, POS will lose sync within 30 s**. Vision-metric break: *offline operation is intact (POS buffers locally) but reconcile/EOD path is broken if it persists past close*. Sev: P0. |
+| 11:12   | **Step 3 — Comms**  | Posts §7.1 template in `#kassa-pilot-oncall`: "INCIDENT — P0 — API down, all machines crashing on boot. Investigating env-var regression from KASA-183. Incident issue KASA-201." Files Paperclip issue `kassa-api-prod /health unreachable since 11:07 — boot crashes on missing SESSION_COOKIE_SECRET`. |
+| 11:14   | **Step 4 — Triage** | Deploy timeline: KASA-183 image promoted to prod at 11:05 — 2 min before page. **Rollback first.** Per §6, runs `flyctl deploy --app kassa-api-prod --config apps/api/fly.prod.toml --image registry.fly.io/kassa-api-prod:prod-<prev-sha12> --strategy immediate`. While that's deploying, drafts the config-fallback fix (`fly secrets set --app kassa-api-prod SESSION_COOKIE_SECRET=$(openssl rand -hex 32)`). |
+| 11:15   | **Step 5 — Escalate** | WhatsApps CTO: "P0 in progress, rolling back to prev SHA, root cause looks like KASA-183 env-var regression, ETA 5 min to green Better Stack." CTO acks; takes the §7.4 CEO email at 11:30 if not resolved.                          |
+| 11:18   | T+11 — recovery     | Rollback image picks up traffic, Better Stack `api-prod-health` flips green. Posts §7.2 update: "Status: monitoring — rollback to prior SHA complete." |
+| 11:25   | Forward fix         | `fly secrets set --app kassa-api-prod SESSION_COOKIE_SECRET=$(openssl rand -hex 32)` against the new SHA, redeploys forward. Verifies `/health` green. Posts §7.3 all-clear. |
+| Next day | Post-mortem        | Owner: on-call. Reviewer: CTO. Due 5 business days. Action items file under `incident-action` label: (a) make `SESSION_COOKIE_SECRET` part of the prod-secret-provisioning checklist before any first-deploy, (b) add a synthetic env-var lint to the `Deploy Prod (API)` workflow that diffs Fly secrets against `loadEnv()`'s required keys before promotion. |
+
+**Lessons baked into the runbook from KASA-201.**
+
+- The Zod boot-time validation is the right design — it caught the misconfig in 30 s of run time, not at first request. The bug was not the gate; it was the missing secret on a tier that the deploy story didn't know about.
+- "Fly reports the deploy as successful while every machine is `stopped`" is a Fly-shape failure mode worth recognising on sight. Symptom check `flyctl status` shows all machines `stopped` and `auto_stop_machines = "stop"`/`min_machines_running = 0` in `fly.toml`.
+- The fix-forward (set the secret) is faster than the rollback (3–5 min vs ~2 min for `fly secrets set`), but the runbook still says **rollback first** because at T+0 the on-call does not yet know it is a missing-env-var bug — they know "machines crash on boot". A rollback is the same procedure regardless of root cause; a fix-forward requires the diagnosis to be right.
+
+---
+
+## 6. Rollback procedures
 
 **Decision: rollback first, root-cause after.** If a deploy correlates with a P0 or P1 within 10 min of landing, roll back immediately. Do not wait for a fix PR.
 
@@ -96,15 +150,15 @@ The full step-by-step procedure for each surface lives in [RUNBOOK-DEPLOY.md §4
 | API DB (Drizzle migration) | Compensating forward migration via revert PR; **never** hand-edit the DB. Drizzle is forward-only.        | [RUNBOOK-DEPLOY.md §4.4](./RUNBOOK-DEPLOY.md#44-rolling-back-a-drizzle-migration) | 15–30 min (PR turnaround) |
 | API DB (data corruption — emergency) | Neon point-in-time recovery: Neon console → Branch → Restore to timestamp → cut `DATABASE_URL` over via `flyctl secrets set`. **Wake CTO before doing this.** | KASA-181 will land `docs/RUNBOOK-DR.md` with the drilled procedure; until then follow [RUNBOOK-DEPLOY.md §4.4](./RUNBOOK-DEPLOY.md#44-rolling-back-a-drizzle-migration) and call CTO. | 30–60 min               |
 
-**Rollback gates the post-mortem, not the other way around.** Restore service inside 10 min, then start writing the post-mortem (§7). A rollback without a written root cause is how the same regression ships twice.
+**Rollback gates the post-mortem, not the other way around.** Restore service inside 10 min, then start writing the post-mortem (§8). A rollback without a written root cause is how the same regression ships twice.
 
 ---
 
-## 6. Comms templates
+## 7. Comms templates
 
-These are **internal** templates — for the on-call channel, the engineering pod, and the CEO. The pilot-merchant-facing WhatsApp/email template lives at [RUNBOOK-ONCALL.md §6](./RUNBOOK-ONCALL.md#6-pilot-merchant-contact-card) because it is pilot-specific (one named merchant, contact card not in this repo).
+These are **internal** templates — for the on-call channel, the engineering pod, and the CEO. The pilot-merchant-facing WhatsApp/email template lives at [RUNBOOK-ONCALL.md §6](./RUNBOOK-ONCALL.md#6-pilot-merchant-contact-card) because it is pilot-specific (one named merchant, contact card not in this repo); it is in id-ID and pairs with the en-language internal templates below.
 
-### 6.1 Initial post (within 5 min of confirming the incident)
+### 7.1 Initial post (within 5 min of confirming the incident)
 
 Post in `#kassa-pilot-oncall`. Reuse the same thread for all updates — do not start a new thread per update.
 
@@ -118,7 +172,7 @@ Next update: <HH:MM WIB> (in 30 min)
 Incident issue: <KASA-XXX or "filing now">
 ```
 
-### 6.2 Follow-up cadence
+### 7.2 Follow-up cadence
 
 | Severity | Update cadence during incident                      | Format                                    |
 |:---------|:----------------------------------------------------|:------------------------------------------|
@@ -136,7 +190,7 @@ What we're trying: <current action>
 ETA to next update: <HH:MM WIB>
 ```
 
-### 6.3 All-clear
+### 7.3 All-clear
 
 ```text
 :white_check_mark: RESOLVED — <HH:MM WIB>
@@ -146,7 +200,7 @@ Customer impact: <none | <N> merchants affected for <duration> | data loss: <sco
 Post-mortem: <link to docs/post-mortems/YYYY-MM-DD-slug.md, due in 5 business days for P0/P1>
 ```
 
-### 6.4 CEO email (P0 only, or any data-loss / financial / security incident)
+### 7.4 CEO email (P0 only, or any data-loss / financial / security incident)
 
 Send within 30 min of confirming. Plaintext, no HTML.
 
@@ -168,14 +222,14 @@ Next update: <HH:MM WIB>
 Incident issue: KASA-XXX
 ```
 
-### 6.5 Public / merchant comms
+### 7.5 Public / merchant comms
 
-- **Pilot week:** use the WhatsApp/email template at [RUNBOOK-ONCALL.md §6](./RUNBOOK-ONCALL.md#6-pilot-merchant-contact-card). Notify only when the rollback is merchant-visible (data unavailability, app reload required). Do not notify on routine deploys.
+- **Pilot week:** use the WhatsApp/email template at [RUNBOOK-ONCALL.md §6](./RUNBOOK-ONCALL.md#6-pilot-merchant-contact-card) — bilingual id-ID, pairs with the en-language internal templates above. Notify only when the rollback is merchant-visible (data unavailability, app reload required). Do not notify on routine deploys.
 - **Post-pilot:** a public status page (Better Stack hosted) lands with the multi-merchant rollout. Until then, named merchant contact lists are out of scope.
 
 ---
 
-## 7. Post-mortem flow
+## 8. Post-mortem flow
 
 A post-mortem is **mandatory** for:
 
@@ -201,7 +255,7 @@ The template enforces the four parts that matter:
 
 ---
 
-## 8. Post-mortem index
+## 9. Post-mortem index
 
 New post-mortems are filed under [`docs/post-mortems/`](./post-mortems/) and listed below in reverse-chronological order. Add a row in the same PR that lands the post-mortem.
 
@@ -211,12 +265,13 @@ New post-mortems are filed under [`docs/post-mortems/`](./post-mortems/) and lis
 
 ---
 
-## 9. Where this runbook is wrong
+## 10. Where this runbook is wrong
 
 Update this file whenever any of the following changes:
 
 - Severity definitions (§1) — and PR a matching change to [RUNBOOK-ONCALL.md §1](./RUNBOOK-ONCALL.md#1-severity-definitions) so the operator table agrees.
 - Paging destinations (§3) — and PR the matching change to [RUNBOOK-ONCALL.md §3.1](./RUNBOOK-ONCALL.md#31-channel) and `infra/observability/` configs.
-- Comms cadence (§6) — and brief the on-call rotation in standup before the change takes effect.
-- Post-mortem flow (§7) — and PR a matching change to [`docs/post-mortems/TEMPLATE.md`](./post-mortems/TEMPLATE.md).
+- Response flow / first 15 minutes (§5) — and re-walk the §5.2 worked example to make sure the new step lands correctly.
+- Comms cadence (§7) — and brief the on-call rotation in standup before the change takes effect.
+- Post-mortem flow (§8) — and PR a matching change to [`docs/post-mortems/TEMPLATE.md`](./post-mortems/TEMPLATE.md).
 - A real incident exposes that this doc was wrong, missing, or slow to find — fix it in the same PR as the post-mortem. **A stale runbook is worse than none.**
