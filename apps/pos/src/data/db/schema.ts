@@ -8,6 +8,7 @@ import type {
   Outlet,
   PendingSale,
   PendingShiftEvent,
+  PendingVoid,
   PrintedQris,
   ShiftState,
   StockSnapshot,
@@ -16,7 +17,7 @@ import type {
 } from "./types.ts";
 
 export const DB_NAME = "kassa-pos";
-export const DB_VERSION = 5;
+export const DB_VERSION = 6;
 
 export class KassaDexie extends Dexie {
   items!: Table<Item, string>;
@@ -32,6 +33,7 @@ export class KassaDexie extends Dexie {
   printed_qris!: Table<PrintedQris, string>;
   pending_shift_events!: Table<PendingShiftEvent, string>;
   shift_state!: Table<ShiftState, string>;
+  pending_voids!: Table<PendingVoid, string>;
 
   constructor(name: string = DB_NAME) {
     super(name);
@@ -119,6 +121,29 @@ export class KassaDexie extends Dexie {
       printed_qris: "outletId, fetchedAt",
       pending_shift_events: "eventId, status, outletId, createdAt, kind",
       shift_state: "id",
+    });
+    // v6 — KASA-236-B POS void outbox. `pending_voids` rides alongside
+    // `pending_sales` so a clerk who taps Batalkan offline gets the same
+    // queued/sending/synced lifecycle the sale submission already enjoys.
+    // The optional `voidedAt`/`voidBusinessDate`/`voidLocalId` fields on
+    // `pending_sales` are nullable, so no rewrite is needed for existing
+    // rows — the next sync drain will leave them untouched until the
+    // server confirms a void.
+    this.version(6).stores({
+      items: "id, code, name, isActive, updatedAt",
+      boms: "id, itemId, updatedAt",
+      uoms: "id, code, updatedAt",
+      outlets: "id, code, updatedAt",
+      stock_snapshot: "key, outletId, itemId, updatedAt",
+      pending_sales: "localSaleId, status, outletId, createdAt",
+      sync_state: "table",
+      device_secret: "id",
+      device_meta: "id",
+      eod_closures: "key, outletId, businessDate, closedAt",
+      printed_qris: "outletId, fetchedAt",
+      pending_shift_events: "eventId, status, outletId, createdAt, kind",
+      shift_state: "id",
+      pending_voids: "localVoidId, status, saleId, localSaleId, outletId, createdAt",
     });
   }
 }

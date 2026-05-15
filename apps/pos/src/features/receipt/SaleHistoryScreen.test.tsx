@@ -122,6 +122,9 @@ describe("SaleHistoryScreen", () => {
     expect(rows).toHaveLength(3);
     expect(rows[0]).toHaveAttribute("data-local-sale-id", "sale-new");
     expect(rows[2]).toHaveAttribute("data-local-sale-id", "sale-old");
-    expect(rows[0]).toHaveAttribute("href", "/sales/sale-new");
+    // The reprint deep-link is the first <a> inside each row card
+    // (KASA-236-B nested the Batalkan affordance alongside it).
+    const reprintLink = rows[0]!.querySelector("a");
+    expect(reprintLink).toHaveAttribute("href", "/sales/sale-new");
   });
 });

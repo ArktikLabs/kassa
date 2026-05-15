@@ -167,6 +167,17 @@ const salesReprintRoute = createRoute({
   component: lazyRouteComponent(() => import("./routes/sales.$id"), "SaleReprintScreen"),
 });
 
+// KASA-236-B — manager-PIN void route. Requires an open shift because the
+// server only accepts voids for sales on the currently-open shift's
+// business date; surfacing /shift/open instead of a 422 toast keeps the
+// dead-end out of the void flow.
+const saleVoidRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/sale/$id/void",
+  beforeLoad: guardOpenShift,
+  component: lazyRouteComponent(() => import("./routes/sale.$id.void"), "SaleVoidScreen"),
+});
+
 const adminRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/admin",
@@ -216,6 +227,7 @@ export const routeTree = rootRoute.addChildren([
   receiptRoute,
   salesHistoryRoute,
   salesReprintRoute,
+  saleVoidRoute,
   adminRoute,
   eodRoute,
   shiftOpenRoute,

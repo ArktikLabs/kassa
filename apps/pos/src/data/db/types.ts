@@ -158,6 +158,57 @@ export interface PendingSale {
    * server; the receipt reprint screen can still render from the local row.
    */
   serverSaleName: string | null;
+  /**
+   * KASA-236-B — server's UUID for the sale. Needed by the void route
+   * because `POST /v1/sales/:saleId/void` keys on the server id, not the
+   * client-stamped `localSaleId`. Optional so pre-KASA-236 outbox rows
+   * survive the schema bump unchanged. Captured from the submit response.
+   */
+  serverSaleId?: string | null;
+  /**
+   * KASA-236-B — set after a void request enqueues locally OR after the
+   * server confirms a void on this sale. Optional so pre-void outbox rows
+   * survive the schema bump unchanged. Renders the PEMBATALAN banner.
+   */
+  voidedAt?: string | null;
+  voidBusinessDate?: string | null;
+  voidReason?: string | null;
+  /** Local void id that flipped this row, mirrors `pending_voids.localVoidId`. */
+  voidLocalId?: string | null;
+}
+
+/**
+ * KASA-236-B — outbox row for `POST /v1/sales/:saleId/void`. Mirrors the
+ * pending_sales lifecycle so a void queued offline drains alongside the
+ * original sale once connectivity returns. The drain replays the same
+ * payload until the server confirms (200/201) or returns a terminal 4xx
+ * other than 408/409/429.
+ *
+ * `managerPin` is held in plaintext for the retry window — the alternative
+ * (a hashed PIN) would require re-prompting the cashier on every retry,
+ * which defeats the offline-first contract. Dexie is origin-scoped IDB so
+ * the surface is the same as any other sensitive POS state (e.g. the
+ * device api secret). Rows are deleted from the outbox once `synced`.
+ */
+export type PendingVoidStatus = "queued" | "sending" | "error" | "needs_attention" | "synced";
+
+export interface PendingVoid {
+  /** Primary key. Client-stamped uuidv7 — the `localVoidId` on the wire. */
+  localVoidId: string;
+  saleId: string;
+  /** Local sale id this void targets — used to flip the local PendingSale row. */
+  localSaleId: string;
+  outletId: string;
+  managerStaffId: string;
+  managerPin: string;
+  voidedAt: string;
+  voidBusinessDate: string;
+  reason: string | null;
+  createdAt: string;
+  status: PendingVoidStatus;
+  attempts: number;
+  lastError: string | null;
+  lastAttemptAt: string | null;
 }
 
 export interface SyncState {

@@ -62,15 +62,33 @@ export function ReceiptPreview({
   const npwpLabel = intl.formatMessage({ id: "receipt.merchant.npwp" });
   const fallbackFooter = intl.formatMessage({ id: "receipt.footer.thanks" });
   const footerText = merchant?.receiptFooterText?.trim() || fallbackFooter;
+  const voided = sale.voidedAt != null;
+  // KASA-236-B — voided sales whose money landed via QRIS need a refund
+  // line in the printed copy: QRIS funds are off-device, so the cashier
+  // must hand cash back manually. Static QRIS (KASA-64) settles the same
+  // way for our purposes, so we trigger on both.
+  const qrisVoided =
+    voided && sale.tenders.some((t) => t.method === "qris" || t.method === "qris_static");
 
   return (
     <article
       data-testid="receipt-preview"
       data-paper-width={paperWidth}
       data-salinan={salinan ? "true" : undefined}
+      data-voided={voided ? "true" : undefined}
       className="mx-auto rounded-none border border-dashed border-neutral-300 bg-white px-3 py-4 font-mono text-[14px] leading-[20px] text-neutral-900"
       style={{ width: `${widthPx}px` }}
     >
+      {voided ? (
+        <div className="space-y-1 text-center" data-testid="receipt-pembatalan-banner">
+          <p className="text-base font-bold tracking-widest text-red-800">
+            *** {intl.formatMessage({ id: "receipt.pembatalan.banner" })} ***
+          </p>
+          <p className="text-[11px] text-neutral-700">
+            {intl.formatMessage({ id: "receipt.pembatalan.reference" })}
+          </p>
+        </div>
+      ) : null}
       {salinan ? (
         <p
           className="text-center font-bold tracking-widest text-neutral-900"
@@ -159,6 +177,14 @@ export function ReceiptPreview({
         />
         <Row label={intl.formatMessage({ id: "receipt.change" })} value={formatIdr(change)} />
       </dl>
+      {qrisVoided ? (
+        <p
+          className="mt-2 text-center text-[12px] font-semibold text-red-800"
+          data-testid="receipt-qris-refund-line"
+        >
+          {intl.formatMessage({ id: "receipt.pembatalan.qrisRefund" })}
+        </p>
+      ) : null}
       <hr className="my-2 border-dashed border-neutral-400" />
       <footer className="text-center text-[12px]" data-testid="receipt-footer">
         {footerText}

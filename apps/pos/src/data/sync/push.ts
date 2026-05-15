@@ -122,12 +122,16 @@ function isRetriableStatus(status: number): boolean {
   return status >= 500 && status < 600;
 }
 
-async function readServerName(response: Response): Promise<string | null> {
+async function readServerRefs(
+  response: Response,
+): Promise<{ name: string | null; saleId: string | null }> {
   try {
-    const body = (await response.clone().json()) as { name?: unknown };
-    return typeof body.name === "string" && body.name.length > 0 ? body.name : null;
+    const body = (await response.clone().json()) as { name?: unknown; saleId?: unknown };
+    const name = typeof body.name === "string" && body.name.length > 0 ? body.name : null;
+    const saleId = typeof body.saleId === "string" && body.saleId.length > 0 ? body.saleId : null;
+    return { name, saleId };
   } catch {
-    return null;
+    return { name: null, saleId: null };
   }
 }
 
@@ -277,8 +281,8 @@ export async function pushOutbox(database: Database, opts: PushOptions): Promise
     }
 
     if (response.ok) {
-      const name = await readServerName(response);
-      await repo.markSynced(row.localSaleId, name, clock().toISOString());
+      const refs = await readServerRefs(response);
+      await repo.markSynced(row.localSaleId, refs, clock().toISOString());
       synced += 1;
       updatePhase(total - i - 1);
       continue;
@@ -286,9 +290,12 @@ export async function pushOutbox(database: Database, opts: PushOptions): Promise
 
     if (response.status === 409) {
       // Server already has the sale (idempotency hit). Its canonical record
-      // rides the 409 body; we grab `name` and move on.
-      const name = await readServerName(response);
-      await repo.markSynced(row.localSaleId, name, clock().toISOString());
+      // rides the 409 body; we grab name + saleId and move on. The saleId
+      // is required by the void route, so capturing it on the idempotent
+      // replay closes the gap for rows that first landed via SW Background
+      // Sync (which never reached the window-side drain).
+      const refs = await readServerRefs(response);
+      await repo.markSynced(row.localSaleId, refs, clock().toISOString());
       synced += 1;
       updatePhase(total - i - 1);
       continue;

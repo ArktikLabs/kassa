@@ -17,6 +17,14 @@ export {
   type PushAuth,
 } from "./push.ts";
 export {
+  pushVoids,
+  SALES_VOID_PATH,
+  type PushVoidOptions,
+  type PushVoidResult,
+  type PushVoidStoppedBy,
+  type PushVoidAuth,
+} from "./push-voids.ts";
+export {
   createSyncRunner,
   browserOnlineSource,
   DEFAULT_SYNC_INTERVAL_MS,

@@ -3,7 +3,7 @@ import type { PendingSale } from "./types.ts";
 
 export type NewPendingSale = Omit<
   PendingSale,
-  "status" | "attempts" | "lastError" | "lastAttemptAt" | "serverSaleName"
+  "status" | "attempts" | "lastError" | "lastAttemptAt" | "serverSaleName" | "serverSaleId"
 >;
 
 export type OutboxRetriableStatus = Extract<PendingSale["status"], "queued" | "error">;
@@ -34,7 +34,34 @@ export interface PendingSalesRepo {
   markSending(localSaleId: string, attemptAt: string): Promise<void>;
   markError(localSaleId: string, error: string, attemptAt: string): Promise<void>;
   markNeedsAttention(localSaleId: string, error: string, attemptAt: string): Promise<void>;
-  markSynced(localSaleId: string, serverSaleName: string | null, syncedAt: string): Promise<void>;
+  markSynced(
+    localSaleId: string,
+    server: { name: string | null; saleId: string | null },
+    syncedAt: string,
+  ): Promise<void>;
+  /**
+   * Flip a sale's local-row to voided. Called twice in the void lifecycle:
+   * once optimistically when the cashier confirms the manager-PIN (so the
+   * PEMBATALAN banner appears immediately, even offline), and once after
+   * the server confirms the void on the drain (so a row that landed via
+   * SW Background Sync also gets its banner).
+   */
+  markVoided(
+    localSaleId: string,
+    fields: {
+      voidedAt: string;
+      voidBusinessDate: string;
+      voidReason: string | null;
+      voidLocalId: string;
+    },
+  ): Promise<void>;
+  /**
+   * Roll back an optimistic void mark when the server later rejected the
+   * void (e.g. wrong manager PIN, outside-open-shift). Only clears the
+   * fields when `voidLocalId` matches `expectedVoidLocalId` — a concurrent
+   * successful void from a different attempt must not be wiped.
+   */
+  clearOptimisticVoid(localSaleId: string, expectedVoidLocalId: string): Promise<void>;
   /**
    * Move a row back into the drain. Used on app boot (reset `sending` → `queued`)
    * and by the "Coba kirim ulang" admin action (reset `needs_attention` → `queued`).
@@ -55,6 +82,7 @@ export function pendingSalesRepo(db: KassaDexie): PendingSalesRepo {
         lastError: null,
         lastAttemptAt: null,
         serverSaleName: null,
+        serverSaleId: null,
       };
       // put() is an idempotent upsert keyed by localSaleId — if the client
       // retries an enqueue (offline double-tap, worker restart), we do not
@@ -123,12 +151,36 @@ export function pendingSalesRepo(db: KassaDexie): PendingSalesRepo {
         lastAttemptAt: attemptAt,
       });
     },
-    async markSynced(localSaleId, serverSaleName, syncedAt) {
-      await db.pending_sales.update(localSaleId, {
+    async markSynced(localSaleId, server, syncedAt) {
+      const patch: Partial<PendingSale> = {
         status: "synced",
-        serverSaleName,
+        serverSaleName: server.name,
         lastError: null,
         lastAttemptAt: syncedAt,
+      };
+      // Only overwrite serverSaleId when the response actually carried one.
+      // The 409 idempotency replay surfaces both name + id, but a defensive
+      // fallback path could land null here; keeping the prior id is safer
+      // than wiping it.
+      if (server.saleId !== null) patch.serverSaleId = server.saleId;
+      await db.pending_sales.update(localSaleId, patch);
+    },
+    async markVoided(localSaleId, fields) {
+      await db.pending_sales.update(localSaleId, {
+        voidedAt: fields.voidedAt,
+        voidBusinessDate: fields.voidBusinessDate,
+        voidReason: fields.voidReason,
+        voidLocalId: fields.voidLocalId,
+      });
+    },
+    async clearOptimisticVoid(localSaleId, expectedVoidLocalId) {
+      const sale = await db.pending_sales.get(localSaleId);
+      if (!sale || sale.voidLocalId !== expectedVoidLocalId) return;
+      await db.pending_sales.update(localSaleId, {
+        voidedAt: null,
+        voidBusinessDate: null,
+        voidReason: null,
+        voidLocalId: null,
       });
     },
     async requeue(localSaleId) {

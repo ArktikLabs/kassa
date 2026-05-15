@@ -1,5 +1,5 @@
 import type { Database } from "../db/index.ts";
-import type { PendingShiftEvent } from "../db/types.ts";
+import type { PendingShiftEvent, PendingVoid } from "../db/types.ts";
 import { pullAll, type PullAllResult } from "./pull.ts";
 import { pushOutbox, type PushOptions, type PushResult } from "./push.ts";
 import {
@@ -8,6 +8,7 @@ import {
   type PushShiftResult,
   type ShiftSyncResponse,
 } from "./push-shifts.ts";
+import { pushVoids, type PushVoidOptions, type PushVoidResult } from "./push-voids.ts";
 import { SyncHttpError, SyncNetworkError, SyncOfflineError, SyncParseError } from "./errors.ts";
 import type { SyncStatusStore } from "./status.ts";
 
@@ -54,6 +55,8 @@ export interface RunnerOptions {
   pushImpl?: (database: Database, opts: PushOptions) => Promise<PushResult>;
   /** Injected so tests can assert what the runner drives push-shifts.ts with. */
   pushShiftsImpl?: (database: Database, opts: PushShiftOptions) => Promise<PushShiftResult>;
+  /** Injected so tests can assert what the runner drives push-voids.ts with. */
+  pushVoidsImpl?: (database: Database, opts: PushVoidOptions) => Promise<PushVoidResult>;
 }
 
 export interface SyncRunner {
@@ -70,6 +73,7 @@ export function createSyncRunner(opts: RunnerOptions): SyncRunner {
   const onlineSource = opts.onlineSource ?? browserOnlineSource();
   const pushImpl = opts.pushImpl ?? pushOutbox;
   const pushShiftsImpl = opts.pushShiftsImpl ?? pushShiftEvents;
+  const pushVoidsImpl = opts.pushVoidsImpl ?? pushVoids;
   let timer: ReturnType<typeof setInterval> | null = null;
   let unsubOnline: (() => void) | null = null;
   let running = false;
@@ -111,6 +115,12 @@ export function createSyncRunner(opts: RunnerOptions): SyncRunner {
       // guard and the EOD float lookup.
       await pushShiftsImpl(opts.database, await buildShiftPushOptions());
       const result = await pushImpl(opts.database, await buildPushOptions());
+      // KASA-236-B — voids run after the sale-submit drain so a same-cycle
+      // sale that the cashier voided immediately (the common case for the
+      // "rang it up wrong" mistake) lands server-side before the void
+      // call tries to reference it. The server's void route returns 404
+      // until the sale exists.
+      await pushVoidsImpl(opts.database, await buildVoidPushOptions());
       await refreshNeedsAttention();
       return result;
     } catch (err) {
@@ -148,6 +158,30 @@ export function createSyncRunner(opts: RunnerOptions): SyncRunner {
     if (opts.fetchImpl) shiftPushOpts.fetchImpl = opts.fetchImpl;
     if (opts.clock) shiftPushOpts.clock = opts.clock;
     return shiftPushOpts;
+  };
+
+  const buildVoidPushOptions = async (): Promise<PushVoidOptions> => {
+    const auth = opts.auth ? await opts.auth() : null;
+    const onVoidSynced = async (row: PendingVoid): Promise<void> => {
+      // Flip the local sale row so a synced void shows the PEMBATALAN
+      // banner on the next live-query tick, even on offline-buffered
+      // voids that the cashier never re-opened the receipt for.
+      await opts.database.repos.pendingSales.markVoided(row.localSaleId, {
+        voidedAt: row.voidedAt,
+        voidBusinessDate: row.voidBusinessDate,
+        voidReason: row.reason,
+        voidLocalId: row.localVoidId,
+      });
+    };
+    const voidPushOpts: PushVoidOptions = {
+      baseUrl: opts.baseUrl,
+      isOnline: onlineSource.isOnline,
+      auth,
+      onVoidSynced,
+    };
+    if (opts.fetchImpl) voidPushOpts.fetchImpl = opts.fetchImpl;
+    if (opts.clock) voidPushOpts.clock = opts.clock;
+    return voidPushOpts;
   };
 
   const runOnce = (): Promise<RunnerCycleResult | null> => {

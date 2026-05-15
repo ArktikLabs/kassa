@@ -1,14 +1,41 @@
-import { useParams } from "@tanstack/react-router";
+import { Link, useParams } from "@tanstack/react-router";
+import { useLiveQuery } from "dexie-react-hooks";
+import { useEffect, useState } from "react";
 import { useIntl } from "react-intl";
+import type { Database, ShiftState } from "../../data/db/index.ts";
+import { getDatabase } from "../../data/db/index.ts";
+import { canVoidSale } from "../sale/SaleVoidScreen.tsx";
 import { ReceiptPreview } from "./ReceiptPreview.tsx";
 import { usePaperWidthStore, type PaperWidth } from "./paperWidth.ts";
 import { usePendingSale } from "./usePendingSale.ts";
 import { usePrintReceipt } from "./printing.ts";
 
+function useOpenShift(): ShiftState | null | undefined {
+  const [db, setDb] = useState<Database | null>(null);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    let cancelled = false;
+    getDatabase()
+      .then((next) => {
+        if (!cancelled) setDb(next);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  return useLiveQuery(async () => {
+    if (!db) return undefined;
+    const row = await db.repos.shiftState.get();
+    return row && row.closedAt === null ? row : null;
+  }, [db]);
+}
+
 export function ReceiptScreen() {
   const intl = useIntl();
   const { id: localSaleId } = useParams({ from: "/receipt/$id" });
   const { sale, outlet, ready } = usePendingSale(localSaleId);
+  const shift = useOpenShift();
   const paperWidth = usePaperWidthStore((s) => s.width);
   const setWidth = usePaperWidthStore((s) => s.setWidth);
   const { state: print, print: handlePrint } = usePrintReceipt();
@@ -48,6 +75,17 @@ export function ReceiptScreen() {
       </header>
 
       <ReceiptPreview sale={sale} outlet={outlet} paperWidth={paperWidth} />
+
+      {canVoidSale(sale, shift ?? null) ? (
+        <Link
+          to="/sale/$id/void"
+          params={{ id: sale.localSaleId }}
+          data-testid="receipt-void-cta"
+          className="block w-full rounded-md border border-red-700 px-4 py-3 text-center text-base font-semibold text-red-700 hover:bg-red-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 focus-visible:ring-offset-2 focus-visible:ring-offset-white"
+        >
+          {intl.formatMessage({ id: "receipt.void.cta" })}
+        </Link>
+      ) : null}
 
       <div className="flex flex-col gap-2">
         <button
