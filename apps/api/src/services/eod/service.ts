@@ -1,4 +1,5 @@
 import type { EodMissingSalesDetails } from "@kassa/schemas/eod";
+import { withSpan } from "../../lib/otel.js";
 import { uuidv7 } from "../../lib/uuid.js";
 import type { ShiftReader } from "../shifts/repository.js";
 import type { EodRepository, EodSyntheticReconciler, SalesReader } from "./repository.js";
@@ -88,6 +89,24 @@ export class EodService {
   }
 
   async close(input: CloseInput): Promise<EodRecord> {
+    // KASA-284 — `eod.close` wraps the fan-out across SalesReader + variance
+    // reducer + (optionally) the synthetic stock reconciler. `variance_idr`
+    // and `sales_count` are not known until after the breakdown step, so
+    // they are stamped on the span just before insert.
+    return withSpan(
+      "eod.close",
+      {
+        outlet_id: input.outletId,
+        business_date: input.businessDate,
+      },
+      (span) => this.closeInner(input, span),
+    );
+  }
+
+  private async closeInner(
+    input: CloseInput,
+    span: import("@opentelemetry/api").Span,
+  ): Promise<EodRecord> {
     const existing = await this.eodRepository.findExisting({
       merchantId: input.merchantId,
       outletId: input.outletId,
@@ -144,6 +163,9 @@ export class EodService {
     const breakdown = computeBreakdown(merchantSales);
     const expectedCashIdr = computeExpectedCash(merchantSales) + openingFloatIdr;
     const varianceIdr = input.countedCashIdr - expectedCashIdr;
+
+    span.setAttribute("sales_count", breakdown.saleCount);
+    span.setAttribute("variance_idr", varianceIdr);
 
     if (varianceIdr !== 0) {
       const reason = input.varianceReason?.trim() ?? "";

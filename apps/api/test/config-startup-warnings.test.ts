@@ -17,6 +17,10 @@ import { collectStartupWarnings, loadEnv } from "../src/config.js";
 const REQUIRED_PROD_ENV = {
   NODE_ENV: "production",
   DATABASE_URL: "postgres://kassa:kassa@localhost:5432/kassa",
+  // KASA-284 — pin the OTLP endpoint so the SESSION_COOKIE_SECRET warning
+  // tests below see exactly one warning. The OTEL-specific assertions live
+  // in their own `describe` block further down.
+  OTEL_EXPORTER_OTLP_ENDPOINT: "http://localhost:4318",
 } as const;
 
 describe("loadEnv()", () => {
@@ -72,6 +76,29 @@ describe("collectStartupWarnings()", () => {
 
   it("does not warn when SESSION_COOKIE_SECRET is unset in test", () => {
     const env = loadEnv({ NODE_ENV: "test" });
+    expect(collectStartupWarnings(env)).toEqual([]);
+  });
+
+  // KASA-284 — `OTEL_EXPORTER_OTLP_ENDPOINT` is the same "warn and run"
+  // policy as SESSION_COOKIE_SECRET: missing in production drops a
+  // structured `missing_otel_endpoint` warning instead of crashing boot;
+  // the manual spans on sale.submit / eod.close fall back to a NoOp tracer
+  // (no exports) but the API stays up.
+  it("returns a missing_otel_endpoint warning when the endpoint is unset in production", () => {
+    const env = loadEnv({
+      NODE_ENV: "production",
+      DATABASE_URL: "postgres://kassa:kassa@localhost:5432/kassa",
+      SESSION_COOKIE_SECRET: "x".repeat(32),
+    });
+    const warnings = collectStartupWarnings(env);
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]?.code).toBe("missing_otel_endpoint");
+    expect(warnings[0]?.message).toContain("OTEL_EXPORTER_OTLP_ENDPOINT");
+    expect(warnings[0]?.message).toContain("NoOp tracer");
+  });
+
+  it("does not warn when OTEL_EXPORTER_OTLP_ENDPOINT is unset outside production", () => {
+    const env = loadEnv({ NODE_ENV: "development" });
     expect(collectStartupWarnings(env)).toEqual([]);
   });
 });

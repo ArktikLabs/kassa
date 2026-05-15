@@ -420,6 +420,18 @@ The "full sales day offline" acceptance test (vision success metric) is a Playwr
 - **Monitoring**: Sentry for errors (both tiers). Better Stack for synthetic checks on `POS shell` and API `/health`. Fly's built-in healthchecks + process restarts cover process-level failures.
 - **Logging**: Pino JSON logs from the API go to Fly's log stream, shipped to Sentry (errors) and a log aggregator (operational logs). PWA logs to console in dev; Sentry breadcrumbs in prod.
 - **Metrics**: OpenTelemetry (API) + provider-native ingest. Frontend RUM via PostHog (captured page views, custom events) until a dedicated RUM story is justified.
+- **Traces (API)**: OpenTelemetry trace SDK initialised before Fastify on boot when `OTEL_EXPORTER_OTLP_ENDPOINT` is set; unset → NoOp tracer (same warn-and-run policy as `SESSION_COOKIE_SECRET`, ADR-011), and `/health.warnings[]` carries `missing_otel_endpoint`. KASA-284 ships manual spans on the two hot paths called out by the roadmap:
+
+  | Span | Where | Attributes |
+  |------|-------|-----------|
+  | `sale.submit` | `SalesService.submit` — offline-drain workhorse (`POST /v1/sales/submit`) | `outlet_id`, `tender_count`, `idempotent_hit`, `sale_id` (after generation) |
+  | `sale.submit.idempotency` | `findSaleByLocalId` repo call | `hit` (bool) |
+  | `sale.submit.validation` | item + pricing validation block | `item_count` |
+  | `sale.submit.bom_explosion` | BOM resolution + component sum + stock check | `bom_count`, `component_count` |
+  | `sale.submit.ledger_write` | `recordSale` repo call | `ledger_entry_count` |
+  | `eod.close` | `EodService.close` — fans out across `SalesReader` + variance reducer + (optional) synthetic stock reconciler | `outlet_id`, `business_date`, `sales_count`, `variance_idr` |
+
+  A failed handler stamps the span `status=ERROR` and records the exception event before re-throwing, so a failed sale is still legible in the trace view rather than silently absent. Auto-instrumentations (`@opentelemetry/auto-instrumentations-node`) are intentionally deferred — current spans are the v0 deliverable and the bundle adds 300+ deps for marginal extra signal at v0 traffic.
 - **Backups**: Neon retains point-in-time recovery in its tier; the restore runbook lives at [RUNBOOK-DR.md](./RUNBOOK-DR.md) (Neon PITR drill + S3-dump lifeboat path + decision tree, [KASA-181](/KASA/issues/KASA-181)). Out-of-region export is a v1 concern.
 - **Secrets**: Fly secrets for API, Cloudflare environment variables for Pages, GitHub Actions secrets for CI. No secrets in the repo, `.env` files are gitignored and only used for local dev. A `gitleaks` scan runs in CI.
 - **On-call**: one engineer on the pilot. Escalation path documented in `docs/ops/on-call.md` once it lands.

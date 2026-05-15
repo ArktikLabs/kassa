@@ -1,3 +1,12 @@
+// OTEL boot must precede the Fastify import so any future auto-instrumentation
+// shim sees Fastify load through its hook. Today the SDK runs without
+// auto-instrumentations (KASA-284 only ships manual spans on `sale.submit`
+// and `eod.close`), but the side-effect-import ordering is the contract that
+// keeps the door open for adding `@opentelemetry/auto-instrumentations-node`
+// in a follow-up without re-shuffling the entrypoint.
+import "./lib/otel-bootstrap.js";
+import { shutdownOtel } from "./lib/otel.js";
+
 import { createMidtransProvider, type PaymentProvider } from "@kassa/payments";
 import { buildApp } from "./app.js";
 import { collectStartupWarnings, loadEnv } from "./config.js";
@@ -193,6 +202,9 @@ async function main(): Promise<void> {
       try {
         await app.close();
         if (database) await database.close();
+        // Flush in-flight spans before exit. Safe to call when the SDK
+        // never started — `shutdownOtel` is a no-op in that case.
+        await shutdownOtel();
         process.exit(0);
       } catch (err) {
         app.log.error({ err }, "shutdown failed");
