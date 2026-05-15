@@ -90,6 +90,14 @@ function deferUntilIdle(fn: () => void): void {
 }
 
 deferUntilIdle(() => {
-  void import("./lib/sentry").then((m) => m.initSentry());
+  void import("./lib/sentry").then(async (m) => {
+    m.initSentry();
+    // Web Vitals reporter rides the Sentry SDK that initSentry just brought
+    // in — wire LCP/INP/CLS only after Sentry is ready so the breadcrumbs
+    // and info-level events have a configured client. Sentry init is a
+    // no-op when VITE_SENTRY_DSN is unset, so this stays silent in dev/CI.
+    const vitals = await import("./lib/web-vitals");
+    vitals.startWebVitals();
+  });
   void import("./lib/pwa").then((m) => m.registerPwa());
 });

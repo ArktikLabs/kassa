@@ -144,10 +144,10 @@ jobs:
     name: Bundle-size budget (apps/pos)
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    # Informational while the perf baseline lands. The .size-limit.json
-    # numbers are the contractual budget; the gate just won't merge-block
-    # until we flip this off. See docs/CI-CD.md §8.4.
-    continue-on-error: true
+    # Blocking. The current main-branch POS build sits comfortably under
+    # both budgets (initial ~166 KB / 200 KB, total route-loaded ~234 KB /
+    # 350 KB at KASA-282 merge), so any regression that fails the gate is
+    # real and should block merge. See docs/CI-CD.md §8.4.
     steps:
       - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
