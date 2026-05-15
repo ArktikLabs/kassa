@@ -58,6 +58,38 @@ Set `VITE_SENTRY_DSN` and (optionally) `VITE_RELEASE` at build time to enable re
 
 `vite-plugin-pwa` generates `manifest.webmanifest` from the Vite config and precaches the app shell via `src/sw.ts`. Runtime caching strategies (catalog images `CacheFirst`, allow-listed `GET /api/...` reads, …) land in this file as each feature arrives. Icons live at `public/icons/icon-{192,512,maskable-512}.svg` in Kassa primary teal (`#0D9488`).
 
-## Bundle budget
+## Performance budgets
 
-Shell JS budget: < 220 KB gzipped (informational at M2). Current production build: ~108 KB gzipped. Watch this number as features land.
+POS ships under three CI budgets (see [`docs/CI-CD.md`](../../docs/CI-CD.md) §8 for the full contract). The first two are **blocking**; Lighthouse is informational, and the RUM harness is telemetry, not a gate.
+
+| Slice                                                              | Budget (gzip) | Tooling          | Source of truth                            |
+| :----------------------------------------------------------------- | :------------ | :--------------- | :----------------------------------------- |
+| Initial route — main JS + main CSS chunks                          | 200 KB        | `size-limit`     | [`.size-limit.json`](./.size-limit.json)   |
+| Total route-loaded JS — every hashed JS chunk in `dist/assets/`    | 350 KB        | `size-limit`     | [`.size-limit.json`](./.size-limit.json)   |
+| Lighthouse mobile (Performance ≥ 0.9, A11y ≥ 0.95, Best-Practices ≥ 0.95, PWA ≥ 0.9; LCP ≤ 2.5s, TBT ≤ 200ms, CLS ≤ 0.1) | — | `@lhci/cli` v11 | [`lighthouserc.json`](./lighthouserc.json) |
+
+Run them locally:
+
+```bash
+pnpm --filter @kassa/pos build             # produces dist/
+pnpm --filter @kassa/pos size              # asserts both .size-limit.json budgets
+```
+
+### Reading CI output
+
+The PR check **Bundle-size budget (apps/pos)** in `.github/workflows/perf-budgets.yml` runs the same `pnpm --filter @kassa/pos size` against the production build. On overage, `size-limit` prints the slice name, the limit, the measured size, and the delta, and exits non-zero — the check goes red and the PR is merge-blocked. Sample failure output:
+
+```
+POS initial route — main JS + main CSS (gzip)
+Package size limit has exceeded by 343.92 kB
+Size limit: 200 kB
+Size:       543.92 kB gzipped
+```
+
+The fix is either to reduce the regressing import (code-split, lazy-load, dynamic `import()`) or to raise the budget via the procedure in [`docs/CI-CD.md`](../../docs/CI-CD.md) §8.5 (PO sign-off required).
+
+The PR check **Lighthouse CI (apps/pos)** uploads a temporary public artifact for each run; failures link to the full Lighthouse report. Lighthouse is currently informational because GitHub-runner variance is large enough to flake a `≥ 0.9` perf threshold — treat it as a per-PR signal, not a gate (see §8.4 for the rationale).
+
+### Real-user Web Vitals (RUM)
+
+`src/lib/web-vitals.ts` lazy-loads the `web-vitals` package after first paint and reports **LCP / INP / CLS** as Sentry breadcrumbs + info-level events. No-op when `VITE_SENTRY_DSN` is unset. This complements the synthetic Lighthouse run with real-merchant numbers; it is not a CI gate.

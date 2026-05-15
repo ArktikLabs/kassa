@@ -14,6 +14,7 @@
     "typecheck": "tsc -b --noEmit",
     "test": "vitest run",
     "e2e": "playwright test",
+    "size": "size-limit",
     "size:check": "size-limit"
   },
   "dependencies": {

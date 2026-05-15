@@ -800,9 +800,9 @@ These are out of scope for the initial CI + static-surface CD setup but are **pr
 
 ---
 
-## 8. Performance budgets ([KASA-141](/KASA/issues/KASA-141), [KASA-199](/KASA/issues/KASA-199))
+## 8. Performance budgets ([KASA-141](/KASA/issues/KASA-141), [KASA-199](/KASA/issues/KASA-199), [KASA-282](/KASA/issues/KASA-282))
 
-The cross-milestone Performance budgets track in [ROADMAP.md](./ROADMAP.md) commits to `Bundle size, Lighthouse, and Web Vitals gates enforced in CI`. KASA-141 landed the POS-only baseline; [KASA-199](/KASA/issues/KASA-199) folds `apps/back-office` into the same gate. The API is server-side and not bundle-budgeted.
+The cross-milestone Performance budgets track in [ROADMAP.md](./ROADMAP.md) commits to `Bundle size, Lighthouse, and Web Vitals gates enforced in CI`. KASA-141 landed the POS-only baseline; [KASA-199](/KASA/issues/KASA-199) folds `apps/back-office` into the same gate; [KASA-282](/KASA/issues/KASA-282) finalises the cross-track by flipping the POS bundle-size gate to blocking and adding the RUM web-vitals harness in §8.6. The API is server-side and not bundle-budgeted.
 
 The gates live in their own workflow, [`.github/workflows/perf-budgets.yml`](../.github/workflows/perf-budgets.yml), and run in parallel with `ci.yml` so they don't extend the critical-path PR latency. The workflow's `paths:` filter limits `pull_request` runs to PRs that touch `apps/pos/**`, `apps/back-office/**`, `pnpm-lock.yaml`, or the workflow file itself — docs-only PRs skip the gate entirely.
 
@@ -845,16 +845,15 @@ The back-office app is not a PWA and ships only an `index-*` bundle (no code-spl
 
 ### 8.4 Posture: informational vs. blocking
 
-POS gates currently ship with `continue-on-error: true` on the workflow jobs. They surface a red check on the PR but do not block merge. This is deliberate — at the time KASA-141 landed, the apps/pos initial bundle is at ~206 KB gzip (above the 200 KB target by ~6 KB), so blocking would wedge unrelated PRs until the code-splitting work brings it back under budget.
+| Job                                | Posture       | Why                                                                                                       |
+|:-----------------------------------|:--------------|:----------------------------------------------------------------------------------------------------------|
+| Bundle-size budget (apps/pos)      | Blocking      | Post-KASA-157 code-split brought initial to ~166 KB / 200 KB and total to ~234 KB / 350 KB; flipped under KASA-282. |
+| Bundle-size budget (apps/back-office) | Blocking   | Current build ~146 KB / 350 KB; never had a day-zero failure to absorb.                                   |
+| Lighthouse CI (apps/pos)           | Informational | GitHub runners have meaningful variance on category scores even with simulated throttling; flake risk against a `≥ 0.9` perf threshold outweighs the merge-block value. Treated as a per-PR red-flag signal rather than a gate. |
 
-The back-office bundle-size gate is **blocking from day one**: the current build sits well under the 350 KB budget (initial route ~136 KB gzip), so there is no day-zero failure to absorb.
+Flip mechanism for any informational gate: delete the `continue-on-error: true` line from the relevant job in `perf-budgets.yml`. No workflow restructuring required.
 
-The POS gates flip to **blocking** the moment one of the following is true:
-
-1. The current main-branch build is at or under every budget for two consecutive `push: main` runs (i.e. the baseline is real, not a fluke).
-2. Or the budget itself is intentionally raised via the procedure in §8.5 below.
-
-Flip mechanism: delete the `continue-on-error: true` line from the relevant job in `perf-budgets.yml`. No workflow restructuring required.
+A budget regression PR adding ~500 KB of dead-weight to `apps/pos/src/main.tsx` was used during KASA-282 to verify the POS bundle-size gate exits non-zero (Exit status 1) on overage — see KASA-282 PR description for the local trace.
 
 ### 8.5 Procedure to raise (or lower) a budget
 
@@ -868,10 +867,20 @@ Budgets are a contract with the user (Indonesian merchant on entry-level hardwar
 3. PO sign-off comment on the PR ("budget bump approved") is required before merge — same gating rule as any other roadmap-level commitment change.
 4. Lowering a budget (tightening the gate) doesn't need PO sign-off, but must include a commit message that names the win that made the headroom possible (e.g. "post-route-split, initial bundle dropped to 140 KB; tighten budget to 160 KB").
 
-### 8.6 Out of scope
+### 8.6 RUM: web-vitals harness (apps/pos) — [KASA-282](/KASA/issues/KASA-282)
+
+The synthetic Lighthouse run in §8.1 measures one cold load on a CI runner. To complement it with real-merchant data we ship a lightweight web-vitals reporter in [`apps/pos/src/lib/web-vitals.ts`](../apps/pos/src/lib/web-vitals.ts):
+
+- Lazy-loaded from `main.tsx` inside the existing `deferUntilIdle` block, after Sentry init — never on the LCP-critical chunk (verified: initial route unchanged at ~166 KB gzip; the web-vitals SDK ships as its own ~2.3 KB gzip chunk).
+- Subscribes to **LCP**, **INP**, and **CLS** via the `web-vitals` npm package.
+- Emits each metric as a Sentry `info`-level breadcrumb (so subsequent error events carry page-load perf context) plus an info-level `captureMessage` tagged `web-vitals.metric` / `web-vitals.rating` (so it can be aggregated when the dashboards ticket wires up).
+- No-op when `VITE_SENTRY_DSN` is unset — keeps dev, CI, and unconfigured deployments quiet.
+
+This is telemetry, not a gate. Dashboards + alerting on RUM web vitals are a separate observability ticket.
+
+### 8.7 Out of scope
 
 - Real-device verification on physical Android / iOS hardware — tracked in [KASA-131](/KASA/issues/KASA-131) (v1).
-- Real-user Web Vitals collection (RUM) — no Sentry/GA performance SDK changes here.
 - Lighthouse for `apps/back-office` — back-office is not a PWA (so the PWA ≥ 90 contract from §8.1 doesn't apply) and ships behind owner auth, so a synthetic Lighthouse against a preview doesn't model the real cold-start path. Revisit when staff-facing UX SLOs land.
 
 ---
