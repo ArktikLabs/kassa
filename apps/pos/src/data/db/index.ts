@@ -19,6 +19,7 @@ import {
 } from "./pending-catalog-mutations.ts";
 import { pendingSalesRepo, type PendingSalesRepo } from "./pending-sales.ts";
 import { pendingShiftEventsRepo, type PendingShiftEventsRepo } from "./pending-shift-events.ts";
+import { pendingVoidsRepo, type PendingVoidsRepo } from "./pending-voids.ts";
 import { printedQrisRepo, type PrintedQrisRepo } from "./printed-qris.ts";
 import { shiftStateRepo, type ShiftStateRepo } from "./shift-state.ts";
 import { stockSnapshotRepo, type StockSnapshotRepo } from "./stock-snapshot.ts";
@@ -34,6 +35,7 @@ export interface Repos {
   pendingSales: PendingSalesRepo;
   pendingShiftEvents: PendingShiftEventsRepo;
   pendingCatalogMutations: PendingCatalogMutationsRepo;
+  pendingVoids: PendingVoidsRepo;
   shiftState: ShiftStateRepo;
   syncState: SyncStateRepo;
   deviceSecret: DeviceSecretRepo;
@@ -52,6 +54,7 @@ export function createRepos(db: KassaDexie): Repos {
     pendingSales: pendingSalesRepo(db),
     pendingShiftEvents: pendingShiftEventsRepo(db),
     pendingCatalogMutations: pendingCatalogMutationsRepo(db),
+    pendingVoids: pendingVoidsRepo(db),
     shiftState: shiftStateRepo(db),
     syncState: syncStateRepo(db),
     deviceSecret: deviceSecretRepo(db),

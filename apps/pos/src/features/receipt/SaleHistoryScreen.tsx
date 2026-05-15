@@ -19,7 +19,8 @@ import { Link } from "@tanstack/react-router";
 import { FormattedMessage, useIntl } from "react-intl";
 import { formatIdr } from "../../shared/money/index.ts";
 import { getDatabase, type Database } from "../../data/db/index.ts";
-import type { PendingSale, PendingSaleTenderMethod } from "../../data/db/types.ts";
+import type { PendingSale, PendingSaleTenderMethod, ShiftState } from "../../data/db/types.ts";
+import { canVoidSale } from "../sale/SaleVoidScreen.tsx";
 import {
   getSnapshot,
   hydrateEnrolment,
@@ -60,6 +61,12 @@ export function SaleHistoryScreen() {
     if (!db || !outletId) return undefined;
     return db.repos.pendingSales.listRecentByOutlet(outletId, HISTORY_LIMIT);
   }, [db, outletId]);
+
+  const shift = useLiveQuery(async () => {
+    if (!db) return undefined;
+    const row = await db.repos.shiftState.get();
+    return row && row.closedAt === null ? row : null;
+  }, [db]);
 
   if (snapshot.state === "loading") {
     return (
@@ -127,7 +134,7 @@ export function SaleHistoryScreen() {
           aria-label={intl.formatMessage({ id: "receipt.history.aria" })}
         >
           {sales.map((sale) => (
-            <SaleRow key={sale.localSaleId} sale={sale} />
+            <SaleRow key={sale.localSaleId} sale={sale} shift={shift ?? null} />
           ))}
         </ul>
       )}
@@ -135,7 +142,7 @@ export function SaleHistoryScreen() {
   );
 }
 
-function SaleRow({ sale }: { sale: PendingSale }) {
+function SaleRow({ sale, shift }: { sale: PendingSale; shift: ShiftState | null }) {
   const intl = useIntl();
   const tenderLabel = describeTender(sale.tenders, intl);
   const createdAtLabel = formatDateTime(sale.createdAt);
@@ -144,30 +151,56 @@ function SaleRow({ sale }: { sale: PendingSale }) {
     { id: "receipt.history.row.aria" },
     { createdAt: createdAtLabel, total: totalLabel, tender: tenderLabel },
   );
+  const voidEligible = canVoidSale(sale, shift);
+  const voided = sale.voidedAt != null;
 
   return (
     <li>
-      <Link
-        to="/sales/$id"
-        params={{ id: sale.localSaleId }}
-        className="block rounded-md border border-neutral-200 bg-white p-4 shadow-sm transition-colors hover:bg-neutral-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-600 focus-visible:ring-offset-2 focus-visible:ring-offset-white"
+      <div
+        className="rounded-md border border-neutral-200 bg-white p-4 shadow-sm"
         data-testid="sales-history-row"
         data-local-sale-id={sale.localSaleId}
-        aria-label={aria}
+        data-voided={voided ? "true" : undefined}
       >
-        <div className="flex items-baseline justify-between gap-3">
-          <span className="text-sm font-semibold text-neutral-900" data-testid="row-created-at">
-            {createdAtLabel}
-          </span>
-          <span className="font-mono tabular-nums text-base font-bold text-neutral-900">
-            {totalLabel}
-          </span>
-        </div>
-        <div className="mt-1 flex items-center justify-between gap-3 text-xs text-neutral-600">
-          <span data-testid="row-tender">{tenderLabel}</span>
-          <StatusBadge status={sale.status} />
-        </div>
-      </Link>
+        <Link
+          to="/sales/$id"
+          params={{ id: sale.localSaleId }}
+          className="block rounded-md transition-colors hover:bg-neutral-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-600 focus-visible:ring-offset-2 focus-visible:ring-offset-white"
+          aria-label={aria}
+        >
+          <div className="flex items-baseline justify-between gap-3">
+            <span className="text-sm font-semibold text-neutral-900" data-testid="row-created-at">
+              {createdAtLabel}
+            </span>
+            <span className="font-mono tabular-nums text-base font-bold text-neutral-900">
+              {totalLabel}
+            </span>
+          </div>
+          <div className="mt-1 flex items-center justify-between gap-3 text-xs text-neutral-600">
+            <span data-testid="row-tender">{tenderLabel}</span>
+            {voided ? (
+              <span
+                data-testid="row-voided-badge"
+                className="inline-flex rounded-full border border-red-300 bg-red-50 px-2 py-0.5 text-[11px] font-semibold text-red-800"
+              >
+                <FormattedMessage id="receipt.history.row.voided" />
+              </span>
+            ) : (
+              <StatusBadge status={sale.status} />
+            )}
+          </div>
+        </Link>
+        {voidEligible ? (
+          <Link
+            to="/sale/$id/void"
+            params={{ id: sale.localSaleId }}
+            data-testid="row-void-cta"
+            className="mt-3 inline-block text-sm font-semibold text-red-700 hover:text-red-800"
+          >
+            <FormattedMessage id="receipt.history.row.void" />
+          </Link>
+        ) : null}
+      </div>
     </li>
   );
 }
