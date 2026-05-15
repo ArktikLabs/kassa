@@ -405,6 +405,25 @@ The SHA is the first 12 chars of `github.sha` for `cd.yml` (the CI run's head SH
 
 **Source-map provenance.** Source maps are emitted **at CI build time**, not at deploy time — so the bytes Sentry receives are the same bytes CI exercised in lint → build → typecheck → test. `apps/pos` / `apps/back-office` set Vite's `build.sourcemap: 'hidden'` (emit `.map` files but omit the `sourceMappingURL` comment in JS). `apps/api`, `packages/payments`, and `packages/schemas` set `sourceMap: true` in `tsconfig.build.json`. CI's `Verify source maps emitted` step (§2.3) fails the run if any artifact's `dist/` is missing `*.js.map`, so a config regression is caught on PR before main even sees it.
 
+#### `SENTRY_AUTH_TOKEN` rotation ([KASA-283](/KASA/issues/KASA-283))
+
+The token is a Sentry **org-level user auth token** with `project:releases`, `project:read`, `project:write`, and `org:read` scopes — the minimum the composite action's `releases new → set-commits → sourcemaps inject → sourcemaps upload → releases finalize` flow needs. It is bound on two GitHub Environments — `production` (POS + Back Office in `cd.yml`, API staging in `cd.yml`) and `production-prod` (API prod in `deploy-prod.yml`) — and is the same secret value in both. Rotate on a regular cadence (every 6 months, or immediately on suspected leak / contributor departure / token surfaced in an error trace).
+
+The rotation is overlap-then-revoke: the new token coexists with the old token long enough to verify the next deploy uploads source maps, then the old token is revoked. Skipping the overlap window is how a deploy lands on `main` with a broken Sentry release.
+
+1. **Generate the new token.** In Sentry, *User Settings → User Auth Tokens → Create New Token*. Scopes: `project:releases`, `project:read`, `project:write`, `org:read`. Label it `kassa-cd-<YYYY-MM-DD>` so the audit trail in Sentry shows when each token entered service. Copy the token immediately — Sentry shows it once.
+2. **Write the new token to both GitHub Environments.** In *Repo Settings → Environments → production → Environment secrets*, edit `SENTRY_AUTH_TOKEN` and paste the new value. Repeat in *production-prod*. Both environments must update in the same window — they are gates for separate workflows (`cd.yml` and `deploy-prod.yml`) but expect the same token.
+3. **Verify with a no-op redeploy.** Pick the most recent green CI run on `main` and trigger `cd.yml` via *Actions → CD → Run workflow → `ci_run_id=<id>`*. This re-runs the deploy against the same artifacts and re-runs the `Sentry release` step. A successful run is one where the `Sentry release` step in the POS + Back Office jobs ends with `Stripped sourceMappingURL refs from dist and removed N .map file(s).` and no `::warning title=Sentry not configured::` line. Confirm in Sentry that the release `kassa-pos@<sha12>` / `kassa-back-office@<sha12>` has new "Artifacts" entries with the current ISO timestamp.
+4. **Verify the API prod path separately** (if rotating the production-prod copy concurrently): trigger `deploy-prod.yml` via *Actions → Deploy Prod → Run workflow* with the same CI run id and confirm `kassa-api@<sha12>` shows fresh artifacts in Sentry. The `deploy-prod.yml` job is gated on a `production-prod` reviewer approval; skip this step if no reviewer is available and record the partial rotation in step 6.
+5. **Revoke the old token.** Back in Sentry, *User Settings → User Auth Tokens*, identify the previous `kassa-cd-*` token by label or creation date, and delete it. After deletion, the next deploy must still succeed — if it doesn't, the new token was not actually saved in GitHub (step 2). The composite action's `::warning::`-and-skip path keeps the workflow green even if both tokens are revoked, but the deploy will ship without source maps; do not rely on that path during rotation.
+6. **Record the rotation.** Update [RUNBOOK-DEPLOY.md §6](./RUNBOOK-DEPLOY.md) with the date and operator. If the token was rotated because of suspected leak, also open a security follow-up issue and link it.
+
+**Failure modes and recovery**
+
+- Step 3 verification surfaces `::warning title=Sentry not configured::` → the new token wasn't saved on the `production` environment (most often: the token was pasted into *Repo secrets* instead of *Environment secrets → production*). Re-paste in the right place, re-run the workflow.
+- Step 3 verification surfaces `error: Invalid token (http status: 401)` from `sentry-cli` → the new token's scopes are insufficient. Generate a replacement with the four scopes above, repeat step 2.
+- An emergency deploy lands with a broken token → the source-map upload is skipped (`::warning::`) but the deploy still ships. Symbolicated stack traces for that release will be missing until the token is fixed and the release is rebuilt. There is no in-place repair for a release whose maps were not uploaded — redeploy the same artifacts via `cd.yml`'s `workflow_dispatch` after fixing the token; `sentry-cli releases new` is idempotent and `sourcemaps upload` populates the existing release.
+
 ### 3.6 Secrets and variables (reference)
 
 | Key                          | Scope                      | Purpose                                         | Status |
@@ -417,7 +436,7 @@ The SHA is the first 12 chars of `github.sha` for `cd.yml` (the CI run's head SH
 | `STAGING_NEON_URL`           | Env: `preview` (secret)    | Persistent staging Neon connection — fallback when PR-branch creation fails AND restore target on PR close | Required for preview CD ([KASA-108](/KASA/issues/KASA-108)) |
 | `NEON_PROJECT_ID`            | Repo (variable)            | Kassa Neon project id used by `neonctl` calls   | Required for preview CD ([KASA-108](/KASA/issues/KASA-108)) |
 | `PREVIEW_DEPLOY_ENABLED`     | Repo (variable)            | Master switch — `true` turns on preview deploys | Required for preview CD ([KASA-108](/KASA/issues/KASA-108)) |
-| `SENTRY_AUTH_TOKEN`          | Env: `production` + `production-prod` (secret) | Source map uploads on every prod deploy (POS, Back Office, API) | Required for current CD ([KASA-70](/KASA/issues/KASA-70)) |
+| `SENTRY_AUTH_TOKEN`          | Env: `production` + `production-prod` (secret) | Source map uploads on every prod deploy (POS, Back Office, API). Rotation procedure: §3.5b → "SENTRY_AUTH_TOKEN rotation". | Required for current CD ([KASA-70](/KASA/issues/KASA-70)) |
 | `SENTRY_ORG`                 | Repo (variable)            | Sentry org slug used by all release uploads     | Required for current CD ([KASA-70](/KASA/issues/KASA-70)) |
 | `SENTRY_PROJECT_POS`         | Repo (variable)            | Sentry project slug for POS PWA releases        | Required for current CD ([KASA-70](/KASA/issues/KASA-70)) |
 | `SENTRY_PROJECT_BACK_OFFICE` | Repo (variable)            | Sentry project slug for Back Office releases    | Required for current CD ([KASA-70](/KASA/issues/KASA-70)) |
