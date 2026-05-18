@@ -168,63 +168,32 @@ export function SaleVoidScreen() {
       result = { kind: "offline", reason: "unenrolled" };
     }
 
-    switch (result.kind) {
-      case "synced": {
-        // Mark the outbox row synced so the drain doesn't replay it. The
-        // optimistic markVoided we did in enqueueVoid is already correct.
+    const plan = planVoidFollowUp(result);
+    switch (plan.outboxAction) {
+      case "mark_synced":
         await db.repos.pendingVoids.markSynced(enqueued.row.localVoidId, new Date().toISOString());
-        void triggerPush().catch(() => {});
-        showToast(intl.formatMessage({ id: "void.toast.success" }), "success");
-        await navigate({ to: "/receipt/$id", params: { id: localSaleId } });
-        return;
-      }
-      case "manager_pin_required": {
-        // Roll back the optimistic mark — the void didn't happen.
+        break;
+      case "rollback_and_mark_needs_attention":
         await rollbackOptimisticVoid(db, sale.localSaleId, enqueued.row.localVoidId);
         await db.repos.pendingVoids.markNeedsAttention(
           enqueued.row.localVoidId,
-          result.message,
+          plan.outboxError ?? "rejected",
           new Date().toISOString(),
         );
-        setError(intl.formatMessage({ id: "void.error.manager_pin_required" }));
-        showToast(intl.formatMessage({ id: "void.toast.manager_pin_required" }), "error");
-        setPhase("idle");
-        return;
-      }
-      case "outside_open_shift": {
-        await rollbackOptimisticVoid(db, sale.localSaleId, enqueued.row.localVoidId);
-        await db.repos.pendingVoids.markNeedsAttention(
-          enqueued.row.localVoidId,
-          result.message,
-          new Date().toISOString(),
-        );
-        setError(intl.formatMessage({ id: "void.error.outside_shift" }));
-        showToast(intl.formatMessage({ id: "void.toast.outside_shift" }), "error");
-        setPhase("idle");
-        return;
-      }
-      case "rejected": {
-        await rollbackOptimisticVoid(db, sale.localSaleId, enqueued.row.localVoidId);
-        await db.repos.pendingVoids.markNeedsAttention(
-          enqueued.row.localVoidId,
-          result.message,
-          new Date().toISOString(),
-        );
-        setError(result.message);
-        showToast(result.message, "error");
-        setPhase("idle");
-        return;
-      }
-      case "retriable":
-      case "offline": {
-        // Leave the row queued; the runner drains it. The optimistic mark
-        // stays so the PEMBATALAN banner appears immediately.
-        void triggerPush().catch(() => {});
-        showToast(intl.formatMessage({ id: "void.toast.queued" }), "info");
-        await navigate({ to: "/receipt/$id", params: { id: localSaleId } });
-        return;
-      }
+        break;
+      case "leave_queued":
+        break;
     }
+    const toastBody = plan.toast.literal ?? intl.formatMessage({ id: plan.toast.id! });
+    showToast(toastBody, plan.toast.variant);
+    if (plan.navigateToReceipt) {
+      if (plan.triggerPush) void triggerPush().catch(() => {});
+      await navigate({ to: "/receipt/$id", params: { id: localSaleId } });
+      return;
+    }
+    if (plan.errorMessage)
+      setError(plan.errorMessage.literal ?? intl.formatMessage({ id: plan.errorMessage.id! }));
+    setPhase("idle");
   }, [
     canSubmit,
     db,
@@ -403,9 +372,78 @@ export function SaleVoidScreen() {
   );
 }
 
-type Eligibility = { kind: "ok" } | { kind: "blocked"; messageId: string };
+type LocalisedString = { id: string; literal?: undefined } | { literal: string; id?: undefined };
 
-function computeEligibility(sale: PendingSale, shift: ShiftState | null): Eligibility {
+export interface VoidFollowUpPlan {
+  outboxAction: "mark_synced" | "rollback_and_mark_needs_attention" | "leave_queued";
+  outboxError?: string;
+  toast: LocalisedString & { variant: "success" | "error" | "info" };
+  navigateToReceipt: boolean;
+  triggerPush?: boolean;
+  errorMessage?: LocalisedString;
+}
+
+/**
+ * Pure dispatcher: given the API result, return the follow-up plan
+ * (outbox transition + toast + navigation). Kept side-effect-free so
+ * the four toast paths (success / manager-PIN / outside-shift / queued)
+ * + already-voided + rejected can be unit-tested without rendering.
+ */
+export function planVoidFollowUp(result: VoidSaleApiResult): VoidFollowUpPlan {
+  switch (result.kind) {
+    case "synced":
+      return {
+        outboxAction: "mark_synced",
+        toast: { id: "void.toast.success", variant: "success" },
+        navigateToReceipt: true,
+        triggerPush: true,
+      };
+    case "manager_pin_required":
+      return {
+        outboxAction: "rollback_and_mark_needs_attention",
+        outboxError: result.message,
+        toast: { id: "void.toast.manager_pin_required", variant: "error" },
+        navigateToReceipt: false,
+        errorMessage: { id: "void.error.manager_pin_required" },
+      };
+    case "outside_open_shift":
+      return {
+        outboxAction: "rollback_and_mark_needs_attention",
+        outboxError: result.message,
+        toast: { id: "void.toast.outside_shift", variant: "error" },
+        navigateToReceipt: false,
+        errorMessage: { id: "void.error.outside_shift" },
+      };
+    case "already_voided":
+      // Cross-device race — server says it's already voided; the optimistic
+      // local mark already matches, so close the outbox row and navigate.
+      return {
+        outboxAction: "mark_synced",
+        toast: { id: "void.error.already_voided", variant: "info" },
+        navigateToReceipt: true,
+      };
+    case "rejected":
+      return {
+        outboxAction: "rollback_and_mark_needs_attention",
+        outboxError: result.message,
+        toast: { literal: result.message, variant: "error" },
+        navigateToReceipt: false,
+        errorMessage: { literal: result.message },
+      };
+    case "retriable":
+    case "offline":
+      return {
+        outboxAction: "leave_queued",
+        toast: { id: "void.toast.queued", variant: "info" },
+        navigateToReceipt: true,
+        triggerPush: true,
+      };
+  }
+}
+
+export type Eligibility = { kind: "ok" } | { kind: "blocked"; messageId: string };
+
+export function computeEligibility(sale: PendingSale, shift: ShiftState | null): Eligibility {
   if (sale.voidedAt) return { kind: "blocked", messageId: "void.error.already_voided" };
   if (!shift) return { kind: "blocked", messageId: "void.error.no_open_shift" };
   if (shift.businessDate !== sale.businessDate) {

@@ -35,6 +35,7 @@ export type VoidSaleApiResult =
   | { kind: "synced"; response: SaleVoidResponse }
   | { kind: "manager_pin_required"; status: 403; message: string }
   | { kind: "outside_open_shift"; status: 422; message: string }
+  | { kind: "already_voided"; status: 422; message: string }
   | { kind: "rejected"; status: number; code: string | null; message: string }
   | { kind: "retriable"; status: number; message: string }
   | { kind: "offline"; reason: string };
@@ -125,6 +126,9 @@ export async function voidSale(
   }
   if (response.status === 422 && code === "void_outside_open_shift") {
     return { kind: "outside_open_shift", status: 422, message };
+  }
+  if (response.status === 422 && code === "sale_voided") {
+    return { kind: "already_voided", status: 422, message };
   }
   return { kind: "rejected", status: response.status, code, message };
 }

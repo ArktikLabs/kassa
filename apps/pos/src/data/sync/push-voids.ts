@@ -19,8 +19,10 @@ import type { PendingVoid } from "../db/types.ts";
  *   4xx     → `needs_attention`  (everything else terminal)
  *   network → `error`            (retriable; drain halts)
  *
- * Idempotency is enforced server-side on `localVoidId`; a Workbox replay
- * or tab-death retry collapses to the same row.
+ * Idempotency is enforced server-side on `localVoidId`; a tab-death
+ * retry or restart collapses to the same row. (The void route is
+ * NetworkOnly in the service worker — durability is owned by the Dexie
+ * outbox here, not by Workbox Background Sync.)
  */
 
 export const SALES_VOID_PATH = (saleId: string) => `/v1/sales/${saleId}/void`;
