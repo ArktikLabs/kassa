@@ -104,7 +104,11 @@ describe("pendingSalesRepo.listRecentByOutlet", () => {
       makeSale({ localSaleId: "sale-synced", createdAt: "2026-04-23T08:00:00.000Z" }),
     );
     await repo.markSending("sale-synced", "2026-04-23T08:00:01.000Z");
-    await repo.markSynced("sale-synced", "POS-SALE-0001", "2026-04-23T08:00:02.000Z");
+    await repo.markSynced(
+      "sale-synced",
+      { name: "POS-SALE-0001", saleId: "00000000-0000-7000-8000-000000000001" },
+      "2026-04-23T08:00:02.000Z",
+    );
 
     const rows = await repo.listRecentByOutlet("outlet-a");
     expect(rows).toHaveLength(1);

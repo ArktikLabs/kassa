@@ -9,6 +9,7 @@ import type {
   PendingCatalogMutation,
   PendingSale,
   PendingShiftEvent,
+  PendingVoid,
   PrintedQris,
   ShiftState,
   StockSnapshot,
@@ -34,6 +35,7 @@ export class KassaDexie extends Dexie {
   pending_shift_events!: Table<PendingShiftEvent, string>;
   shift_state!: Table<ShiftState, string>;
   pending_catalog_mutations!: Table<PendingCatalogMutation, string>;
+  pending_voids!: Table<PendingVoid, string>;
 
   constructor(name: string = DB_NAME) {
     super(name);
@@ -122,12 +124,14 @@ export class KassaDexie extends Dexie {
       pending_shift_events: "eventId, status, outletId, createdAt, kind",
       shift_state: "id",
     });
-    // v6 — KASA-248. `pending_catalog_mutations` is the outbox for the
-    // catalog tile's long-press availability toggle; rows are keyed by
-    // `itemId` so a flip-flop collapses to the latest desired state.
-    // Existing `items` rows are backfilled to `availability='available'`
+    // v6 — combined: KASA-248 `pending_catalog_mutations` (catalog tile
+    // availability toggle outbox; rows keyed by itemId so flip-flops
+    // collapse to the latest desired state) AND KASA-236-B `pending_voids`
+    // (POS void outbox riding alongside pending_sales so offline-queued
+    // voids replay through the same retry policy). Both tables are
+    // additive. The upgrade backfills `items.availability='available'`
     // so the catalog screen renders identically until the next sync pull
-    // overwrites them with the server's canonical state.
+    // overwrites the server's canonical state.
     this.version(6)
       .stores({
         items: "id, code, name, isActive, updatedAt",
@@ -144,6 +148,7 @@ export class KassaDexie extends Dexie {
         pending_shift_events: "eventId, status, outletId, createdAt, kind",
         shift_state: "id",
         pending_catalog_mutations: "itemId, status, createdAt",
+        pending_voids: "localVoidId, status, saleId, localSaleId, outletId, createdAt",
       })
       .upgrade(async (tx) => {
         await tx

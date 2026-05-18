@@ -70,6 +70,7 @@ describe("KassaDexie schema", () => {
         "pending_catalog_mutations",
         "pending_sales",
         "pending_shift_events",
+        "pending_voids",
         "printed_qris",
         "shift_state",
         "stock_snapshot",

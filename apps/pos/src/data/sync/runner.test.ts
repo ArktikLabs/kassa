@@ -77,4 +77,86 @@ describe("createSyncRunner", () => {
     expect(p1).toBe(p2);
     await p1;
   });
+
+  it("drains in fixed order: shifts → catalog → sales → voids", async () => {
+    // KASA-236-B — voids run AFTER the sales drain so a same-cycle
+    // sale-then-void lands on the server in order; reordering would
+    // 404 the void.
+    const status = createSyncStatusStore();
+    const fetchImpl = vi.fn(async () => jsonResponse(emptyEnvelope())) as unknown as typeof fetch;
+    const calls: string[] = [];
+    const pushShiftsImpl = vi.fn(async () => {
+      calls.push("shifts");
+      return {
+        attempted: 0,
+        synced: 0,
+        needsAttention: 0,
+        errored: 0,
+        stoppedBy: "completed" as const,
+      };
+    });
+    const pushCatalogImpl = vi.fn(async () => {
+      calls.push("catalog");
+      return {
+        attempted: 0,
+        synced: 0,
+        needsAttention: 0,
+        errored: 0,
+        stoppedBy: "completed" as const,
+      };
+    });
+    const pushImpl = vi.fn(async () => {
+      calls.push("sales");
+      return {
+        attempted: 0,
+        synced: 0,
+        needsAttention: 0,
+        errored: 0,
+        stoppedBy: "completed" as const,
+      };
+    });
+    const pushVoidsImpl = vi.fn(async () => {
+      calls.push("voids");
+      return {
+        attempted: 0,
+        synced: 0,
+        needsAttention: 0,
+        errored: 0,
+        stoppedBy: "completed" as const,
+      };
+    });
+
+    const runner = createSyncRunner({
+      database,
+      baseUrl: "https://api.kassa.test",
+      status,
+      fetchImpl,
+      onlineSource: { isOnline: () => true, subscribe: () => () => {} },
+      pushShiftsImpl,
+      pushCatalogImpl,
+      pushImpl,
+      pushVoidsImpl,
+    });
+    const result = await runner.triggerPush();
+    expect(result).not.toBeNull();
+    expect(calls).toEqual(["shifts", "catalog", "sales", "voids"]);
+    expect(pushVoidsImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it("triggerPush skips pushVoids drain when offline", async () => {
+    const status = createSyncStatusStore();
+    const pushVoidsImpl = vi.fn(async () => {
+      throw new Error("should not run when offline");
+    });
+    const runner = createSyncRunner({
+      database,
+      baseUrl: "https://api.kassa.test",
+      status,
+      onlineSource: { isOnline: () => false, subscribe: () => () => {} },
+      pushVoidsImpl,
+    });
+    const result = await runner.triggerPush();
+    expect(result).toBeNull();
+    expect(pushVoidsImpl).not.toHaveBeenCalled();
+  });
 });
