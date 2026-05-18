@@ -20,8 +20,10 @@ function makeSale(overrides: Partial<PendingSale> = {}): PendingSale {
     attempts: overrides.attempts ?? 0,
     lastError: overrides.lastError ?? null,
     lastAttemptAt: overrides.lastAttemptAt ?? null,
-    serverSaleName: "serverSaleName" in overrides ? (overrides.serverSaleName ?? null) : "SALE-00001",
-    serverSaleId: "serverSaleId" in overrides ? (overrides.serverSaleId ?? null) : "sale-server-uuid",
+    serverSaleName:
+      "serverSaleName" in overrides ? (overrides.serverSaleName ?? null) : "SALE-00001",
+    serverSaleId:
+      "serverSaleId" in overrides ? (overrides.serverSaleId ?? null) : "sale-server-uuid",
     voidedAt: overrides.voidedAt ?? null,
     voidBusinessDate: overrides.voidBusinessDate ?? null,
     voidReason: overrides.voidReason ?? null,
