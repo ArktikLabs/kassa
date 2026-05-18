@@ -13,6 +13,7 @@
     "test": "NODE_ENV=test vitest run",
     "test:e2e": "playwright test",
     "test:e2e:full-day-offline": "playwright test --config=playwright.full-day-offline.config.ts",
+    "test:e2e:void": "playwright test --config=playwright.void.config.ts",
     "size": "size-limit",
     "size:check": "size-limit"
   },
@@ -43,6 +44,7 @@
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "@vitejs/plugin-react": "^4.3.4",
+    "argon2": "^0.41.1",
     "fake-indexeddb": "^6.0.0",
     "jsdom": "^25.0.0",
     "size-limit": "^11.1.6",
