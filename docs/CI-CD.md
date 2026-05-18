@@ -79,10 +79,10 @@ If we later move the shared packages to source-first exports (an `exports.source
 All actions are pinned to full commit SHAs with a trailing comment naming the tag they resolved to:
 
 ```yaml
-uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
-uses: pnpm/action-setup@fe02b34f77f8bc703788d5817da081398fad5dd2 # v4.0.0
-uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5.0.0
+uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
 ```
 
 Renovate/Dependabot may bump these; reviewers must verify the SHA against the upstream tag before approving a bump.

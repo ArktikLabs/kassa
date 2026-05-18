@@ -157,7 +157,7 @@ jobs:
       # to walk git history between the prior release SHA and HEAD —
       # default depth=1 makes that walk fail with libgit2 `Odb NotFound`.
       - name: Checkout (for composite action)
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
         with:
           ref: ${{ needs.preflight.outputs.commit_sha }}
           fetch-depth: 0
@@ -165,7 +165,7 @@ jobs:
           sparse-checkout-cone-mode: false
 
       - name: Download api-dist from CI run
-        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
         with:
           name: api-dist
           path: api-image
@@ -174,11 +174,15 @@ jobs:
 
       - name: Install flyctl
         uses: superfly/flyctl-actions/setup-flyctl@fc53c09e1bc3be6f54706524e3b82c4f462f77be # 1.5
+        env:
+          # KASA-292: setup-flyctl@1.5 still runs on Node 20; opt the action into Node 24
+          # until superfly ships a Node-24 release. Drop this once 1.6+ is out.
+          FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
         with:
           version: 0.4.39
 
       - name: Setup Node.js (for sentry-cli npx)
-        uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         with:
           node-version: "22"
 
@@ -229,7 +233,7 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: Checkout (for scripts/deploy-smoke.sh)
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
         with:
           ref: ${{ needs.preflight.outputs.commit_sha }}
           sparse-checkout: scripts

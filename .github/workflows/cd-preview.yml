@@ -126,17 +126,17 @@ jobs:
     timeout-minutes: 15
     steps:
       - name: Checkout PR head
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
         with:
           ref: ${{ needs.preflight.outputs.commit_sha }}
 
       - name: Install pnpm
-        uses: pnpm/action-setup@fe02b34f77f8bc703788d5817da081398fad5dd2 # v4.0.0
+        uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5.0.0
         with:
           run_install: false
 
       - name: Setup Node.js
-        uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         with:
           node-version-file: .nvmrc
           cache: pnpm
@@ -169,7 +169,7 @@ jobs:
             packages/schemas/package.json packages/schemas/dist
 
       - name: Upload POS dist
-        uses: actions/upload-artifact@604373da6381bf24206979c74d06a550515601b9 # v4.4.1
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: preview-pos-dist
           path: apps/pos/dist
@@ -177,7 +177,7 @@ jobs:
           retention-days: 7
 
       - name: Upload Back Office dist
-        uses: actions/upload-artifact@604373da6381bf24206979c74d06a550515601b9 # v4.4.1
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: preview-back-office-dist
           path: apps/back-office/dist
@@ -185,7 +185,7 @@ jobs:
           retention-days: 7
 
       - name: Upload API build context
-        uses: actions/upload-artifact@604373da6381bf24206979c74d06a550515601b9 # v4.4.1
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: preview-api-image
           path: .preview-api-image/api-image.tar
@@ -208,7 +208,7 @@ jobs:
       BRANCH_ALIAS: ${{ needs.preflight.outputs.branch_alias }}
     steps:
       - name: Setup Node.js (for neonctl)
-        uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         with:
           node-version: "22"
 
@@ -276,13 +276,13 @@ jobs:
       url: https://${{ needs.preflight.outputs.branch_alias }}.kassa-pos.pages.dev
     steps:
       - name: Download POS dist
-        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
         with:
           name: preview-pos-dist
           path: dist
 
       - name: Deploy to Cloudflare Pages (kassa-pos, preview)
-        uses: cloudflare/wrangler-action@392082e81ffbcb9ebdde27400634aa004b35ea37 # v3.14.0
+        uses: cloudflare/wrangler-action@ebbaa1584979971c8614a24965b4405ff95890e0 # v4.0.0
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
@@ -303,13 +303,13 @@ jobs:
       url: https://${{ needs.preflight.outputs.branch_alias }}.kassa-back-office.pages.dev
     steps:
       - name: Download Back Office dist
-        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
         with:
           name: preview-back-office-dist
           path: dist
 
       - name: Deploy to Cloudflare Pages (kassa-back-office, preview)
-        uses: cloudflare/wrangler-action@392082e81ffbcb9ebdde27400634aa004b35ea37 # v3.14.0
+        uses: cloudflare/wrangler-action@ebbaa1584979971c8614a24965b4405ff95890e0 # v4.0.0
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
@@ -340,7 +340,7 @@ jobs:
       using_main_db: ${{ steps.resolve.outputs.using_main_db }}
     steps:
       - name: Download API build context
-        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
         with:
           name: preview-api-image
           path: .
@@ -354,6 +354,10 @@ jobs:
 
       - name: Install flyctl
         uses: superfly/flyctl-actions/setup-flyctl@fc53c09e1bc3be6f54706524e3b82c4f462f77be # 1.5
+        env:
+          # KASA-292: setup-flyctl@1.5 still runs on Node 20; opt the action into Node 24
+          # until superfly ships a Node-24 release. Drop this once 1.6+ is out.
+          FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
         with:
           version: 0.4.39
 
@@ -516,7 +520,7 @@ jobs:
       BRANCH_ALIAS: ${{ needs.preflight.outputs.branch_alias }}
     steps:
       - name: Setup Node.js (for neonctl)
-        uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         with:
           node-version: "22"
 
@@ -561,6 +565,10 @@ jobs:
     steps:
       - name: Install flyctl
         uses: superfly/flyctl-actions/setup-flyctl@fc53c09e1bc3be6f54706524e3b82c4f462f77be # 1.5
+        env:
+          # KASA-292: setup-flyctl@1.5 still runs on Node 20; opt the action into Node 24
+          # until superfly ships a Node-24 release. Drop this once 1.6+ is out.
+          FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
         with:
           version: 0.4.39
 
