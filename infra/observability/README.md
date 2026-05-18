@@ -12,6 +12,7 @@ This folder is the source-of-truth for Better Stack monitors and Sentry alert ru
 |:------------------------------|:-------------------------------------------------------------|
 | `better-stack-monitors.json`  | Uptime monitors + heartbeats + on-call notification policy. Schema mirrors the Better Stack v2 API. Keys with `_` prefix are local annotations only — the apply script strips them before POSTing. |
 | `sentry-alert-rules.json`     | Issue + metric alert rules across the three Sentry projects. Keys with `_` prefix are local annotations. |
+| `sentry-dashboards.json`      | Sentry dashboards (organization-dashboards v2 API) — currently the POS Web Vitals RUM panels driven by [KASA-294](../../docs/CI-CD.md#86-rum-web-vitals-harness-appspos--kasa-282). `project_slug` is resolved to a numeric project id by the apply script (Sentry's dashboard envelope requires `projects: [<id>]`, not slugs, on every org plan). Idempotent by `title` within the org. |
 
 Names (`pronounceable_name`, `name`) are idempotency keys. The apply script reconciles by name within scope; **renaming** a record creates a duplicate. Delete the old record in the dashboard before renaming.
 

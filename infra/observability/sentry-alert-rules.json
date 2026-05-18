@@ -146,6 +146,105 @@
       ],
       "_severity": "P2",
       "_runbook_anchor": "section-3-3-sentry-alert-rules"
+    },
+    {
+      "_comment": "KASA-294: sustained share of LCP events tagged `rating:poor`. By the web-vitals package taxonomy, `rating:poor` ≡ value > 4000 ms, so a count threshold on this tag is the queryable form of the PO's `p75 LCP > 4s over 1h` ask given that the current harness writes the numeric value to `extra.*` (not searchable in Discover). The 10-event floor calibrates against the pilot's expected ~30 page loads/h on a single merchant; tune after one week of real volume (mirrors the api-sales-submit floor in this same file). Migrating the harness to emit a measurement (KASA-295 follow-up) would let us flip this to a true `percentile(measurements.lcp, 0.75) > 4000` metric-alert without changing the runbook contract.",
+      "name": "pos-web-vitals-lcp-poor-sustained",
+      "organization_slug": "${SENTRY_ORG}",
+      "project_slug": "${SENTRY_PROJECT_POS}",
+      "kind": "issue",
+      "action_match": "all",
+      "filter_match": "all",
+      "frequency_minutes": 60,
+      "filters": [
+        { "id": "sentry.rules.filters.environment.EnvironmentFilter", "value": "production" },
+        {
+          "id": "sentry.rules.filters.tagged_event.TaggedEventFilter",
+          "key": "web-vitals.metric",
+          "match": "eq",
+          "value": "LCP"
+        },
+        {
+          "id": "sentry.rules.filters.tagged_event.TaggedEventFilter",
+          "key": "web-vitals.rating",
+          "match": "eq",
+          "value": "poor"
+        },
+        {
+          "id": "sentry.rules.filters.event_count.EventFrequencyFilter",
+          "value": 10,
+          "interval": "1h"
+        }
+      ],
+      "conditions": [{ "id": "sentry.rules.conditions.every_event.EveryEventCondition" }],
+      "_severity": "P2",
+      "_runbook_anchor": "section-3-3-sentry-alert-rules"
+    },
+    {
+      "_comment": "KASA-294: sustained share of INP events tagged `rating:poor` (≡ value > 500 ms by web-vitals taxonomy). Same calibration rationale as the LCP rule. P2 because perf regressions are merchant-noticeable but don't stop the sale; rollback procedure routes through RUNBOOK-DEPLOY §4.3.",
+      "name": "pos-web-vitals-inp-poor-sustained",
+      "organization_slug": "${SENTRY_ORG}",
+      "project_slug": "${SENTRY_PROJECT_POS}",
+      "kind": "issue",
+      "action_match": "all",
+      "filter_match": "all",
+      "frequency_minutes": 60,
+      "filters": [
+        { "id": "sentry.rules.filters.environment.EnvironmentFilter", "value": "production" },
+        {
+          "id": "sentry.rules.filters.tagged_event.TaggedEventFilter",
+          "key": "web-vitals.metric",
+          "match": "eq",
+          "value": "INP"
+        },
+        {
+          "id": "sentry.rules.filters.tagged_event.TaggedEventFilter",
+          "key": "web-vitals.rating",
+          "match": "eq",
+          "value": "poor"
+        },
+        {
+          "id": "sentry.rules.filters.event_count.EventFrequencyFilter",
+          "value": 10,
+          "interval": "1h"
+        }
+      ],
+      "conditions": [{ "id": "sentry.rules.conditions.every_event.EveryEventCondition" }],
+      "_severity": "P2",
+      "_runbook_anchor": "section-3-3-sentry-alert-rules"
+    },
+    {
+      "_comment": "KASA-294: sustained share of CLS events tagged `rating:poor` (≡ value > 0.25 by web-vitals taxonomy). Same calibration rationale as the LCP rule.",
+      "name": "pos-web-vitals-cls-poor-sustained",
+      "organization_slug": "${SENTRY_ORG}",
+      "project_slug": "${SENTRY_PROJECT_POS}",
+      "kind": "issue",
+      "action_match": "all",
+      "filter_match": "all",
+      "frequency_minutes": 60,
+      "filters": [
+        { "id": "sentry.rules.filters.environment.EnvironmentFilter", "value": "production" },
+        {
+          "id": "sentry.rules.filters.tagged_event.TaggedEventFilter",
+          "key": "web-vitals.metric",
+          "match": "eq",
+          "value": "CLS"
+        },
+        {
+          "id": "sentry.rules.filters.tagged_event.TaggedEventFilter",
+          "key": "web-vitals.rating",
+          "match": "eq",
+          "value": "poor"
+        },
+        {
+          "id": "sentry.rules.filters.event_count.EventFrequencyFilter",
+          "value": 10,
+          "interval": "1h"
+        }
+      ],
+      "conditions": [{ "id": "sentry.rules.conditions.every_event.EveryEventCondition" }],
+      "_severity": "P2",
+      "_runbook_anchor": "section-3-3-sentry-alert-rules"
     }
   ]
 }

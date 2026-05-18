@@ -163,9 +163,9 @@ apply_better_stack() {
   done
 }
 
-# ─── Sentry ─────────────────────────────────────────────────────────────────
+# ─── Sentry alert rules ─────────────────────────────────────────────────────
 #
-# Two endpoint shapes share this manifest:
+# Two endpoint shapes share the alert-rule manifest:
 #
 #   kind: issue   → POST /projects/{org}/{project}/rules/   (project-rule schema)
 #   kind: metric  → POST /organizations/{org}/alert-rules/  (metric-alert envelope)
@@ -273,13 +273,118 @@ apply_sentry() {
   done
 }
 
+# ─── Sentry dashboards ──────────────────────────────────────────────────────
+#
+# Sentry's dashboards-v2 API takes a flat envelope with `title`, `widgets[]`,
+# and (optionally) `projects: [<id>]` + `period`. The list endpoint returns
+# numeric ids per dashboard plus the `title` we match on as the idempotency
+# key. `project_slug` is a local routing key — the apply script keeps the
+# slug-name form in the manifest for readability and (when a token is
+# present) resolves it against the org's project list to a numeric id, which
+# is what Sentry actually requires in `projects: []`. Local `_` annotations
+# are stripped before sending. See KASA-294.
+apply_sentry_dashboards() {
+  local org="${SENTRY_ORG:-kassa}"
+
+  local manifest="infra/observability/sentry-dashboards.json"
+  if [ ! -f "$manifest" ]; then
+    # Optional manifest — pre-KASA-294 trees won't have it and that's fine.
+    return 0
+  fi
+
+  local has_token="false"
+  if [ -n "${SENTRY_AUTH_TOKEN:-}" ]; then
+    has_token="true"
+  fi
+
+  printf '\n== Sentry dashboards (%s) ==\n' "$(verb_for_apply)"
+
+  local cleaned
+  cleaned="$(jq 'walk(if type == "object" then with_entries(select(.key | startswith("_") | not)) else . end)' "$manifest")"
+
+  local resolved
+  resolved="$(printf '%s' "$cleaned" \
+    | sed \
+        -e "s|\${SENTRY_ORG}|${SENTRY_ORG:-kassa}|g" \
+        -e "s|\${SENTRY_PROJECT_POS}|${SENTRY_PROJECT_POS:-kassa-pos}|g" \
+        -e "s|\${SENTRY_PROJECT_API}|${SENTRY_PROJECT_API:-kassa-api}|g" \
+        -e "s|\${SENTRY_PROJECT_BACK_OFFICE}|${SENTRY_PROJECT_BACK_OFFICE:-kassa-back-office}|g")"
+
+  # Resolve project slug → numeric id once per run. Sentry's dashboard create
+  # endpoint accepts the slug form via `projects: ["<slug>"]` on some org
+  # plans but rejects it on others; numeric id is the contract that works
+  # across every plan tier. Skip the lookup in no-token mode — the payload
+  # preview is still useful to compare against the dashboard UI.
+  local projects_index="{}"
+  if [ "$has_token" = "true" ]; then
+    projects_index="$(curl -fsS \
+      -H "Authorization: Bearer $SENTRY_AUTH_TOKEN" \
+      "https://sentry.io/api/0/organizations/$org/projects/" \
+      | jq '[.[] | { (.slug): .id }] | add // {}')"
+  fi
+
+  printf '%s' "$resolved" | jq -c '.dashboards[]' | while read -r dash; do
+    local title project_slug project_id payload existing id
+    title="$(printf '%s' "$dash" | jq -r '.title')"
+    project_slug="$(printf '%s' "$dash" | jq -r '.project_slug // ""')"
+    project_id="$(printf '%s' "$projects_index" | jq -r --arg s "$project_slug" '.[$s] // ""')"
+
+    # Drop local routing keys; lift project_slug→numeric-id into projects[]
+    # if we resolved one, otherwise keep the slug so no-token preview is
+    # still readable.
+    if [ -n "$project_id" ]; then
+      payload="$(printf '%s' "$dash" | jq --arg id "$project_id" 'del(.project_slug) | . + {projects: [($id | tonumber)]}')"
+    else
+      payload="$(printf '%s' "$dash" | jq --arg s "$project_slug" 'del(.project_slug) | . + {projects: [$s]}')"
+    fi
+
+    if [ "$has_token" = "false" ]; then
+      printf '  [would-send] dashboard project=%s title=%s payload=\n' "$project_slug" "$title"
+      printf '%s\n' "$payload" | jq .
+      continue
+    fi
+
+    existing="$(curl -fsS \
+      -H "Authorization: Bearer $SENTRY_AUTH_TOKEN" \
+      "https://sentry.io/api/0/organizations/$org/dashboards/" \
+      | jq --arg t "$title" '[.[] | select(.title == $t)]')"
+    id="$(printf '%s' "$existing" | jq -r '.[0].id // ""')"
+
+    if [ -n "$id" ]; then
+      printf '  [update] dashboard project=%s title=%s id=%s\n' "$project_slug" "$title" "$id"
+      if [ "$APPLY" = "true" ]; then
+        curl -fsS \
+          -X PUT \
+          -H "Authorization: Bearer $SENTRY_AUTH_TOKEN" \
+          -H "Content-Type: application/json" \
+          -d "$payload" \
+          "https://sentry.io/api/0/organizations/$org/dashboards/$id/" >/dev/null
+      fi
+    else
+      printf '  [create] dashboard project=%s title=%s\n' "$project_slug" "$title"
+      if [ "$APPLY" = "true" ]; then
+        curl -fsS \
+          -X POST \
+          -H "Authorization: Bearer $SENTRY_AUTH_TOKEN" \
+          -H "Content-Type: application/json" \
+          -d "$payload" \
+          "https://sentry.io/api/0/organizations/$org/dashboards/" >/dev/null
+      fi
+    fi
+  done
+}
+
 case "$ONLY" in
   all)
     apply_better_stack
     apply_sentry
+    apply_sentry_dashboards
     ;;
   better-stack) apply_better_stack ;;
-  sentry)       apply_sentry ;;
+  sentry)
+    apply_sentry
+    apply_sentry_dashboards
+    ;;
 esac
 
 printf '\nDone (%s).\n' "$(verb_for_apply)"
