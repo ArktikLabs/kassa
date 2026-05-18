@@ -886,16 +886,29 @@ Budgets are a contract with the user (Indonesian merchant on entry-level hardwar
 3. PO sign-off comment on the PR ("budget bump approved") is required before merge — same gating rule as any other roadmap-level commitment change.
 4. Lowering a budget (tightening the gate) doesn't need PO sign-off, but must include a commit message that names the win that made the headroom possible (e.g. "post-route-split, initial bundle dropped to 140 KB; tighten budget to 160 KB").
 
-### 8.6 RUM: web-vitals harness (apps/pos) — [KASA-282](/KASA/issues/KASA-282)
+### 8.6 RUM: web-vitals harness (apps/pos) — [KASA-282](/KASA/issues/KASA-282), [KASA-294](/KASA/issues/KASA-294)
 
 The synthetic Lighthouse run in §8.1 measures one cold load on a CI runner. To complement it with real-merchant data we ship a lightweight web-vitals reporter in [`apps/pos/src/lib/web-vitals.ts`](../apps/pos/src/lib/web-vitals.ts):
 
 - Lazy-loaded from `main.tsx` inside the existing `deferUntilIdle` block, after Sentry init — never on the LCP-critical chunk (verified: initial route unchanged at ~166 KB gzip; the web-vitals SDK ships as its own ~2.3 KB gzip chunk).
 - Subscribes to **LCP**, **INP**, and **CLS** via the `web-vitals` npm package.
-- Emits each metric as a Sentry `info`-level breadcrumb (so subsequent error events carry page-load perf context) plus an info-level `captureMessage` tagged `web-vitals.metric` / `web-vitals.rating` (so it can be aggregated when the dashboards ticket wires up).
+- Emits each metric as a Sentry `info`-level breadcrumb (so subsequent error events carry page-load perf context) plus an info-level `captureMessage` tagged `web-vitals.metric` / `web-vitals.rating`.
 - No-op when `VITE_SENTRY_DSN` is unset — keeps dev, CI, and unconfigured deployments quiet.
 
-This is telemetry, not a gate. Dashboards + alerting on RUM web vitals are a separate observability ticket.
+This is telemetry, not a gate. **The consumer side of the harness — dashboard + alerts — is owned by [KASA-294](/KASA/issues/KASA-294):**
+
+- **Dashboard.** "POS Web Vitals" in the Sentry POS project, defined as code in [`infra/observability/sentry-dashboards.json`](../infra/observability/sentry-dashboards.json). Four widgets over a rolling 7-day window: one bar chart per metric (LCP / INP / CLS) grouped by the `web-vitals.rating` tag (good / needs-improvement / poor) plus a table of poor-rated events by metric. URL post-apply: `https://${SENTRY_ORG}.sentry.io/dashboards/?project=${SENTRY_PROJECT_POS_ID}&q=POS+Web+Vitals` (the literal slug-and-id form is captured in the KASA-294 apply log; the dashboards-v2 API mints a numeric dashboard id on first POST).
+- **Alert rules.** Three rules in [`infra/observability/sentry-alert-rules.json`](../infra/observability/sentry-alert-rules.json), routed through the §3.3 channels of [RUNBOOK-ONCALL.md](./RUNBOOK-ONCALL.md):
+
+  | Rule                                  | Trigger                                                                                                 | Web-Vitals "poor" threshold (≡)  |
+  |:--------------------------------------|:--------------------------------------------------------------------------------------------------------|:---------------------------------|
+  | `pos-web-vitals-lcp-poor-sustained`   | ≥ 10 events with `web-vitals.metric:LCP web-vitals.rating:poor` in 1 h, env=production                  | LCP > 4 s                        |
+  | `pos-web-vitals-inp-poor-sustained`   | ≥ 10 events with `web-vitals.metric:INP web-vitals.rating:poor` in 1 h, env=production                  | INP > 500 ms                     |
+  | `pos-web-vitals-cls-poor-sustained`   | ≥ 10 events with `web-vitals.metric:CLS web-vitals.rating:poor` in 1 h, env=production                  | CLS > 0.25                       |
+
+  The rules key off the `web-vitals.rating` tag rather than `percentile(...)` because the harness writes the numeric metric value to `extra.*`, which Sentry Discover cannot aggregate. The `web-vitals` npm package's `rating:poor` bucket is exactly the > Google-poor-threshold value, so a count threshold on this tag is equivalent — by definition — to "p75 > poor-threshold over the window". A follow-up issue tracks migrating the harness to emit the value as a Sentry measurement on a `pageload.web-vitals` span; that flip turns these into true `percentile(measurements.<name>, 0.75) > <threshold>` metric-alerts without changing the runbook contract.
+
+Smoke-test of the end-to-end path (event → tag → dashboard widget → alert filter) is part of the next [RUNBOOK-ONCALL.md §3.4](./RUNBOOK-ONCALL.md#34-dry-run-run-before-any-pilot-day) dry-run: send a synthetic `web-vitals.LCP` event tagged `web-vitals.rating:poor` via `@sentry/cli send-event`, observe it land in the LCP widget, and watch the rule fire once the count crosses 10/h.
 
 ### 8.7 Out of scope
 

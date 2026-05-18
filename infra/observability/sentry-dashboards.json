@@ -1,0 +1,81 @@
+{
+  "_comment": "Sentry dashboard definitions for the Kassa pilot. Owned by KASA-294; applied via scripts/observability-apply.sh. Schema is the Sentry v0 organization-dashboards API (https://docs.sentry.io/api/dashboards/). The `title` field is the idempotency key — the apply script reconciles by title within `(organization, project_slug)`. Do not rename dashboards without also renaming the Sentry record. `project_slug` is a local routing key; the apply script resolves it against the org's project list and lifts the numeric project id into the dashboard envelope's `projects: []` array, then drops `project_slug` before sending. Placeholders in `${ALL_CAPS}` form are env-substituted by the apply script — see infra/observability/README.md for the variable list.",
+  "dashboards": [
+    {
+      "_comment": "KASA-294: RUM Web Vitals dashboard. One widget per Core Web Vital (LCP, INP, CLS), grouped by the `web-vitals.rating` tag the harness in apps/pos/src/lib/web-vitals.ts ships (good/needs-improvement/poor). The current harness writes the numeric metric value to `extra.*`, which Discover cannot p75 — so the widgets show event-count by rating instead of percentile-of-value. The web-vitals package's `rating:poor` bucket is exactly the >Google-poor-threshold value (LCP >4 s, INP >500 ms, CLS >0.25), so the `poor` segment of these widgets is the queryable form of the PO's `p75 LCP > 4s over 7d` ask. A follow-up (KASA-295) tracks emitting a real measurement on a web-vitals transaction so a `percentile(measurements.lcp, 0.75)` widget can replace these counts without changing the runbook contract.",
+      "title": "POS Web Vitals",
+      "project_slug": "${SENTRY_PROJECT_POS}",
+      "period": "7d",
+      "widgets": [
+        {
+          "title": "LCP — events by rating",
+          "displayType": "bar",
+          "interval": "1h",
+          "widgetType": "discover",
+          "queries": [
+            {
+              "name": "",
+              "fields": ["web-vitals.rating", "count()"],
+              "aggregates": ["count()"],
+              "columns": ["web-vitals.rating"],
+              "conditions": "web-vitals.metric:LCP level:info",
+              "orderby": "-count()"
+            }
+          ],
+          "layout": { "x": 0, "y": 0, "w": 12, "h": 4, "minH": 2 }
+        },
+        {
+          "title": "INP — events by rating",
+          "displayType": "bar",
+          "interval": "1h",
+          "widgetType": "discover",
+          "queries": [
+            {
+              "name": "",
+              "fields": ["web-vitals.rating", "count()"],
+              "aggregates": ["count()"],
+              "columns": ["web-vitals.rating"],
+              "conditions": "web-vitals.metric:INP level:info",
+              "orderby": "-count()"
+            }
+          ],
+          "layout": { "x": 12, "y": 0, "w": 12, "h": 4, "minH": 2 }
+        },
+        {
+          "title": "CLS — events by rating",
+          "displayType": "bar",
+          "interval": "1h",
+          "widgetType": "discover",
+          "queries": [
+            {
+              "name": "",
+              "fields": ["web-vitals.rating", "count()"],
+              "aggregates": ["count()"],
+              "columns": ["web-vitals.rating"],
+              "conditions": "web-vitals.metric:CLS level:info",
+              "orderby": "-count()"
+            }
+          ],
+          "layout": { "x": 0, "y": 4, "w": 12, "h": 4, "minH": 2 }
+        },
+        {
+          "title": "Web Vitals — poor-rated events (table)",
+          "displayType": "table",
+          "interval": "1h",
+          "widgetType": "discover",
+          "queries": [
+            {
+              "name": "",
+              "fields": ["web-vitals.metric", "count()"],
+              "aggregates": ["count()"],
+              "columns": ["web-vitals.metric"],
+              "conditions": "web-vitals.rating:poor level:info",
+              "orderby": "-count()"
+            }
+          ],
+          "layout": { "x": 12, "y": 4, "w": 12, "h": 4, "minH": 2 }
+        }
+      ]
+    }
+  ]
+}

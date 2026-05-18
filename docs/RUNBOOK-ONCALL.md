@@ -90,8 +90,19 @@ Defined as code in [`infra/observability/sentry-alert-rules.json`](../infra/obse
 | `api-unhandled-exception-spike`     | `kassa-api`    | New issue with ≥5 events in 5 min, environment=production            | P1       |
 | `pos-frontend-typeerror-spike`      | `kassa-pos`    | Issues with `TypeError` substring, ≥10 events in 5 min, env=production | P1     |
 | `back-office-frontend-typeerror-spike` | `kassa-back-office` | Same shape as POS, ≥5 events in 5 min                            | P2       |
+| `pos-web-vitals-lcp-poor-sustained` | `kassa-pos`    | ≥10 events tagged `web-vitals.metric:LCP web-vitals.rating:poor` in 1 h, env=production. By web-vitals taxonomy `rating:poor` ≡ LCP value > 4 s, so this is the queryable form of "p75 LCP > 4 s over 1 h" given the current harness writes the numeric value to `extra.*` (not searchable in Discover). | P2 |
+| `pos-web-vitals-inp-poor-sustained` | `kassa-pos`    | ≥10 events tagged `web-vitals.metric:INP web-vitals.rating:poor` in 1 h, env=production. `rating:poor` ≡ INP > 500 ms. | P2 |
+| `pos-web-vitals-cls-poor-sustained` | `kassa-pos`    | ≥10 events tagged `web-vitals.metric:CLS web-vitals.rating:poor` in 1 h, env=production. `rating:poor` ≡ CLS > 0.25. | P2 |
 
 The min-events floor on P0 rules avoids paging on the first error after a quiet hour (a legitimate one-off 5xx during a low-traffic window would otherwise compute a 100% error rate). 50 events on `/v1/sales/submit` is roughly 5 minutes of pilot-merchant traffic; tune after one week of real volume.
+
+The 10-event floor on the three Web Vitals rules is calibrated against ~30 page loads/h on a single pilot merchant — 10 poor-rated events ≈ ⅓ of an hour's loads in the poor bucket. Same tuning principle: revisit after one week of real volume. A future harness migration to emit a Sentry measurement (tracked as a KASA-294 follow-up) would let these flip from issue-rules to metric-alerts on `percentile(measurements.lcp, 0.75) > 4000` without changing the runbook contract; for now, the rating-tag form is what's queryable.
+
+#### 3.3a POS Web Vitals dashboard
+
+The companion Sentry dashboard "POS Web Vitals" (defined as code in [`infra/observability/sentry-dashboards.json`](../infra/observability/sentry-dashboards.json), applied via the same script) shows the same `web-vitals.metric` / `web-vitals.rating` slice the three rules above key off, but over a rolling 7-day window with one bar-chart widget per metric (LCP / INP / CLS) plus a poor-rated-events table. The dashboard URL is recorded in [docs/CI-CD.md §8.6](./CI-CD.md#86-rum-web-vitals-harness-appspos--kasa-282) once the apply lands.
+
+When a Web Vitals alert fires, the on-call's first step is to open the dashboard and confirm the poor-bucket is genuinely elevated (vs. a metric collection bug on a single device); the rollback matrix in §5 row 3 (POS PWA — `pos-prod-shell` red) is the same path if a perf regression traces back to a recent POS deploy.
 
 ### 3.4 Dry-run (run before any pilot day)
 
