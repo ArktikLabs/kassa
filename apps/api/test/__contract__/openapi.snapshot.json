@@ -677,7 +677,7 @@
         "tags": [
           "auth"
         ],
-        "description": "Verifies email + password against the staff record and issues a signed HTTP-only session cookie (`SameSite=Lax`, `Secure`, 30-day rolling Max-Age). Returns the staff identity the back-office needs to render the shell. 401 on bad credentials; 429 when the per-IP rate limit (5/min by default) trips. 503 when the route has not been configured with a staff repository or session secret.",
+        "description": "Verifies email + password against the staff record and issues a signed HTTP-only session cookie (`SameSite=Lax`, `Secure`, 30-day rolling Max-Age). Returns the staff identity the back-office needs to render the shell. 401 on bad credentials; 429 when the per-IP rate limit (30/min by default) trips or when the per-account progressive lockout fires (5 fails → 30s, 10 → 5m, 15 → 1h). 503 when the route has not been configured with a staff repository or session secret.",
         "responses": {
           "200": {
             "description": "Default Response",

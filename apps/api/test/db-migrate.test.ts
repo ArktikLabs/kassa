@@ -21,6 +21,7 @@ import { runMigrations } from "../src/db/migrate.js";
  */
 
 const EXPECTED_TABLES = [
+  "auth_login_attempts",
   "bom_components",
   "boms",
   "devices",

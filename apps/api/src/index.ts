@@ -15,6 +15,11 @@ import { initSentry, Sentry } from "./lib/sentry.js";
 import { EnrolmentService, InMemoryEnrolmentRepository } from "./services/enrolment/index.js";
 import { InMemoryStaffRepository, type StaffRepository } from "./services/staff/index.js";
 import {
+  InMemoryLoginAttemptsRepository,
+  PgLoginAttemptsRepository,
+  type LoginAttemptsRepository,
+} from "./services/login-attempts/index.js";
+import {
   InMemoryItemsRepository,
   ItemsService,
   PgItemsRepository,
@@ -87,6 +92,13 @@ async function main(): Promise<void> {
   // which surfaces as a normal "wrong password" toast in the UI.
   const staffRepository: StaffRepository = new InMemoryStaffRepository();
 
+  // Brute-force / credential-stuffing audit log (KASA-312). Pg-backed
+  // when a database is wired so the lockout state survives restarts and
+  // lines up across Fly machines; falls back to in-memory in dev/test.
+  const loginAttemptsRepository: LoginAttemptsRepository = database
+    ? new PgLoginAttemptsRepository(database.db)
+    : new InMemoryLoginAttemptsRepository();
+
   const corsAllowedOrigins: Array<string | RegExp> = [];
   if (env.CORS_ALLOWED_ORIGINS) {
     for (const raw of env.CORS_ALLOWED_ORIGINS.split(",")) {
@@ -142,6 +154,10 @@ async function main(): Promise<void> {
           staffSession: {
             repository: staffRepository,
             cookieSecret: env.SESSION_COOKIE_SECRET,
+            loginAttempts: loginAttemptsRepository,
+            ...(env.LOGIN_ATTEMPT_HMAC_SECRET !== undefined
+              ? { loginAttemptHmacSecret: env.LOGIN_ATTEMPT_HMAC_SECRET }
+              : {}),
           },
         }
       : {}),

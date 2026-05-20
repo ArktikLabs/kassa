@@ -21,6 +21,10 @@ const REQUIRED_PROD_ENV = {
   // tests below see exactly one warning. The OTEL-specific assertions live
   // in their own `describe` block further down.
   OTEL_EXPORTER_OTLP_ENDPOINT: "http://localhost:4318",
+  // KASA-312 — pin the login-attempts HMAC secret too. The brute-force
+  // lockout has the same "warn-and-run" policy as SESSION_COOKIE_SECRET;
+  // its own test block below asserts that warning explicitly.
+  LOGIN_ATTEMPT_HMAC_SECRET: "x".repeat(32),
 } as const;
 
 describe("loadEnv()", () => {
@@ -89,12 +93,47 @@ describe("collectStartupWarnings()", () => {
       NODE_ENV: "production",
       DATABASE_URL: "postgres://kassa:kassa@localhost:5432/kassa",
       SESSION_COOKIE_SECRET: "x".repeat(32),
+      LOGIN_ATTEMPT_HMAC_SECRET: "x".repeat(32),
     });
     const warnings = collectStartupWarnings(env);
     expect(warnings).toHaveLength(1);
     expect(warnings[0]?.code).toBe("missing_otel_endpoint");
     expect(warnings[0]?.message).toContain("OTEL_EXPORTER_OTLP_ENDPOINT");
     expect(warnings[0]?.message).toContain("NoOp tracer");
+  });
+
+  // KASA-312 — `LOGIN_ATTEMPT_HMAC_SECRET` follows the same "warn-and-run"
+  // policy as `SESSION_COOKIE_SECRET` (ADR-011). A missing secret in
+  // production falls back to a per-boot ephemeral key — the lockout
+  // still functions within a single instance but hash buckets reset on
+  // restart and don't line up across Fly machines.
+  it("returns a missing_login_attempt_hmac_secret warning when unset in production", () => {
+    const env = loadEnv({
+      NODE_ENV: "production",
+      DATABASE_URL: "postgres://kassa:kassa@localhost:5432/kassa",
+      SESSION_COOKIE_SECRET: "x".repeat(32),
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://localhost:4318",
+    });
+    const warnings = collectStartupWarnings(env);
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]?.code).toBe("missing_login_attempt_hmac_secret");
+    expect(warnings[0]?.message).toContain("LOGIN_ATTEMPT_HMAC_SECRET");
+    expect(warnings[0]?.message).toContain("per-boot ephemeral secret");
+  });
+
+  it("does not warn when LOGIN_ATTEMPT_HMAC_SECRET is unset outside production", () => {
+    const env = loadEnv({ NODE_ENV: "development" });
+    expect(collectStartupWarnings(env)).toEqual([]);
+  });
+
+  it("rejects a too-short LOGIN_ATTEMPT_HMAC_SECRET (shape validation matches the cookie secret)", () => {
+    expect(() =>
+      loadEnv({
+        NODE_ENV: "production",
+        DATABASE_URL: "postgres://kassa:kassa@localhost:5432/kassa",
+        LOGIN_ATTEMPT_HMAC_SECRET: "too-short",
+      }),
+    ).toThrow();
   });
 
   it("does not warn when OTEL_EXPORTER_OTLP_ENDPOINT is unset outside production", () => {

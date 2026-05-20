@@ -3,6 +3,7 @@ export * from "./devices.js";
 export * from "./end-of-day.js";
 export * from "./enrolment-codes.js";
 export * from "./items.js";
+export * from "./login-attempts.js";
 export * from "./merchants.js";
 export * from "./modifiers.js";
 export * from "./outlets.js";

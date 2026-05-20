@@ -60,6 +60,16 @@ const envSchema = z
     // degradation without paging on-call. Min length stays 32 chars when the
     // secret IS set, so no weak-secret regression.
     SESSION_COOKIE_SECRET: z.string().min(32).optional(),
+    // HMAC secret keying the `auth_login_attempts.account_id_hash` /
+    // `ip_hash` columns (KASA-312). Required-in-production via the
+    // refinement block below — without it the per-account lockout falls
+    // back to a per-boot ephemeral secret, which is fine for tests but
+    // means the hash buckets reset on every restart and don't line up
+    // across Fly machines. The cookie secret and the attempts secret
+    // are intentionally separate so a rotation never touches both at
+    // once (one of them is on the critical path for cashier logins; the
+    // other is just a hash key). Same min-length contract.
+    LOGIN_ATTEMPT_HMAC_SECRET: z.string().min(32).optional(),
     // Comma-separated allow-list of origins that may make cross-origin
     // requests against the API with `credentials: include`. Each entry is a
     // literal origin (`https://kassa-back-office.pages.dev`); the Cloudflare
@@ -110,7 +120,10 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): Env {
  * `/health` and Sentry breadcrumbs. New entries should be added here so
  * monitoring queries can match a finite, documented set of codes.
  */
-export type StartupWarningCode = "missing_session_cookie_secret" | "missing_otel_endpoint";
+export type StartupWarningCode =
+  | "missing_session_cookie_secret"
+  | "missing_otel_endpoint"
+  | "missing_login_attempt_hmac_secret";
 
 export interface StartupWarning {
   code: StartupWarningCode;
@@ -130,6 +143,13 @@ export function collectStartupWarnings(env: Env): StartupWarning[] {
       code: "missing_session_cookie_secret",
       message:
         "SESSION_COOKIE_SECRET is unset in production; POST /v1/auth/session/login will respond 503 not_configured.",
+    });
+  }
+  if (env.NODE_ENV === "production" && !env.LOGIN_ATTEMPT_HMAC_SECRET) {
+    warnings.push({
+      code: "missing_login_attempt_hmac_secret",
+      message:
+        "LOGIN_ATTEMPT_HMAC_SECRET is unset in production; per-account brute-force lockout falls back to a per-boot ephemeral secret (hash buckets reset on restart and don't line up across instances).",
     });
   }
   if (env.NODE_ENV === "production" && !env.OTEL_EXPORTER_OTLP_ENDPOINT) {
