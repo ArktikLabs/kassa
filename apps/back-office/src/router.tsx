@@ -11,6 +11,7 @@ import { AdminDashboardScreen } from "./routes/admin.dashboard";
 import { AdminReconciliationScreen } from "./routes/admin.reconciliation";
 import { AdminSalesScreen } from "./routes/admin.sales";
 import { SettingsScreen } from "./routes/settings";
+import { CatalogImportScreen } from "./routes/admin.catalog.import";
 import { Forbidden } from "./components/Forbidden";
 import { loadSession, roleCanManage, roleIsOwner } from "./lib/session";
 
@@ -158,6 +159,17 @@ const settingsRoute = createRoute({
     loadSession()?.role && roleIsOwner(loadSession()!.role) ? <SettingsScreen /> : <Forbidden />,
 });
 
+const adminCatalogImportRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: "admin/catalog/import",
+  component: () =>
+    loadSession()?.role && roleIsOwner(loadSession()!.role) ? (
+      <CatalogImportScreen />
+    ) : (
+      <Forbidden />
+    ),
+});
+
 const routeTree = rootRoute.addChildren([
   indexRoute,
   loginRoute,
@@ -172,6 +184,7 @@ const routeTree = rootRoute.addChildren([
     reconciliationRoute,
     adminReconciliationRoute,
     settingsRoute,
+    adminCatalogImportRoute,
   ]),
 ]);
 

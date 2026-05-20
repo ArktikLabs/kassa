@@ -17,6 +17,7 @@ const NAV: readonly NavItem[] = [
   { to: "/outlets", labelId: "nav.outlets" },
   { to: "/catalog", labelId: "nav.catalog" },
   { to: "/catalog/boms", labelId: "nav.boms" },
+  { to: "/admin/catalog/import", labelId: "nav.catalog_import", ownerOnly: true },
   { to: "/staff", labelId: "nav.staff" },
   { to: "/devices", labelId: "nav.devices" },
   { to: "/reports/reconciliation", labelId: "nav.reconciliation" },

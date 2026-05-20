@@ -1,11 +1,15 @@
 import type { Item } from "../../db/schema/items.js";
 import { ItemCodeConflictError } from "./service.js";
-import type {
-  CreateItemInput,
-  ItemsRepository,
-  ListItemsInput,
-  ListItemsResult,
-  UpdateItemInput,
+import {
+  type BulkUpsertItemsInput,
+  type BulkUpsertItemsResult,
+  type BulkUpsertItemsRowResult,
+  BulkUpsertItemsRowError,
+  type CreateItemInput,
+  type ItemsRepository,
+  type ListItemsInput,
+  type ListItemsResult,
+  type UpdateItemInput,
 } from "./repository.js";
 
 /**
@@ -149,5 +153,96 @@ export class InMemoryItemsRepository implements ItemsRepository {
     const next: Item = { ...current, isActive: false, updatedAt: input.now };
     this.items.set(next.id, next);
     return { ...next };
+  }
+
+  async bulkUpsertItems(input: BulkUpsertItemsInput): Promise<BulkUpsertItemsResult> {
+    // Snapshot the slice the batch can mutate so we can restore on error and
+    // mirror the Pg-side transaction rollback. We snapshot per id rather than
+    // copying the whole map to keep the cost proportional to the batch size.
+    const snapshot = new Map<string, Item | undefined>();
+    const byCodeIndex = new Map<string, Item>();
+    for (const row of this.items.values()) {
+      if (row.merchantId === input.merchantId) {
+        byCodeIndex.set(row.code, row);
+      }
+    }
+
+    const rows: BulkUpsertItemsRowResult[] = [];
+    try {
+      for (let idx = 0; idx < input.rows.length; idx++) {
+        const row = input.rows[idx]!;
+        const merchantUomSet = this.merchantScopedUoms.get(input.merchantId);
+        if (!merchantUomSet?.has(row.uomId)) {
+          throw new BulkUpsertItemsRowError(idx, "uom_not_found", row.uomId);
+        }
+        if (row.bomId) {
+          const merchantBomSet = this.merchantScopedBoms.get(input.merchantId);
+          if (!merchantBomSet?.has(row.bomId)) {
+            throw new BulkUpsertItemsRowError(idx, "bom_not_found", row.bomId);
+          }
+        }
+
+        const existing = byCodeIndex.get(row.code);
+        if (!existing) {
+          const id = input.generateId();
+          if (!snapshot.has(id)) snapshot.set(id, undefined);
+          const inserted: Item = {
+            id,
+            merchantId: input.merchantId,
+            code: row.code,
+            name: row.name,
+            priceIdr: row.priceIdr,
+            uomId: row.uomId,
+            bomId: row.bomId ?? null,
+            isStockTracked: row.isStockTracked ?? true,
+            taxRate: 11,
+            availability: "available",
+            allowNegative: false,
+            isActive: row.isActive ?? true,
+            createdAt: input.now,
+            updatedAt: input.now,
+          };
+          this.items.set(id, inserted);
+          byCodeIndex.set(row.code, inserted);
+          rows.push({ index: idx, code: row.code, status: "created", item: { ...inserted } });
+          continue;
+        }
+
+        const desired: Item = {
+          ...existing,
+          name: row.name,
+          priceIdr: row.priceIdr,
+          uomId: row.uomId,
+          bomId: row.bomId ?? null,
+          isStockTracked: row.isStockTracked ?? existing.isStockTracked,
+          isActive: row.isActive ?? existing.isActive,
+        };
+
+        if (
+          desired.name === existing.name &&
+          desired.priceIdr === existing.priceIdr &&
+          desired.uomId === existing.uomId &&
+          desired.bomId === existing.bomId &&
+          desired.isStockTracked === existing.isStockTracked &&
+          desired.isActive === existing.isActive
+        ) {
+          rows.push({ index: idx, code: row.code, status: "unchanged", item: { ...existing } });
+          continue;
+        }
+
+        if (!snapshot.has(existing.id)) snapshot.set(existing.id, { ...existing });
+        const updated: Item = { ...desired, updatedAt: input.now };
+        this.items.set(existing.id, updated);
+        byCodeIndex.set(row.code, updated);
+        rows.push({ index: idx, code: row.code, status: "updated", item: { ...updated } });
+      }
+      return { rows };
+    } catch (err) {
+      for (const [id, original] of snapshot) {
+        if (original === undefined) this.items.delete(id);
+        else this.items.set(id, original);
+      }
+      throw err;
+    }
   }
 }

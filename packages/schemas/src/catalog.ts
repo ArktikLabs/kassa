@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { itemAvailability } from "./sync.js";
+import { itemAvailability, itemRecord } from "./sync.js";
 
 const uuidV7 = z.string().uuid();
 const isoTimestamp = z.string().datetime({ offset: true });
@@ -90,3 +90,66 @@ export type ItemListQuery = z.infer<typeof itemListQuery>;
  * delta-pull envelope if the two ever diverge.
  */
 export { itemRecord as itemResponse, type ItemRecord as ItemResponse } from "./sync.js";
+
+/**
+ * One row of the bulk-upsert payload. Same shape as `itemCreateRequest` —
+ * the natural key is `(merchantId, code)`, derived from the staff session +
+ * the explicit `code`, so the server decides create-vs-update by code match.
+ */
+export const catalogItemBulkUpsertRow = z
+  .object({
+    code: itemCode,
+    name: itemName,
+    priceIdr: rupiahInteger,
+    uomId: uuidV7,
+    bomId: uuidV7.nullable().optional(),
+    isStockTracked: z.boolean().optional(),
+    isActive: z.boolean().optional(),
+  })
+  .strict();
+export type CatalogItemBulkUpsertRow = z.infer<typeof catalogItemBulkUpsertRow>;
+
+/**
+ * Request payload for `POST /v1/catalog/items/bulk` (KASA-311). The batch
+ * cap is 500 to keep a single transaction bounded — the back-office CSV
+ * import surface chunks larger files client-side.
+ */
+export const catalogItemBulkUpsertRequest = z
+  .object({
+    items: z.array(catalogItemBulkUpsertRow).min(1).max(500),
+  })
+  .strict()
+  .refine(
+    (v) => {
+      const seen = new Set<string>();
+      for (const row of v.items) {
+        if (seen.has(row.code)) return false;
+        seen.add(row.code);
+      }
+      return true;
+    },
+    { message: "duplicate item codes within the batch", path: ["items"] },
+  );
+export type CatalogItemBulkUpsertRequest = z.infer<typeof catalogItemBulkUpsertRequest>;
+
+/**
+ * Per-row outcome surfaced to the client. `unchanged` is the idempotency
+ * signal — the row matched an existing item and every persisted field was
+ * identical, so the server did not bump `updatedAt`.
+ */
+export const catalogItemBulkUpsertResultRow = z.object({
+  code: itemCode,
+  status: z.enum(["created", "updated", "unchanged"]),
+  item: itemRecord,
+});
+export type CatalogItemBulkUpsertResultRow = z.infer<typeof catalogItemBulkUpsertResultRow>;
+
+export const catalogItemBulkUpsertResponse = z.object({
+  results: z.array(catalogItemBulkUpsertResultRow),
+  summary: z.object({
+    created: z.number().int().nonnegative(),
+    updated: z.number().int().nonnegative(),
+    unchanged: z.number().int().nonnegative(),
+  }),
+});
+export type CatalogItemBulkUpsertResponse = z.infer<typeof catalogItemBulkUpsertResponse>;

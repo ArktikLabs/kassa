@@ -1,8 +1,11 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import {
+  catalogItemBulkUpsertRequest,
+  catalogItemBulkUpsertResponse,
   itemCreateRequest,
   itemListQuery,
   itemUpdateRequest,
+  type CatalogItemBulkUpsertRequest,
   type ItemCreateRequest,
   type ItemListQuery,
   type ItemUpdateRequest,
@@ -53,6 +56,13 @@ export interface CatalogRouteDeps {
  */
 const CATALOG_WRITE_ROLES = ["owner", "manager"] as const;
 
+/**
+ * Bulk-import (KASA-311) is owner-only — bulk price/availability rewrites
+ * are a higher-impact surface than single-row edits and the back-office
+ * import page is gated to owners.
+ */
+const CATALOG_BULK_ROLES = ["owner"] as const;
+
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function requireStaffPrincipal(
@@ -97,6 +107,11 @@ export function catalogRoutes(deps: CatalogRouteDeps) {
           allowedRoles: CATALOG_WRITE_ROLES,
         })
       : null;
+    const requireStaffBulk = deps.staffBootstrapToken
+      ? makeMerchantScopedStaffPreHandler(deps.staffBootstrapToken, {
+          allowedRoles: CATALOG_BULK_ROLES,
+        })
+      : null;
 
     const makeGate = (handler: typeof requireStaffRead) => {
       if (handler) return handler;
@@ -112,6 +127,7 @@ export function catalogRoutes(deps: CatalogRouteDeps) {
     };
     const gatedPreHandler = makeGate(requireStaffRead);
     const gatedWritePreHandler = makeGate(requireStaffWrite);
+    const gatedBulkPreHandler = makeGate(requireStaffBulk);
 
     // GET /v1/catalog/items — merchant-scoped delta pull.
     app.get<{ Querystring: ItemListQuery }>(
@@ -251,6 +267,64 @@ export function catalogRoutes(deps: CatalogRouteDeps) {
           return reply;
         } catch (err) {
           if (err instanceof ItemError) {
+            handleItemError(reply, err);
+            return reply;
+          }
+          throw err;
+        }
+      },
+    );
+
+    // POST /v1/catalog/items/bulk — owner-only bulk CSV import (KASA-311).
+    app.post<{ Body: CatalogItemBulkUpsertRequest }>(
+      "/items/bulk",
+      {
+        schema: {
+          tags: ["catalog"],
+          summary: "Bulk upsert items (CSV import)",
+          description:
+            "Owner-only. Idempotent on `(merchantId, code)`: rows whose " +
+            "persisted fields exactly match the stored item return as " +
+            "`unchanged` without bumping `updatedAt`. The entire batch runs " +
+            "in a single transaction — on validation, FK, or unique-conflict " +
+            "errors the whole batch rolls back. Batch cap is 500 rows; the " +
+            "back-office CSV import chunks larger files client-side.",
+          response: {
+            200: catalogItemBulkUpsertResponse,
+            401: errorBodySchema,
+            403: errorBodySchema,
+            404: errorBodySchema,
+            409: errorBodySchema,
+            422: errorBodySchema,
+            503: errorBodySchema,
+          },
+        },
+        preHandler: [gatedBulkPreHandler, validate({ body: catalogItemBulkUpsertRequest })],
+      },
+      async (req, reply) => {
+        const principal = requireStaffPrincipal(req, reply);
+        if (!principal) return reply;
+        try {
+          const outcome = await deps.items.bulkUpsert({
+            merchantId: principal.merchantId,
+            items: req.body.items,
+          });
+          reply.code(200).send({
+            results: outcome.rows.map((row) => ({
+              code: row.code,
+              status: row.status,
+              item: toItemResponse(row.item),
+            })),
+            summary: outcome.summary,
+          });
+          return reply;
+        } catch (err) {
+          if (err instanceof ItemError) {
+            const rowIndex = (err as ItemError & { rowIndex?: number }).rowIndex;
+            if (typeof rowIndex === "number" && rowIndex >= 0) {
+              sendError(reply, 422, err.code, err.message, { rowIndex });
+              return reply;
+            }
             handleItemError(reply, err);
             return reply;
           }
