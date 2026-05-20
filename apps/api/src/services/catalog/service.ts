@@ -1,6 +1,12 @@
 import { uuidv7 } from "../../lib/uuid.js";
 import type { Item, ItemAvailability } from "../../db/schema/items.js";
-import type { CreateItemInput, ItemsRepository, UpdateItemInput } from "./repository.js";
+import {
+  type BulkUpsertItemsRow,
+  BulkUpsertItemsRowError,
+  type CreateItemInput,
+  type ItemsRepository,
+  type UpdateItemInput,
+} from "./repository.js";
 
 export const DEFAULT_ITEM_PAGE_LIMIT = 100;
 export const MAX_ITEM_PAGE_LIMIT = 500;
@@ -87,6 +93,31 @@ export interface ListItemsCommand {
   pageToken?: string | undefined;
   limit?: number | undefined;
 }
+
+export interface BulkUpsertItemsCommand {
+  merchantId: string;
+  items: ReadonlyArray<BulkUpsertItemsRow>;
+}
+
+export interface BulkUpsertItemsRowOutcome {
+  index: number;
+  code: string;
+  status: "created" | "updated" | "unchanged";
+  item: Item;
+}
+
+export interface BulkUpsertItemsOutcome {
+  rows: BulkUpsertItemsRowOutcome[];
+  summary: { created: number; updated: number; unchanged: number };
+}
+
+/**
+ * Maximum batch size. Mirrors `catalogItemBulkUpsertRequest.items.max(500)` in
+ * `@kassa/schemas` — the schema gate catches over-limit batches first, but a
+ * service-side `MAX_BULK_UPSERT_ITEMS` keeps callers that bypass the schema
+ * (e.g. test harnesses) from issuing pathological batches.
+ */
+export const MAX_BULK_UPSERT_ITEMS = 500;
 
 /**
  * Page tokens are opaque server-issued strings; we use a minimal JSON payload
@@ -305,6 +336,85 @@ export class ItemsService {
     });
     if (!row) {
       throw new ItemError("item_not_found", `No item ${input.id}.`);
+    }
+  }
+
+  /**
+   * Atomic create-or-update for a CSV-import batch (KASA-311). Pre-validates
+   * each row's FK targets (UoM / BOM) so a missing reference surfaces as a
+   * 404-shape error without ever opening the transaction. The repository
+   * call owns the transactional rollback so partial inserts cannot leak.
+   *
+   * Idempotent on `code`: a re-imported row whose persisted fields match the
+   * stored row is returned with `status: "unchanged"` and no row is written.
+   */
+  async bulkUpsert(cmd: BulkUpsertItemsCommand): Promise<BulkUpsertItemsOutcome> {
+    if (cmd.items.length === 0) {
+      return { rows: [], summary: { created: 0, updated: 0, unchanged: 0 } };
+    }
+    if (cmd.items.length > MAX_BULK_UPSERT_ITEMS) {
+      throw new ItemError(
+        "invalid_page_token",
+        `bulk batch over ${MAX_BULK_UPSERT_ITEMS} rows is rejected.`,
+      );
+    }
+
+    // Fan-out unique FK targets so we make at most one lookup per id. This
+    // keeps the staging-time-budget AC (`100-row import under 5s`) tight by
+    // capping FK round-trips at O(distinct uoms + distinct boms) rather than
+    // O(rows). The repo's transactional path is the durable guard against
+    // mid-flight FK breakage (TOCTOU); these checks just give us a clean
+    // per-row error message before opening the txn.
+    const uomIds = new Set<string>();
+    const bomIds = new Set<string>();
+    for (const row of cmd.items) {
+      uomIds.add(row.uomId);
+      if (row.bomId) bomIds.add(row.bomId);
+    }
+    for (const id of uomIds) {
+      const found = await this.repository.findUom({ id, merchantId: cmd.merchantId });
+      if (!found) {
+        const idx = cmd.items.findIndex((r) => r.uomId === id);
+        const err = new ItemError("uom_not_found", `No uom ${id} for this merchant.`);
+        (err as ItemError & { rowIndex?: number }).rowIndex = idx;
+        throw err;
+      }
+    }
+    for (const id of bomIds) {
+      const found = await this.repository.findBom({ id, merchantId: cmd.merchantId });
+      if (!found) {
+        const idx = cmd.items.findIndex((r) => r.bomId === id);
+        const err = new ItemError("bom_not_found", `No bom ${id} for this merchant.`);
+        (err as ItemError & { rowIndex?: number }).rowIndex = idx;
+        throw err;
+      }
+    }
+
+    try {
+      const result = await this.repository.bulkUpsertItems({
+        merchantId: cmd.merchantId,
+        rows: cmd.items,
+        generateId: this.generateId,
+        now: this.now(),
+      });
+      const summary = { created: 0, updated: 0, unchanged: 0 };
+      for (const row of result.rows) summary[row.status] += 1;
+      return { rows: result.rows, summary };
+    } catch (err) {
+      if (err instanceof BulkUpsertItemsRowError) {
+        const wrapped = new ItemError(
+          err.target,
+          err.target === "uom_not_found"
+            ? `No uom ${err.id} for this merchant.`
+            : `No bom ${err.id} for this merchant.`,
+        );
+        (wrapped as ItemError & { rowIndex?: number }).rowIndex = err.index;
+        throw wrapped;
+      }
+      if (err instanceof ItemCodeConflictError) {
+        throw new ItemError("item_code_conflict", `Code ${err.code} is already in use.`);
+      }
+      throw err;
     }
   }
 }

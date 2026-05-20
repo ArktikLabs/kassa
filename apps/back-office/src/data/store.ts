@@ -273,6 +273,33 @@ export function updateItem(id: string, patch: Partial<Omit<CatalogItem, "id">>):
   emit();
 }
 
+/**
+ * Atomic create-or-update of many items for the CSV-import surface
+ * (KASA-311). One `emit()` at the end so subscribers see one state
+ * transition, matching the server-side single-transaction contract on
+ * `POST /v1/catalog/items/bulk`.
+ */
+export function bulkUpsertItems(input: {
+  toCreate: ReadonlyArray<Omit<CatalogItem, "id">>;
+  toUpdate: ReadonlyArray<{ id: string; patch: Partial<Omit<CatalogItem, "id">> }>;
+}): { created: number; updated: number } {
+  const created: CatalogItem[] = input.toCreate.map((draft) => ({ ...draft, id: mkId("ITM") }));
+  const updateById = new Map<string, Partial<Omit<CatalogItem, "id">>>();
+  for (const u of input.toUpdate) updateById.set(u.id, u.patch);
+
+  state = {
+    ...state,
+    items: [
+      ...state.items.map((it) =>
+        updateById.has(it.id) ? { ...it, ...updateById.get(it.id)! } : it,
+      ),
+      ...created,
+    ],
+  };
+  emit();
+  return { created: created.length, updated: updateById.size };
+}
+
 export function setItemActive(id: string, isActive: boolean): void {
   updateItem(id, { isActive });
 }

@@ -1,4 +1,5 @@
 import type { Item, ItemAvailability } from "../../db/schema/items.js";
+import type { ItemForeignKeyTarget } from "./service.js";
 
 export interface CreateItemInput {
   id: string;
@@ -91,4 +92,68 @@ export interface ItemsRepository {
   softDeleteItem(input: { id: string; merchantId: string; now: Date }): Promise<Item | null>;
   findUom(input: { id: string; merchantId: string }): Promise<{ id: string } | null>;
   findBom(input: { id: string; merchantId: string }): Promise<{ id: string } | null>;
+  /**
+   * Atomic create-or-update for the bulk CSV import surface (KASA-311). Every
+   * row is matched on `(merchantId, code)`; existing rows update only when a
+   * persisted field actually changed (idempotent re-import). Implementations
+   * must roll back the entire batch on any error so partial inserts do not
+   * leak into the merchant's catalog.
+   *
+   * `BulkUpsertItemsRowError` lets the impl flag a specific row index that
+   * tripped an FK constraint (UoM/BOM gone between the service's pre-check
+   * and the write) so the service can surface a per-row 422 details payload
+   * instead of a uniform 500.
+   */
+  bulkUpsertItems(input: BulkUpsertItemsInput): Promise<BulkUpsertItemsResult>;
+}
+
+export interface BulkUpsertItemsRow {
+  code: string;
+  name: string;
+  priceIdr: number;
+  uomId: string;
+  bomId?: string | null | undefined;
+  isStockTracked?: boolean | undefined;
+  isActive?: boolean | undefined;
+}
+
+export interface BulkUpsertItemsInput {
+  merchantId: string;
+  rows: readonly BulkUpsertItemsRow[];
+  /**
+   * Called per inserted row. Kept as a callback (rather than a list of
+   * pre-generated ids) so the repo only burns ids for rows that turn out
+   * to need an insert — re-imports of an unchanged file allocate none.
+   */
+  generateId: () => string;
+  now: Date;
+}
+
+export interface BulkUpsertItemsRowResult {
+  index: number;
+  code: string;
+  status: "created" | "updated" | "unchanged";
+  item: Item;
+}
+
+export interface BulkUpsertItemsResult {
+  rows: BulkUpsertItemsRowResult[];
+}
+
+/**
+ * Wraps a repo-level failure tied to a specific input row so the service can
+ * decorate a 422 with a row index instead of letting the whole batch surface
+ * as a vague 500. `target` distinguishes the FK target hit (UoM / BOM); the
+ * service translates that into the public `uom_not_found` / `bom_not_found`
+ * codes.
+ */
+export class BulkUpsertItemsRowError extends Error {
+  constructor(
+    public readonly index: number,
+    public readonly target: ItemForeignKeyTarget,
+    public readonly id: string,
+  ) {
+    super(`bulk upsert row ${index} references missing ${target} ${id}`);
+    this.name = "BulkUpsertItemsRowError";
+  }
 }

@@ -685,6 +685,9 @@ describe("ItemsService.list — page-token boundary travels parsed", () => {
       async findBom() {
         return null;
       },
+      async bulkUpsertItems() {
+        return { rows: [] };
+      },
     };
     return {
       repo,

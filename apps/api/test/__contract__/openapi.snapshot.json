@@ -2206,6 +2206,380 @@
         }
       }
     },
+    "/v1/catalog/items/bulk": {
+      "post": {
+        "summary": "Bulk upsert items (CSV import)",
+        "tags": [
+          "catalog"
+        ],
+        "description": "Owner-only. Idempotent on `(merchantId, code)`: rows whose persisted fields exactly match the stored item return as `unchanged` without bumping `updatedAt`. The entire batch runs in a single transaction — on validation, FK, or unique-conflict errors the whole batch rolls back. Batch cap is 500 rows; the back-office CSV import chunks larger files client-side.",
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "results": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "code": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 64
+                          },
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "created",
+                              "updated",
+                              "unchanged"
+                            ]
+                          },
+                          "item": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string",
+                                "format": "uuid"
+                              },
+                              "code": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 64
+                              },
+                              "name": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 256
+                              },
+                              "priceIdr": {
+                                "type": "integer",
+                                "minimum": 0
+                              },
+                              "uomId": {
+                                "type": "string",
+                                "format": "uuid"
+                              },
+                              "bomId": {
+                                "type": "string",
+                                "format": "uuid",
+                                "nullable": true
+                              },
+                              "isStockTracked": {
+                                "type": "boolean"
+                              },
+                              "taxRate": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "maximum": 100,
+                                "default": 11
+                              },
+                              "availability": {
+                                "type": "string",
+                                "enum": [
+                                  "available",
+                                  "sold_out"
+                                ],
+                                "default": "available"
+                              },
+                              "isActive": {
+                                "type": "boolean"
+                              },
+                              "updatedAt": {
+                                "type": "string",
+                                "format": "date-time"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "code",
+                              "name",
+                              "priceIdr",
+                              "uomId",
+                              "bomId",
+                              "isStockTracked",
+                              "isActive",
+                              "updatedAt"
+                            ],
+                            "additionalProperties": false
+                          }
+                        },
+                        "required": [
+                          "code",
+                          "status",
+                          "item"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "summary": {
+                      "type": "object",
+                      "properties": {
+                        "created": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "updated": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "unchanged": {
+                          "type": "integer",
+                          "minimum": 0
+                        }
+                      },
+                      "required": [
+                        "created",
+                        "updated",
+                        "unchanged"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "results",
+                    "summary"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Standard Kassa API error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "description": "Machine-readable error code, snake_case."
+                        },
+                        "message": {
+                          "type": "string",
+                          "description": "Human-readable error message."
+                        },
+                        "details": {
+                          "description": "Optional structured detail payload."
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Standard Kassa API error envelope."
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Standard Kassa API error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "description": "Machine-readable error code, snake_case."
+                        },
+                        "message": {
+                          "type": "string",
+                          "description": "Human-readable error message."
+                        },
+                        "details": {
+                          "description": "Optional structured detail payload."
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Standard Kassa API error envelope."
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Standard Kassa API error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "description": "Machine-readable error code, snake_case."
+                        },
+                        "message": {
+                          "type": "string",
+                          "description": "Human-readable error message."
+                        },
+                        "details": {
+                          "description": "Optional structured detail payload."
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Standard Kassa API error envelope."
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Standard Kassa API error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "description": "Machine-readable error code, snake_case."
+                        },
+                        "message": {
+                          "type": "string",
+                          "description": "Human-readable error message."
+                        },
+                        "details": {
+                          "description": "Optional structured detail payload."
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Standard Kassa API error envelope."
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Standard Kassa API error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "description": "Machine-readable error code, snake_case."
+                        },
+                        "message": {
+                          "type": "string",
+                          "description": "Human-readable error message."
+                        },
+                        "details": {
+                          "description": "Optional structured detail payload."
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Standard Kassa API error envelope."
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Standard Kassa API error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "description": "Machine-readable error code, snake_case."
+                        },
+                        "message": {
+                          "type": "string",
+                          "description": "Human-readable error message."
+                        },
+                        "details": {
+                          "description": "Optional structured detail payload."
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Standard Kassa API error envelope."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/catalog/boms": {
       "get": {
         "summary": "Pull BOMs (delta)",

@@ -1,4 +1,4 @@
-import { and, asc, eq, getTableColumns, gt, sql } from "drizzle-orm";
+import { and, asc, eq, getTableColumns, gt, inArray, sql } from "drizzle-orm";
 import type { Database } from "../../db/client.js";
 import { boms } from "../../db/schema/boms.js";
 import type { Item, ItemAvailability } from "../../db/schema/items.js";
@@ -9,12 +9,16 @@ import {
   ItemForeignKeyError,
   type ItemForeignKeyTarget,
 } from "./service.js";
-import type {
-  CreateItemInput,
-  ItemsRepository,
-  ListItemsInput,
-  ListItemsResult,
-  UpdateItemInput,
+import {
+  type BulkUpsertItemsInput,
+  type BulkUpsertItemsResult,
+  type BulkUpsertItemsRowResult,
+  BulkUpsertItemsRowError,
+  type CreateItemInput,
+  type ItemsRepository,
+  type ListItemsInput,
+  type ListItemsResult,
+  type UpdateItemInput,
 } from "./repository.js";
 
 /**
@@ -254,5 +258,110 @@ export class PgItemsRepository implements ItemsRepository {
       .where(and(eq(boms.id, input.id), eq(boms.merchantId, input.merchantId)))
       .limit(1);
     return rows[0] ?? null;
+  }
+
+  async bulkUpsertItems(input: BulkUpsertItemsInput): Promise<BulkUpsertItemsResult> {
+    const codes = input.rows.map((r) => r.code);
+    return await this.db.transaction(async (tx) => {
+      // Pre-fetch existing rows for the batch so we can decide
+      // created-vs-updated-vs-unchanged without one round-trip per row.
+      const existingRows =
+        codes.length === 0
+          ? []
+          : await tx
+              .select()
+              .from(items)
+              .where(and(eq(items.merchantId, input.merchantId), inArray(items.code, codes)));
+      const byCode = new Map<string, Item>();
+      for (const row of existingRows) byCode.set(row.code, row);
+
+      const rowResults: BulkUpsertItemsRowResult[] = [];
+
+      for (let idx = 0; idx < input.rows.length; idx++) {
+        const row = input.rows[idx]!;
+        const existing = byCode.get(row.code);
+
+        if (!existing) {
+          try {
+            const inserted = await tx
+              .insert(items)
+              .values({
+                id: input.generateId(),
+                merchantId: input.merchantId,
+                code: row.code,
+                name: row.name,
+                priceIdr: row.priceIdr,
+                uomId: row.uomId,
+                bomId: row.bomId ?? null,
+                ...(row.isStockTracked !== undefined ? { isStockTracked: row.isStockTracked } : {}),
+                ...(row.isActive !== undefined ? { isActive: row.isActive } : {}),
+                createdAt: input.now,
+                updatedAt: input.now,
+              })
+              .returning();
+            const item = inserted[0];
+            if (!item) throw new Error("items.insert returned no row");
+            rowResults.push({ index: idx, code: row.code, status: "created", item });
+          } catch (err) {
+            const fkTarget = itemsForeignKeyTarget(err);
+            if (fkTarget) {
+              const id = fkTarget === "uom_not_found" ? row.uomId : (row.bomId ?? "");
+              throw new BulkUpsertItemsRowError(idx, fkTarget, id);
+            }
+            throw err;
+          }
+          continue;
+        }
+
+        const sameStockTracked =
+          row.isStockTracked === undefined ? true : row.isStockTracked === existing.isStockTracked;
+        const sameIsActive = row.isActive === undefined ? true : row.isActive === existing.isActive;
+        const isUnchanged =
+          existing.name === row.name &&
+          existing.priceIdr === row.priceIdr &&
+          existing.uomId === row.uomId &&
+          existing.bomId === (row.bomId ?? null) &&
+          sameStockTracked &&
+          sameIsActive;
+
+        if (isUnchanged) {
+          rowResults.push({
+            index: idx,
+            code: row.code,
+            status: "unchanged",
+            item: existing,
+          });
+          continue;
+        }
+
+        try {
+          const updated = await tx
+            .update(items)
+            .set({
+              name: row.name,
+              priceIdr: row.priceIdr,
+              uomId: row.uomId,
+              bomId: row.bomId ?? null,
+              ...(row.isStockTracked !== undefined ? { isStockTracked: row.isStockTracked } : {}),
+              ...(row.isActive !== undefined ? { isActive: row.isActive } : {}),
+              updatedAt: input.now,
+            })
+            .where(and(eq(items.id, existing.id), eq(items.merchantId, input.merchantId)))
+            .returning();
+          const item = updated[0];
+          if (!item) throw new Error("items.update returned no row");
+          rowResults.push({ index: idx, code: row.code, status: "updated", item });
+        } catch (err) {
+          const fkTarget = itemsForeignKeyTarget(err);
+          if (fkTarget) {
+            const id = fkTarget === "uom_not_found" ? row.uomId : (row.bomId ?? "");
+            throw new BulkUpsertItemsRowError(idx, fkTarget, id);
+          }
+          throw err;
+        }
+      }
+
+      return { rows: rowResults };
+    });
   }
 }
