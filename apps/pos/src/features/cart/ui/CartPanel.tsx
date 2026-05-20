@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useNavigate } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 import { useIntl } from "react-intl";
 import { useCartStore } from "../store.ts";
 import type { CartLine } from "../types.ts";
@@ -66,6 +66,15 @@ export function CartPanel() {
             void navigate({ to: "/tender/cash" });
           }}
         />
+        {lines.length > 0 ? (
+          <Link
+            to="/tender/split"
+            data-testid="cart-split-link"
+            className="block w-full rounded-md border border-dashed border-neutral-300 px-3 py-2 text-center text-sm font-semibold text-neutral-700 hover:bg-neutral-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-600"
+          >
+            {intl.formatMessage({ id: "cart.charge.split" })}
+          </Link>
+        ) : null}
       </footer>
       <CartEditSheet
         line={editing}

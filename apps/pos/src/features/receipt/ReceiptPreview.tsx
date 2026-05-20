@@ -171,10 +171,25 @@ export function ReceiptPreview({
           value={formatIdr(sale.totalIdr)}
           strong
         />
-        <Row
-          label={intl.formatMessage({ id: "receipt.tendered" })}
-          value={formatIdr(totalTendered)}
-        />
+        {sale.tenders.length > 1 ? (
+          // KASA-310 — split tender: break the single "Diterima" line into
+          // one row per method so the customer can see "Tunai 20.000 / QRIS
+          // 15.000" instead of a lump sum. The thermal-printer ESC/POS
+          // layout (printing.ts) keeps the totalled "Diterima" row.
+          sale.tenders.map((tender) => (
+            <Row
+              key={`${tender.method}-${tender.amountIdr}-${tender.reference ?? tender.buyerRefLast4 ?? ""}`}
+              label={intl.formatMessage({ id: `receipt.tender.${tender.method}` })}
+              value={formatIdr(tender.amountIdr)}
+              data-testid={`receipt-tender-${tender.method}`}
+            />
+          ))
+        ) : (
+          <Row
+            label={intl.formatMessage({ id: "receipt.tendered" })}
+            value={formatIdr(totalTendered)}
+          />
+        )}
         <Row label={intl.formatMessage({ id: "receipt.change" })} value={formatIdr(change)} />
       </dl>
       {qrisVoided ? (

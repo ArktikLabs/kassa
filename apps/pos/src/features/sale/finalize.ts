@@ -63,6 +63,26 @@ export interface FinalizeQrisStaticInput {
   buyerRefLast4: string;
 }
 
+export interface FinalizeSplitInput {
+  lines: readonly CartLine[];
+  totals: CartTotals;
+  /**
+   * The split tenders for this sale, already amount-resolved per leg.
+   * KASA-310 — cash + QRIS in one sale. The schema enforces
+   * `sum(tenders.amountIdr) >= totalIdr`; the split UX builds an exact-sum
+   * array (cash + remainder), so callers normally pass an array that sums
+   * to `totals.totalIdr`.
+   */
+  tenders: readonly PendingSaleTender[];
+  /**
+   * Optional pre-generated localSaleId. The dynamic-QRIS leg mints this id
+   * before `POST /v1/payments/qris` so the Midtrans `order_id` and the
+   * outbox row reconcile 1:1 by primary key — same convention as
+   * `finalizeQrisSale`.
+   */
+  localSaleId?: string;
+}
+
 export interface FinalizeContext {
   database: Database;
   /** Injected for tests. Defaults to `uuidv7()`. */
@@ -490,5 +510,148 @@ export async function finalizeQrisStaticSale(
     sale,
     pendingSale,
     changeDueIdr: toRupiah(0),
+  };
+}
+
+/**
+ * KASA-310 — finalise a cart as a split-tender sale (e.g. cash 20.000 +
+ * QRIS 15.000 on a 35.000 bill). The caller resolves both legs first (the
+ * cash amount the customer hands over, the QRIS confirmation for the
+ * remainder) and passes the already-built tenders array in. We then run
+ * the same finalise contract as cash/QRIS-only sales: one Dexie
+ * rw-transaction inserts the outbox row and decrements stock atomically,
+ * so an offline-buffered split sale lands as one row with both legs or
+ * neither.
+ *
+ * The `kassaSale` schema rejects any tender array that does not cover the
+ * sale total, so an undertender throws before the outbox is touched.
+ */
+export async function finalizeSplitSale(
+  input: FinalizeSplitInput,
+  ctx: FinalizeContext,
+): Promise<FinalizeResult> {
+  const { database } = ctx;
+  const genId = ctx.generateLocalSaleId ?? uuidv7;
+  const now = ctx.now?.() ?? new Date();
+
+  if (input.lines.length === 0) {
+    throw new SaleFinalizeError("cart is empty");
+  }
+  if (input.tenders.length < 2) {
+    throw new SaleFinalizeError("split tender requires at least two legs");
+  }
+  const tenderSum = input.tenders.reduce((acc, t) => acc + (t.amountIdr as number), 0);
+  if (tenderSum < (input.totals.totalIdr as number)) {
+    throw new SaleFinalizeError("tenders do not cover the sale total");
+  }
+
+  const deviceSecret = await database.repos.deviceSecret.get();
+  if (!deviceSecret) {
+    throw new SaleFinalizeError("device is not enrolled");
+  }
+  const outlet = await database.repos.outlets.getById(deviceSecret.outletId);
+
+  const businessDate = toBusinessDate(now, outlet?.timezone);
+  const localSaleId = input.localSaleId ?? genId();
+  const createdAtIso = now.toISOString();
+
+  const items = await Promise.all(
+    input.lines.map(async (line) => {
+      const item = await database.repos.items.getById(line.itemId);
+      return [line.itemId, item] as const;
+    }),
+  );
+  const itemById = new Map<string, Item>();
+  for (const [id, item] of items) {
+    if (item) itemById.set(id, item);
+  }
+
+  const saleItems = buildSaleItems(input.lines, itemById);
+
+  // `kassaSale.parse` re-validates the tender array (per-leg shape +
+  // sum-covers-total) before anything reaches Dexie. A bad leg throws and
+  // the cart stays intact for the clerk to fix.
+  const sale: KassaSale = kassaSale.parse({
+    localSaleId,
+    outletId: deviceSecret.outletId,
+    clerkId: deviceSecret.deviceId,
+    businessDate,
+    createdAt: createdAtIso,
+    subtotalIdr: input.totals.subtotalIdr as number,
+    discountIdr: input.totals.discountIdr as number,
+    totalIdr: input.totals.totalIdr as number,
+    items: saleItems,
+    tenders: input.tenders.map((t) => ({
+      method: t.method,
+      amountIdr: t.amountIdr as number,
+      reference: t.reference,
+      ...(t.verified !== undefined ? { verified: t.verified } : {}),
+      ...(t.buyerRefLast4 !== undefined ? { buyerRefLast4: t.buyerRefLast4 } : {}),
+    })),
+  });
+
+  const stockMoves = await explodeLines(
+    database,
+    input.lines.map((line) => ({ itemId: line.itemId, quantity: line.quantity })),
+    itemById,
+  );
+
+  const pendingSale: PendingSale = await database.db.transaction(
+    "rw",
+    database.db.pending_sales,
+    database.db.stock_snapshot,
+    async () => {
+      const row: PendingSale = {
+        localSaleId: sale.localSaleId,
+        outletId: sale.outletId,
+        clerkId: sale.clerkId,
+        businessDate: sale.businessDate,
+        createdAt: sale.createdAt,
+        subtotalIdr: toRupiah(sale.subtotalIdr),
+        discountIdr: toRupiah(sale.discountIdr),
+        totalIdr: toRupiah(sale.totalIdr),
+        // KASA-218 — local PPN preview for the receipt before the server
+        // confirms. Server is still authoritative on submit; the outbox row
+        // overwrites this once the response carries `taxIdr`.
+        taxIdr: computeSaleTaxIdr(saleItems, itemById),
+        items: saleItems.map((line) => ({
+          ...line,
+          unitPriceIdr: toRupiah(line.unitPriceIdr),
+          lineTotalIdr: toRupiah(line.lineTotalIdr),
+        })),
+        tenders: sale.tenders.map((t) => ({
+          method: t.method,
+          amountIdr: toRupiah(t.amountIdr),
+          reference: t.reference,
+          ...(t.verified !== undefined ? { verified: t.verified } : {}),
+          ...(t.buyerRefLast4 !== undefined ? { buyerRefLast4: t.buyerRefLast4 } : {}),
+        })),
+        status: "queued",
+        attempts: 0,
+        lastError: null,
+        lastAttemptAt: null,
+        serverSaleName: null,
+      };
+      await database.db.pending_sales.put(row);
+
+      for (const move of stockMoves) {
+        await database.repos.stockSnapshot.applyOptimisticDelta(
+          sale.outletId,
+          move.itemId,
+          -move.quantity,
+          createdAtIso,
+        );
+      }
+      return row;
+    },
+  );
+
+  const changeDueIdr = toRupiah(Math.max(0, tenderSum - (input.totals.totalIdr as number)));
+
+  return {
+    localSaleId: sale.localSaleId,
+    sale,
+    pendingSale,
+    changeDueIdr,
   };
 }

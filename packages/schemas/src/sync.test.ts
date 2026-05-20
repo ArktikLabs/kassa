@@ -3,6 +3,7 @@ import {
   bomPullResponse,
   itemPullResponse,
   outletPullResponse,
+  saleSubmitRequest,
   saleSubmitTender,
   stockLedgerPullQuery,
   stockLedgerPullResponse,
@@ -202,5 +203,62 @@ describe("saleSubmitTender", () => {
       reference: null,
     });
     expect(parsed.method).toBe("synthetic");
+  });
+});
+
+describe("saleSubmitRequest", () => {
+  const baseRequest = {
+    localSaleId: "018f9c1a-4b2e-7c00-b000-000000000099",
+    outletId: "018f9c1a-4b2e-7c00-b000-000000000001",
+    clerkId: "018f9c1a-4b2e-7c00-b000-0000000000aa",
+    businessDate: "2026-05-20",
+    createdAt: "2026-05-20T10:00:00+07:00",
+    subtotalIdr: 35_000,
+    discountIdr: 0,
+    totalIdr: 35_000,
+    items: [
+      {
+        itemId: "018f9c1a-4b2e-7c00-b000-0000000000ff",
+        bomId: null,
+        quantity: 1,
+        uomId: "018f9c1a-4b2e-7c00-b000-0000000000cc",
+        unitPriceIdr: 35_000,
+        lineTotalIdr: 35_000,
+      },
+    ],
+  };
+
+  it("accepts a split tender (cash 20k + qris 15k) that sums to total", () => {
+    const parsed = saleSubmitRequest.parse({
+      ...baseRequest,
+      tenders: [
+        { method: "cash", amountIdr: 20_000, reference: null },
+        { method: "qris", amountIdr: 15_000, reference: "ref-1" },
+      ],
+    });
+    expect(parsed.tenders).toHaveLength(2);
+  });
+
+  // KASA-310 — server-side belt-and-braces against under-tender. A
+  // multi-tender submit that doesn't cover the bill must 422 at the
+  // route boundary, not silently land in `tenders`.
+  it("rejects a split tender whose legs do not cover the total", () => {
+    expect(() =>
+      saleSubmitRequest.parse({
+        ...baseRequest,
+        tenders: [
+          { method: "cash", amountIdr: 10_000, reference: null },
+          { method: "qris", amountIdr: 15_000, reference: "ref-1" },
+        ],
+      }),
+    ).toThrow(/cover the sale total/);
+  });
+
+  it("still accepts a single cash tender that overpays (change due)", () => {
+    const parsed = saleSubmitRequest.parse({
+      ...baseRequest,
+      tenders: [{ method: "cash", amountIdr: 50_000, reference: null }],
+    });
+    expect(parsed.tenders[0]?.amountIdr).toBe(50_000);
   });
 });

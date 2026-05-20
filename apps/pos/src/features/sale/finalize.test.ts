@@ -10,6 +10,7 @@ import {
   finalizeCashSale,
   finalizeQrisSale,
   finalizeQrisStaticSale,
+  finalizeSplitSale,
   SaleFinalizeError,
 } from "./finalize.ts";
 
@@ -475,5 +476,169 @@ describe("finalizeQrisStaticSale", () => {
         { database: { db: fx.db, repos: fx.repos, close: () => {} } },
       ),
     ).rejects.toBeInstanceOf(SaleFinalizeError);
+  });
+});
+
+describe("finalizeSplitSale", () => {
+  let fx: Fixture;
+  const LOCAL_SALE_ID = "01929b2d-1e04-7f00-80aa-000000000004";
+
+  beforeEach(async () => {
+    fx = await setup();
+  });
+
+  afterEach(async () => {
+    await teardown(fx);
+  });
+
+  it("persists one pending_sale row with both legs and decrements stock once", async () => {
+    // 2× Kopi @ 25k = 50k total → 20k cash + 30k QRIS (dynamic).
+    const cart = cartWithKopi(2);
+    const result = await finalizeSplitSale(
+      {
+        lines: cart.lines,
+        totals: totals(cart),
+        localSaleId: LOCAL_SALE_ID,
+        tenders: [
+          { method: "cash", amountIdr: toRupiah(20_000), reference: null },
+          { method: "qris", amountIdr: toRupiah(30_000), reference: LOCAL_SALE_ID },
+        ],
+      },
+      {
+        database: { db: fx.db, repos: fx.repos, close: () => {} },
+        now: () => new Date("2026-04-23T15:30:00+07:00"),
+      },
+    );
+
+    expect(result.localSaleId).toBe(LOCAL_SALE_ID);
+    expect(result.changeDueIdr).toBe(0);
+    expect(result.sale.tenders).toHaveLength(2);
+    expect(result.sale.tenders[0]).toEqual({
+      method: "cash",
+      amountIdr: 20_000,
+      reference: null,
+    });
+    expect(result.sale.tenders[1]).toEqual({
+      method: "qris",
+      amountIdr: 30_000,
+      reference: LOCAL_SALE_ID,
+    });
+
+    const stored = await fx.repos.pendingSales.getById(result.localSaleId);
+    expect(stored?.status).toBe("queued");
+    expect(stored?.tenders).toHaveLength(2);
+    expect(stored?.tenders?.[0]?.method).toBe("cash");
+    expect(stored?.tenders?.[0]?.amountIdr).toBe(20_000);
+    expect(stored?.tenders?.[1]?.method).toBe("qris");
+    expect(stored?.tenders?.[1]?.amountIdr).toBe(30_000);
+    expect(stored?.totalIdr).toBe(50_000);
+
+    // Stock decrements happen exactly once for the whole sale, not per leg.
+    const stock = await fx.repos.stockSnapshot.forOutletItem(
+      "22222222-2222-7222-8222-222222222222",
+      "44444444-4444-7444-8444-444444444444",
+    );
+    expect(stock?.onHand).toBe(8);
+  });
+
+  it("supports a cash + qris_static split with buyerRefLast4 (offline fallback)", async () => {
+    const cart = cartWithKopi(1); // 25k total
+    const result = await finalizeSplitSale(
+      {
+        lines: cart.lines,
+        totals: totals(cart),
+        tenders: [
+          { method: "cash", amountIdr: toRupiah(10_000), reference: null },
+          {
+            method: "qris_static",
+            amountIdr: toRupiah(15_000),
+            reference: null,
+            verified: false,
+            buyerRefLast4: "4321",
+          },
+        ],
+      },
+      {
+        database: { db: fx.db, repos: fx.repos, close: () => {} },
+        generateLocalSaleId: () => "01929b2d-1e05-7f00-80aa-000000000005",
+      },
+    );
+
+    const stored = await fx.repos.pendingSales.getById(result.localSaleId);
+    expect(stored?.tenders).toHaveLength(2);
+    expect(stored?.tenders?.[1]).toMatchObject({
+      method: "qris_static",
+      amountIdr: 15_000,
+      verified: false,
+      buyerRefLast4: "4321",
+    });
+  });
+
+  it("rejects an undertender (sum of legs < total)", async () => {
+    const cart = cartWithKopi(2); // 50k total
+    await expect(
+      finalizeSplitSale(
+        {
+          lines: cart.lines,
+          totals: totals(cart),
+          tenders: [
+            { method: "cash", amountIdr: toRupiah(10_000), reference: null },
+            { method: "qris", amountIdr: toRupiah(20_000), reference: "ref" },
+          ],
+        },
+        { database: { db: fx.db, repos: fx.repos, close: () => {} } },
+      ),
+    ).rejects.toBeInstanceOf(SaleFinalizeError);
+  });
+
+  it("rejects a single-leg array (use finalizeCashSale or finalizeQrisSale instead)", async () => {
+    const cart = cartWithKopi(1);
+    await expect(
+      finalizeSplitSale(
+        {
+          lines: cart.lines,
+          totals: totals(cart),
+          tenders: [{ method: "cash", amountIdr: toRupiah(25_000), reference: null }],
+        },
+        { database: { db: fx.db, repos: fx.repos, close: () => {} } },
+      ),
+    ).rejects.toBeInstanceOf(SaleFinalizeError);
+  });
+
+  it("rejects an empty cart", async () => {
+    await expect(
+      finalizeSplitSale(
+        {
+          lines: [],
+          totals: { subtotalIdr: toRupiah(0), discountIdr: toRupiah(0), totalIdr: toRupiah(0) },
+          tenders: [
+            { method: "cash", amountIdr: toRupiah(0), reference: null },
+            { method: "qris", amountIdr: toRupiah(0), reference: "x" },
+          ],
+        },
+        { database: { db: fx.db, repos: fx.repos, close: () => {} } },
+      ),
+    ).rejects.toBeInstanceOf(SaleFinalizeError);
+  });
+
+  it("reports change due only when the customer overpaid cash", async () => {
+    const cart = cartWithKopi(2); // 50k total
+    const result = await finalizeSplitSale(
+      {
+        lines: cart.lines,
+        totals: totals(cart),
+        tenders: [
+          // Customer hands 25k cash, only 20k applies — 5k change. QRIS picks
+          // up the rest (30k). Sum 55k − total 50k = 5k change.
+          { method: "cash", amountIdr: toRupiah(25_000), reference: null },
+          { method: "qris", amountIdr: toRupiah(30_000), reference: "ref" },
+        ],
+      },
+      {
+        database: { db: fx.db, repos: fx.repos, close: () => {} },
+        generateLocalSaleId: () => "01929b2d-1e06-7f00-80aa-000000000006",
+      },
+    );
+    expect(result.changeDueIdr).toBe(5_000);
   });
 });
