@@ -251,7 +251,24 @@ export const saleSubmitRequest = z
     items: z.array(saleSubmitItem).min(1),
     tenders: z.array(saleSubmitTender).min(1),
   })
-  .strict();
+  .strict()
+  // KASA-310 — split tender. The wire contract has always allowed
+  // `tenders` to be multi-row; this superRefine pins down the rule the
+  // POS finalize layer (`kassaSale` in apps/pos/src/features/sale/schema.ts)
+  // already enforces, so a multi-method sale (e.g. `[{cash 20k}, {qris 15k}]`)
+  // that sums below the bill is rejected at the route boundary with 422,
+  // not silently persisted as an underpaid sale. Cash overpay → change
+  // remains legal (sum may exceed total); only undertender is illegal.
+  .superRefine((value, ctx) => {
+    const tendered = value.tenders.reduce((acc, t) => acc + t.amountIdr, 0);
+    if (tendered < value.totalIdr) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["tenders"],
+        message: "tenders total must cover the sale total",
+      });
+    }
+  });
 export type SaleSubmitRequest = z.infer<typeof saleSubmitRequest>;
 
 /**

@@ -146,4 +146,30 @@ describe("ReceiptPreview", () => {
     expect(banner).toHaveTextContent(/SALINAN/);
     expect(banner.compareDocumentPosition(outletNameNode)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
   });
+
+  // KASA-310 — split tender. Multi-tender sales render one labelled row
+  // per method instead of the single "Diterima" line, so the customer can
+  // see "Tunai 20.000 / QRIS 30.000" on the receipt.
+  it("renders one row per tender method when the sale has a split tender", () => {
+    const splitSale: PendingSale = {
+      ...sale,
+      tenders: [
+        { method: "cash", amountIdr: toRupiah(20_000), reference: null },
+        {
+          method: "qris",
+          amountIdr: toRupiah(30_000),
+          reference: "01929b2d-1e02-7f00-80aa-000000000002",
+        },
+      ],
+    };
+    renderWithIntl(<ReceiptPreview sale={splitSale} outlet={outlet} paperWidth="58mm" />);
+    const cashRow = screen.getByTestId("receipt-tender-cash");
+    const qrisRow = screen.getByTestId("receipt-tender-qris");
+    expect(cashRow).toHaveTextContent(/Tunai/);
+    expect(cashRow).toHaveTextContent("20.000");
+    expect(qrisRow).toHaveTextContent(/QRIS/);
+    expect(qrisRow).toHaveTextContent("30.000");
+    // Single "Diterima" row collapses when there's more than one method.
+    expect(screen.queryByText(/Diterima/)).toBeNull();
+  });
 });

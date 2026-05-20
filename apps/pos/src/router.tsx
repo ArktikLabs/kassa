@@ -141,6 +141,17 @@ const tenderQrisStaticRoute = createRoute({
   ),
 });
 
+// KASA-310 — split tender (cash + QRIS). Same shift guard as the cash
+// route because the cash leg still needs an open shift; the QRIS leg
+// inherits the same constraint through the same `finalizeSplitSale`
+// outbox path.
+const tenderSplitRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/tender/split",
+  beforeLoad: guardOpenShift,
+  component: lazyRouteComponent(() => import("./routes/tender.split"), "TenderSplitScreen"),
+});
+
 const receiptRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/receipt/$id",
@@ -224,6 +235,7 @@ export const routeTree = rootRoute.addChildren([
   tenderCashRoute,
   tenderQrisRoute,
   tenderQrisStaticRoute,
+  tenderSplitRoute,
   receiptRoute,
   salesHistoryRoute,
   salesReprintRoute,
