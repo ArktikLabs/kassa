@@ -1,11 +1,14 @@
 /*
  * Shared print orchestration for the receipt screen and the reprint screen.
  *
- * Both flows speak ESC/POS over Web Bluetooth with a `window.print()` fallback
- * for browsers that don't expose `navigator.bluetooth` (KASA-220 reprint
- * follows the same path as KASA-56 first-print so a clerk's muscle memory
- * does not change). Extracting the state machine here keeps the reprint
- * screen from re-implementing a subtly different copy of the original.
+ * Both flows speak ESC/POS over Web Bluetooth. When the browser doesn't
+ * expose `navigator.bluetooth` (iPadOS Safari) or a pairing attempt fails
+ * mid-session, the receipt screen swaps in the KASA-309 PDF fallback as
+ * the primary action — we no longer auto-trigger `window.print()` here
+ * because the browser print dialogue is not a usable receipt for either
+ * the merchant or the customer on a tablet. Extracting the state machine
+ * here keeps the reprint screen from re-implementing a subtly different
+ * copy of the original.
  */
 
 import { useCallback, useState } from "react";
@@ -20,6 +23,7 @@ import {
 } from "./bluetooth.ts";
 import { encodeReceipt, type ReceiptLine } from "./escpos.ts";
 import { PAPER_WIDTH_CHAR_COLUMNS, type PaperWidth } from "./paperWidth.ts";
+import { markBluetoothSessionFailed } from "./printerSession.ts";
 
 export type PrintState =
   | { kind: "idle" }
@@ -50,12 +54,15 @@ export function usePrintReceipt(): UsePrintReceipt {
   const print = useCallback(
     async ({ sale, outlet, paperWidth, salinan }: PrintRequest): Promise<void> => {
       if (!isWebBluetoothSupported()) {
+        // iPadOS / non-Chromium path: surface the PDF fallback as the
+        // primary action via the session signal so the next render
+        // promotes "Unduh PDF" without a reload.
+        markBluetoothSessionFailed();
         setState({
           kind: "fallback",
           reason: "unsupported",
           message: intl.formatMessage({ id: "receipt.print.unsupported" }),
         });
-        if (typeof window !== "undefined") window.print();
         return;
       }
       setState({ kind: "printing" });
@@ -98,14 +105,15 @@ export function usePrintReceipt(): UsePrintReceipt {
         setState({ kind: "done" });
       } catch (err) {
         if (err instanceof BluetoothUnsupportedError) {
+          markBluetoothSessionFailed();
           setState({
             kind: "fallback",
             reason: "unsupported",
             message: intl.formatMessage({ id: "receipt.print.unsupported" }),
           });
-          if (typeof window !== "undefined") window.print();
           return;
         }
+        markBluetoothSessionFailed();
         const message =
           err instanceof BluetoothPrintError
             ? err.message

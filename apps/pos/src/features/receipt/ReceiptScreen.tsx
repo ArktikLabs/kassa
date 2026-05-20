@@ -9,6 +9,8 @@ import { ReceiptPreview } from "./ReceiptPreview.tsx";
 import { usePaperWidthStore, type PaperWidth } from "./paperWidth.ts";
 import { usePendingSale } from "./usePendingSale.ts";
 import { usePrintReceipt } from "./printing.ts";
+import { usePdfReceipt } from "./pdfDownload.ts";
+import { useReceiptActionLayout } from "./printerSession.ts";
 import { ShareWhatsAppButton } from "./ShareWhatsAppButton.tsx";
 
 function useOpenShift(): ShiftState | null | undefined {
@@ -40,6 +42,8 @@ export function ReceiptScreen() {
   const paperWidth = usePaperWidthStore((s) => s.width);
   const setWidth = usePaperWidthStore((s) => s.setWidth);
   const { state: print, print: handlePrint } = usePrintReceipt();
+  const { state: pdf, download: handlePdf } = usePdfReceipt();
+  const layout = useReceiptActionLayout();
 
   if (!ready) {
     return (
@@ -88,24 +92,63 @@ export function ReceiptScreen() {
         </Link>
       ) : null}
 
-      <div className="flex flex-col gap-2">
-        <button
-          type="button"
-          onClick={() => void handlePrint({ sale, outlet, paperWidth })}
-          disabled={print.kind === "printing"}
-          data-testid="receipt-print"
-          className={[
-            "w-full h-14 rounded-md text-base font-semibold",
-            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-600 focus-visible:ring-offset-2 focus-visible:ring-offset-white",
-            print.kind === "printing"
-              ? "bg-neutral-200 text-neutral-500"
-              : "bg-primary-600 text-white active:bg-primary-700",
-          ].join(" ")}
-        >
-          {print.kind === "printing"
-            ? intl.formatMessage({ id: "receipt.print.spooling" })
-            : intl.formatMessage({ id: "receipt.print.cetak" })}
-        </button>
+      <div className="flex flex-col gap-2" data-testid="receipt-actions">
+        {layout.pdfPrimary ? (
+          <PdfButton
+            variant="primary"
+            disabled={pdf.kind === "generating"}
+            onClick={() => void handlePdf({ sale, outlet, paperWidth })}
+            label={
+              pdf.kind === "generating"
+                ? intl.formatMessage({ id: "receipt.pdf.generating" })
+                : intl.formatMessage({ id: "receipt.pdf.cta" })
+            }
+          />
+        ) : (
+          <button
+            type="button"
+            onClick={() => void handlePrint({ sale, outlet, paperWidth })}
+            disabled={print.kind === "printing"}
+            data-testid="receipt-print"
+            className={[
+              "w-full h-14 rounded-md text-base font-semibold",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-600 focus-visible:ring-offset-2 focus-visible:ring-offset-white",
+              print.kind === "printing"
+                ? "bg-neutral-200 text-neutral-500"
+                : "bg-primary-600 text-white active:bg-primary-700",
+            ].join(" ")}
+          >
+            {print.kind === "printing"
+              ? intl.formatMessage({ id: "receipt.print.spooling" })
+              : intl.formatMessage({ id: "receipt.print.cetak" })}
+          </button>
+        )}
+        {layout.pdfPrimary ? (
+          layout.showPrinterRetry ? (
+            <button
+              type="button"
+              onClick={() => void handlePrint({ sale, outlet, paperWidth })}
+              disabled={print.kind === "printing"}
+              data-testid="receipt-print-retry"
+              className="w-full h-12 rounded-md border border-primary-600 px-4 py-2 text-base font-semibold text-primary-700 hover:bg-primary-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-600 focus-visible:ring-offset-2 focus-visible:ring-offset-white"
+            >
+              {print.kind === "printing"
+                ? intl.formatMessage({ id: "receipt.print.spooling" })
+                : intl.formatMessage({ id: "receipt.print.retry" })}
+            </button>
+          ) : null
+        ) : (
+          <PdfButton
+            variant="secondary"
+            disabled={pdf.kind === "generating"}
+            onClick={() => void handlePdf({ sale, outlet, paperWidth })}
+            label={
+              pdf.kind === "generating"
+                ? intl.formatMessage({ id: "receipt.pdf.generating" })
+                : intl.formatMessage({ id: "receipt.pdf.cta" })
+            }
+          />
+        )}
         {print.kind === "done" ? (
           <p
             role="status"
@@ -124,9 +167,61 @@ export function ReceiptScreen() {
             {print.message}
           </p>
         ) : null}
+        {pdf.kind === "done" ? (
+          <p
+            role="status"
+            data-testid="receipt-pdf-status"
+            className="rounded-md border border-success-border bg-success-surface px-3 py-2 text-sm text-success-fg"
+          >
+            {intl.formatMessage({ id: "receipt.pdf.done" })}
+          </p>
+        ) : null}
+        {pdf.kind === "failed" ? (
+          <p
+            role="alert"
+            data-testid="receipt-pdf-failed"
+            className="rounded-md border border-danger-border bg-danger-surface px-3 py-2 text-sm text-danger-fg"
+          >
+            {pdf.message}
+          </p>
+        ) : null}
         <ShareWhatsAppButton sale={sale} outlet={outlet} />
       </div>
     </section>
+  );
+}
+
+function PdfButton({
+  variant,
+  disabled,
+  onClick,
+  label,
+}: {
+  variant: "primary" | "secondary";
+  disabled: boolean;
+  onClick(): void;
+  label: string;
+}) {
+  const primary =
+    "w-full h-14 rounded-md text-base font-semibold bg-primary-600 text-white active:bg-primary-700";
+  const primaryDisabled =
+    "w-full h-14 rounded-md text-base font-semibold bg-neutral-200 text-neutral-500";
+  const secondary =
+    "w-full h-12 rounded-md border border-primary-600 px-4 py-2 text-base font-semibold text-primary-700 hover:bg-primary-50";
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      data-testid="receipt-pdf"
+      data-variant={variant}
+      className={[
+        variant === "primary" ? (disabled ? primaryDisabled : primary) : secondary,
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-600 focus-visible:ring-offset-2 focus-visible:ring-offset-white",
+      ].join(" ")}
+    >
+      {label}
+    </button>
   );
 }
 
