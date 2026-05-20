@@ -26,6 +26,8 @@ import { ReceiptPreview } from "./ReceiptPreview.tsx";
 import { usePaperWidthStore } from "./paperWidth.ts";
 import { usePendingSale } from "./usePendingSale.ts";
 import { usePrintReceipt } from "./printing.ts";
+import { usePdfReceipt } from "./pdfDownload.ts";
+import { useReceiptActionLayout } from "./printerSession.ts";
 
 export function SaleReprintScreen() {
   const intl = useIntl();
@@ -33,6 +35,8 @@ export function SaleReprintScreen() {
   const { sale, outlet, ready } = usePendingSale(localSaleId);
   const paperWidth = usePaperWidthStore((s) => s.width);
   const { state: print, print: handlePrint } = usePrintReceipt();
+  const { state: pdf, download: handlePdf } = usePdfReceipt();
+  const layout = useReceiptActionLayout();
 
   if (!ready) {
     return (
@@ -87,24 +91,75 @@ export function SaleReprintScreen() {
 
       <ReceiptPreview sale={sale} outlet={outlet} paperWidth={paperWidth} salinan />
 
-      <div className="flex flex-col gap-2">
-        <button
-          type="button"
-          onClick={() => void handlePrint({ sale, outlet, paperWidth, salinan: true })}
-          disabled={print.kind === "printing"}
-          data-testid="reprint-cta"
-          className={[
-            "w-full h-14 rounded-md text-base font-semibold",
-            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-600 focus-visible:ring-offset-2 focus-visible:ring-offset-white",
-            print.kind === "printing"
-              ? "bg-neutral-200 text-neutral-500"
-              : "bg-primary-600 text-white active:bg-primary-700",
-          ].join(" ")}
-        >
-          {print.kind === "printing"
-            ? intl.formatMessage({ id: "reprint.cta.spooling" })
-            : intl.formatMessage({ id: "reprint.cta" })}
-        </button>
+      <div className="flex flex-col gap-2" data-testid="reprint-actions">
+        {layout.pdfPrimary ? (
+          <button
+            type="button"
+            onClick={() => void handlePdf({ sale, outlet, paperWidth, salinan: true })}
+            disabled={pdf.kind === "generating"}
+            data-testid="reprint-pdf"
+            data-variant="primary"
+            className={[
+              "w-full h-14 rounded-md text-base font-semibold",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-600 focus-visible:ring-offset-2 focus-visible:ring-offset-white",
+              pdf.kind === "generating"
+                ? "bg-neutral-200 text-neutral-500"
+                : "bg-primary-600 text-white active:bg-primary-700",
+            ].join(" ")}
+          >
+            {pdf.kind === "generating"
+              ? intl.formatMessage({ id: "receipt.pdf.generating" })
+              : intl.formatMessage({ id: "receipt.pdf.cta" })}
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={() => void handlePrint({ sale, outlet, paperWidth, salinan: true })}
+            disabled={print.kind === "printing"}
+            data-testid="reprint-cta"
+            className={[
+              "w-full h-14 rounded-md text-base font-semibold",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-600 focus-visible:ring-offset-2 focus-visible:ring-offset-white",
+              print.kind === "printing"
+                ? "bg-neutral-200 text-neutral-500"
+                : "bg-primary-600 text-white active:bg-primary-700",
+            ].join(" ")}
+          >
+            {print.kind === "printing"
+              ? intl.formatMessage({ id: "reprint.cta.spooling" })
+              : intl.formatMessage({ id: "reprint.cta" })}
+          </button>
+        )}
+        {layout.pdfPrimary ? (
+          layout.showPrinterRetry ? (
+            <button
+              type="button"
+              onClick={() => void handlePrint({ sale, outlet, paperWidth, salinan: true })}
+              disabled={print.kind === "printing"}
+              data-testid="reprint-print-retry"
+              className="w-full h-12 rounded-md border border-primary-600 px-4 py-2 text-base font-semibold text-primary-700 hover:bg-primary-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-600 focus-visible:ring-offset-2 focus-visible:ring-offset-white"
+            >
+              {print.kind === "printing" ? (
+                <FormattedMessage id="reprint.cta.spooling" />
+              ) : (
+                <FormattedMessage id="receipt.print.retry" />
+              )}
+            </button>
+          ) : null
+        ) : (
+          <button
+            type="button"
+            onClick={() => void handlePdf({ sale, outlet, paperWidth, salinan: true })}
+            disabled={pdf.kind === "generating"}
+            data-testid="reprint-pdf"
+            data-variant="secondary"
+            className="w-full h-12 rounded-md border border-primary-600 px-4 py-2 text-base font-semibold text-primary-700 hover:bg-primary-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-600 focus-visible:ring-offset-2 focus-visible:ring-offset-white"
+          >
+            {pdf.kind === "generating"
+              ? intl.formatMessage({ id: "receipt.pdf.generating" })
+              : intl.formatMessage({ id: "receipt.pdf.cta" })}
+          </button>
+        )}
         {print.kind === "done" ? (
           <p
             role="status"
@@ -121,6 +176,24 @@ export function SaleReprintScreen() {
             className="rounded-md border border-warning-border bg-warning-surface px-3 py-2 text-sm text-warning-fg"
           >
             {print.message}
+          </p>
+        ) : null}
+        {pdf.kind === "done" ? (
+          <p
+            role="status"
+            data-testid="reprint-pdf-status"
+            className="rounded-md border border-success-border bg-success-surface px-3 py-2 text-sm text-success-fg"
+          >
+            <FormattedMessage id="receipt.pdf.done" />
+          </p>
+        ) : null}
+        {pdf.kind === "failed" ? (
+          <p
+            role="alert"
+            data-testid="reprint-pdf-failed"
+            className="rounded-md border border-danger-border bg-danger-surface px-3 py-2 text-sm text-danger-fg"
+          >
+            {pdf.message}
           </p>
         ) : null}
       </div>
