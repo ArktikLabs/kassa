@@ -31,7 +31,13 @@ export function DevicesScreen() {
     {
       key: "last_seen",
       header: <FormattedMessage id="devices.col.last_seen" />,
-      render: (r) => (r.lastSeenAt ? new Date(r.lastSeenAt).toLocaleString() : "—"),
+      render: (r) =>
+        r.lastSeenAt
+          ? new Date(r.lastSeenAt).toLocaleString("id-ID", {
+              dateStyle: "short",
+              timeStyle: "short",
+            })
+          : "—",
     },
     {
       key: "status",
@@ -65,7 +71,11 @@ export function DevicesScreen() {
     {
       key: "expires",
       header: <FormattedMessage id="devices.codes.col.expires" />,
-      render: (c) => new Date(c.expiresAt).toLocaleString(),
+      render: (c) =>
+        new Date(c.expiresAt).toLocaleString("id-ID", {
+          dateStyle: "short",
+          timeStyle: "short",
+        }),
     },
     {
       key: "status",
