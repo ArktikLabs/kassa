@@ -497,6 +497,7 @@ function SaleDetailPanel({
   outletName: string;
   cashierName: string;
 }) {
+  const intl = useIntl();
   return (
     <div
       data-testid="sale-detail-panel"
@@ -558,7 +559,12 @@ function SaleDetailPanel({
             <dt>
               <FormattedMessage id="sales.detail.confirmed_at" />
             </dt>
-            <dd className="text-right">{new Date(sale.createdAt).toLocaleString()}</dd>
+            <dd className="text-right">
+              {new Date(sale.createdAt).toLocaleString(intl.locale, {
+                dateStyle: "short",
+                timeStyle: "short",
+              })}
+            </dd>
           </dl>
           <hr className="my-2 border-dashed border-neutral-300" />
           <div className="space-y-1">

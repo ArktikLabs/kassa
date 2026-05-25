@@ -60,7 +60,7 @@ const id: MessageMap = {
   "enrol.error.rate_limited": "Terlalu banyak percobaan. Tunggu sebentar dan coba lagi.",
   "enrol.error.network_error":
     "Tidak ada koneksi. Sambungkan ke internet untuk mendaftarkan perangkat.",
-  "enrol.error.unknown": "Terjadi kesalahan tak terduga. Coba lagi sebentar lagi.",
+  "enrol.error.unknown": "Terjadi kesalahan tak terduga. Coba lagi nanti.",
   "catalog.heading": "Katalog",
   "catalog.aria": "Katalog produk",
   "catalog.loading": "Memuat katalog…",
@@ -119,9 +119,6 @@ const id: MessageMap = {
   "tender.cash.change": "Kembalian",
   "tender.cash.coverage": "Kurang",
   "tender.cash.chip.pas": "Pas",
-  "tender.cash.chip.50k": "Rp 50.000",
-  "tender.cash.chip.100k": "Rp 100.000",
-  "tender.cash.chip.200k": "Rp 200.000",
   "tender.cash.chips.aria": "Nominal cepat",
   "tender.cash.keypad.aria": "Keypad nominal tunai",
   "tender.cash.cart.empty": "Keranjang kosong. Kembali ke katalog untuk menambah barang.",
@@ -151,7 +148,7 @@ const id: MessageMap = {
   "tender.qris.error.create": "Gagal membuat QR. Coba lagi atau beralih ke tunai.",
   "tender.qris.error.finalize": "Gagal menyimpan transaksi. Coba lagi.",
   "tender.qris.error.amount_mismatch":
-    "Nominal pembayaran tidak cocok dengan total. Hubungi pelanggan dan coba lagi.",
+    "Nominal pembayaran tidak sesuai dengan total. Hubungi pelanggan lalu coba lagi.",
   "tender.qris.static.fallback": "Offline — gunakan QRIS statis",
   "tender.qris.mode.dynamic.label": "Mode dinamis (online)",
   "tender.qris.mode.static.label": "Mode statis (cetak)",
@@ -200,7 +197,7 @@ const id: MessageMap = {
   "void.field.managerPin": "PIN manajer",
   "void.field.managerPin.hint": "4–8 digit angka.",
   "void.field.reason": "Alasan (opsional)",
-  "void.field.reason.placeholder": "Contoh: salah input item",
+  "void.field.reason.placeholder": "Contoh: salah input barang",
   "void.cta": "Konfirmasi pembatalan",
   "void.cta.submitting": "Memproses…",
   "void.toast.success": "Transaksi dibatalkan.",
@@ -212,7 +209,7 @@ const id: MessageMap = {
   "void.error.outside_shift":
     "Transaksi ini di luar shift aktif. Gunakan back office untuk merekonsiliasi.",
   "void.error.unsynced":
-    "Transaksi belum sampai di server. Tunggu sinkronisasi selesai lalu coba lagi.",
+    "Transaksi belum terkirim ke server. Tunggu sinkronisasi selesai lalu coba lagi.",
   "void.error.manager_pin_required": "Membutuhkan PIN manajer. Pastikan staf adalah owner/manajer.",
   "receipt.history.heading": "Riwayat penjualan",
   "receipt.history.aria": "Riwayat penjualan",
@@ -297,7 +294,8 @@ const id: MessageMap = {
     "Pilih lebar kertas struk sesuai printer yang Anda gunakan.",
   "admin.receipt.paperWidth.aria": "Lebar kertas struk",
   "admin.attention.heading": "Perlu perhatian",
-  "admin.attention.description": "Transaksi berikut ditolak server dan perlu Anda kirim ulang.",
+  "admin.attention.description":
+    "Transaksi berikut ditolak server. Kirim ulang sebelum tutup hari.",
   "admin.attention.empty": "Semua transaksi sudah terkirim.",
   "admin.attention.retry": "Coba kirim ulang",
   "admin.attention.retrying": "Mengirim ulang…",
@@ -336,7 +334,7 @@ const id: MessageMap = {
   "eod.error.already_closed": "Hari ini sudah ditutup untuk outlet ini.",
   "eod.error.variance_reason_required": "Isi alasan selisih sebelum menutup hari.",
   "eod.error.unenrolled": "Perangkat belum terdaftar. Enrol ulang dari /admin.",
-  "eod.error.unknown": "Gagal menutup hari. Coba lagi sebentar lagi.",
+  "eod.error.unknown": "Gagal menutup hari. Coba lagi nanti.",
   "eod.closed.heading": "Hari selesai ditutup",
   "eod.closed.date": "Tanggal",
   "eod.closed.countedCash": "Tunai dihitung",
@@ -366,7 +364,7 @@ const id: MessageMap = {
   "help.s4.link": "Buka Katalog",
   "help.s5.title": "Tutup hari (end-of-day)",
   "help.s5.body":
-    "<p>Di akhir hari, buka <code>/eod</code>. Sistem menampilkan total tunai dan QRIS yang diharapkan. Hitung uang fisik di laci, masukkan ke kolom <strong>Tunai dihitung</strong>, isi alasan kalau ada selisih, lalu ketuk <strong>Tutup hari</strong>. Target varians: Rp 0.</p>",
+    "<p>Di akhir hari, buka <code>/eod</code>. Sistem menampilkan total tunai dan QRIS yang diharapkan. Hitung uang fisik di laci, masukkan ke kolom <strong>Tunai dihitung</strong>, isi alasan kalau ada selisih, lalu ketuk <strong>Tutup hari</strong>. Target selisih: nol rupiah.</p>",
   "help.s5.link": "Buka EOD",
   "help.printable.heading": "Versi cetak",
   "help.printable.body":
@@ -474,9 +472,6 @@ const en: MessageMap = {
   "tender.cash.change": "Change",
   "tender.cash.coverage": "Short",
   "tender.cash.chip.pas": "Exact",
-  "tender.cash.chip.50k": "Rp 50,000",
-  "tender.cash.chip.100k": "Rp 100,000",
-  "tender.cash.chip.200k": "Rp 200,000",
   "tender.cash.chips.aria": "Quick tender",
   "tender.cash.keypad.aria": "Cash amount keypad",
   "tender.cash.cart.empty": "Cart is empty. Go back to the catalog to add items.",
@@ -716,7 +711,7 @@ const en: MessageMap = {
   "help.s4.link": "Open Catalog",
   "help.s5.title": "Close the day (end-of-day)",
   "help.s5.body":
-    "<p>At end of day, open <code>/eod</code>. The system shows expected cash and QRIS totals. Count physical cash in the drawer, enter it in <strong>Counted cash</strong>, add a reason if there is a variance, then tap <strong>Close day</strong>. Variance target: Rp 0.</p>",
+    "<p>At end of day, open <code>/eod</code>. The system shows expected cash and QRIS totals. Count physical cash in the drawer, enter it in <strong>Counted cash</strong>, add a reason if there is a variance, then tap <strong>Close day</strong>. Variance target: zero rupiah.</p>",
   "help.s5.link": "Open EOD",
   "help.printable.heading": "Printable version",
   "help.printable.body":
