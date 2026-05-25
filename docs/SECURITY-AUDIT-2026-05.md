@@ -1,8 +1,8 @@
 # Kassa dependency security audit — 2026-05-04
 
-Status: v1 (re-audit KASA-288, 2026-05-18). Original snapshot KASA-185 / 2026-05-04 retained below for diff. Owner: Engineer. Companion docs: [TECH-STACK.md](./TECH-STACK.md), [RUNBOOK-ONCALL.md](./RUNBOOK-ONCALL.md), [CI-CD.md](./CI-CD.md).
+Status: v2 (re-audit KASA-331, 2026-05-25). Prior revisions: KASA-288 / 2026-05-18 (§7) and KASA-185 / 2026-05-04 (§§1–6). Owner: Engineer. Companion docs: [TECH-STACK.md](./TECH-STACK.md), [RUNBOOK-ONCALL.md](./RUNBOOK-ONCALL.md), [CI-CD.md](./CI-CD.md).
 
-Latest re-audit (2026-05-18, origin/main `9e9113d`): production-only audit remains **clean** (0 advisories across 299 prod dependencies). Full-tree count is 2 high + 2 moderate across 908 deps — all in build/test tooling, none reachable from deployed artifacts (Fly API, Cloudflare Pages POS / back-office). Net movement vs. v0: vitest path closed (KASA-186 landed), one new high (`@babel/plugin-transform-modules-systemjs`) and one moderate (`vite`) dropped off via the same workbox-build chain. Open remediation is consolidated under KASA-187 + KASA-188 + KASA-189. See §7 for the diff.
+Latest re-audit (2026-05-25, origin/main `ab968a1`): production tree picked up its **first advisory** since v0 — `brace-expansion` GHSA-jxxr-4gwj-5jf2 (moderate, CVSS 6.5, CVE-2026-45149, published 2026-05-18) reaches via `@fastify/swagger-ui → @fastify/static → glob → minimatch`. Full-tree count is 2 high + 4 moderate across 908 deps. Net movement vs. KASA-288: two new moderates (`brace-expansion`, `ws`), no advisory resolutions. New remediation tracked under KASA-332 (brace-expansion override) and KASA-333 (ws override); existing KASA-187 / KASA-188 / KASA-189 unchanged. See §8 for the diff. Severity stays sub-P1 per RUNBOOK-ONCALL §1 (no prod-reachable high or critical).
 
 Original v0 (2026-05-04, commit `9f4858b`) text follows below.
 
@@ -160,3 +160,81 @@ No new child issues filed for this re-audit. The newly-published GHSA-fv7c-fp4j-
 
 - Cadence unchanged: next routine audit due **2026-06-01** (monthly), per §5.
 - Any high or critical against `--prod` between now and then is P1 in [RUNBOOK-ONCALL.md](./RUNBOOK-ONCALL.md) §1 and should reopen this doc out-of-cycle.
+
+---
+
+## 8. Re-audit log — 2026-05-25 (KASA-331)
+
+Routine weekly audit (`Dependency and security audit`, originId `e00493d6`). Run against `origin/main` at commit `ab968a1` with a fresh `pnpm install --frozen-lockfile` and `NODE_ENV` unset.
+
+### 8.1 Result summary
+
+| Scope                    | Total deps | Critical | High | Moderate | Low | Info |
+|:-------------------------|-----------:|---------:|-----:|---------:|----:|-----:|
+| `--prod` (deployed code) |        299 |        0 |    0 |        1 |   0 |    0 |
+| Full tree (incl. dev)    |        908 |        0 |    2 |        4 |   0 |    0 |
+
+**Headline.** Production tree picks up its first advisory since v0: `brace-expansion` GHSA-jxxr-4gwj-5jf2 (moderate, CVSS 6.5, CVE-2026-45149) via the `@fastify/swagger-ui → @fastify/static` chain on `apps/api`. A second new advisory — `ws` GHSA-58qx-3vcg-4xpx (moderate, CVSS 4.4) — appears only in the vitest jsdom test environment and has no prod path. The four prior open advisories (high serialize-javascript, high @babel/plugin-transform-modules-systemjs, moderate vite-plugin-pwa-chain serialize-javascript, moderate drizzle-kit-shim esbuild) are unchanged.
+
+Severity remains **sub-P1** under [RUNBOOK-ONCALL.md](./RUNBOOK-ONCALL.md) §1 (no prod-reachable high/critical). Worth noting that the new prod-path moderate would have been caught at lockfile-bump PR time if KASA-189 (CI `pnpm audit` gate) had landed — this is the second routine audit where KASA-189's absence let a new advisory slip in undetected.
+
+### 8.2 Diff vs. KASA-288 (2026-05-18)
+
+| Advisory                                  | Module                                    | KASA-288 (2026-05-18) | KASA-331 (2026-05-25) | Why                                                                                                                            |
+|:------------------------------------------|:------------------------------------------|:----------------------|:----------------------|:-------------------------------------------------------------------------------------------------------------------------------|
+| GHSA-jxxr-4gwj-5jf2 (moderate, CVSS 6.5)  | `brace-expansion` 5.0.0–5.0.5             | not yet published     | **new (prod + dev)**  | Advisory published 2026-05-18 (post-KASA-288 audit). Reaches prod via `apps/api > @fastify/swagger-ui@5.2.6 > @fastify/static@9.1.3 > glob@13.0.6 > minimatch@10.2.5 > brace-expansion@5.0.5`. KASA-332 covers a precise pnpm override. |
+| GHSA-58qx-3vcg-4xpx (moderate, CVSS 4.4)  | `ws` 8.0.0–8.20.0                         | not present           | **new (dev only)**    | New transitive via `jsdom@25.0.1 > ws@8.20.0`, pulled by vitest test envs across all five workspaces. KASA-333 covers a precise pnpm override. |
+| GHSA-67mh-4wv8-2f99 (moderate)            | `esbuild` ≤0.24.2                          | present (1 path)      | present (1 path)      | Unchanged — `drizzle-kit > @esbuild-kit/esm-loader > esbuild@0.18.20`. KASA-188 closes this.                                    |
+| GHSA-5c6j-r48x-rmvq (high, CVSS 8.1)      | `serialize-javascript` ≤7.0.2              | present               | present               | Unchanged — `vite-plugin-pwa@0.21 > workbox-build@7.4` chain. KASA-187 closes this.                                             |
+| GHSA-qj8w-gfj5-8c6v (moderate)            | `serialize-javascript` <7.0.5              | present               | present               | Unchanged — same chain as ↑. KASA-187 closes this.                                                                              |
+| GHSA-fv7c-fp4j-7gwp (high, CVSS 8.2)      | `@babel/plugin-transform-modules-systemjs` | present (new in v1)   | present               | Unchanged — same `vite-plugin-pwa@0.21 > workbox-build@7.4 > @babel/preset-env@7.29.2` chain. KASA-187 closes this.             |
+
+### 8.3 GHSA-jxxr-4gwj-5jf2 — `brace-expansion` (moderate, CVSS 6.5, prod-reachable)
+
+`brace-expansion@5.0.0–5.0.5` generates the full intermediate array for a numeric range like `{1..10000000}` before applying the documented `max` cap, so a crafted pattern can allocate ~500MB and burn ~800ms before the cap kicks in.
+
+Reachable paths in the workspace (3, one in `--prod`):
+
+- **prod** — `apps/api > @fastify/swagger-ui@5.2.6 > @fastify/static@9.1.3 > glob@13.0.6 > minimatch@10.2.5 > brace-expansion@5.0.5`
+- dev — `apps/pos > @kassa/api@link:../api > @fastify/swagger-ui@5.2.6 > @fastify/static@9.1.3 > glob@13.0.6 > minimatch@10.2.5 > brace-expansion@5.0.5`
+- dev — `apps/pos > vite-plugin-pwa@0.21.2 > workbox-build@7.4.0 > glob@11.1.0 > minimatch@10.2.5 > brace-expansion@5.0.5` (also cleared by KASA-187)
+
+Patched in `brace-expansion@5.0.6`.
+
+Practical risk for Kassa: **low**. `@fastify/swagger-ui` invokes `brace-expansion` indirectly through `@fastify/static`'s asset-glob resolution; the patterns are fixed at install time (the bundled UI's `static-csp.json` + the JS/CSS asset names) and never derive from request data. The advisory becomes meaningful only if a future change starts passing user-controlled patterns into swagger-static, or if `glob` is invoked at request time with a tainted pattern (it currently isn't). Still worth fixing — a one-line `pnpm.overrides` entry clears all three paths at zero ergonomic cost (KASA-332).
+
+### 8.4 GHSA-58qx-3vcg-4xpx — `ws` (moderate, CVSS 4.4, dev-only)
+
+`ws@8.0.0–8.20.0` can leak uninitialized memory in outbound WebSocket frames under specific conditions. Reachable paths (all via vitest's jsdom test environment):
+
+- `apps/api > vitest@3.2.4 > jsdom@25.0.1 > ws@8.20.0`
+- `apps/back-office > jsdom@25.0.1 > ws@8.20.0`
+- `apps/back-office > vitest@3.2.4 > jsdom@25.0.1 > ws@8.20.0`
+- `apps/pos > jsdom@25.0.1 > ws@8.20.0`
+- `apps/pos > vitest@3.2.4 > jsdom@25.0.1 > ws@8.20.0`
+- `packages/payments > vitest@3.2.4 > jsdom@25.0.1 > ws@8.20.0`
+- `packages/schemas > vitest@3.2.4 > jsdom@25.0.1 > ws@8.20.0`
+
+Patched in `ws@8.20.1`.
+
+Practical risk for Kassa: **very low**. `ws` is only loaded by jsdom during vitest test bootstrap; Kassa runtime never imports it (POS uses native browser `WebSocket`; the API does pull `ws@8.x` through `@fastify/websocket`, but that resolution is already `>=8.20.1` per the lockfile). No prod surface, no CI exposure. Cleared by a one-line `pnpm.overrides` entry (KASA-333).
+
+### 8.5 Remediation status
+
+| Track | Child issue | Title                                                            | Status     | Notes (2026-05-25)                                                                                          |
+|:------|:------------|:-----------------------------------------------------------------|:-----------|:------------------------------------------------------------------------------------------------------------|
+| A     | KASA-186    | Bump vitest 2.1.9 → 3.x                                          | **done**   | No change since KASA-288.                                                                                    |
+| B     | KASA-187    | Bump vite-plugin-pwa 0.21.2 → 1.x                                | backlog    | No change. Still clears 3 advisories (high serialize-javascript, moderate serialize-javascript, high @babel SystemJS).         |
+| C     | KASA-188    | Drop @esbuild-kit shim from drizzle-kit dep tree                 | backlog    | No change.                                                                                                   |
+| D     | KASA-189    | CI gate: `pnpm audit` on every lockfile change                   | backlog    | **Increasingly load-bearing** — second routine audit where it would have caught a new advisory at PR time.   |
+| E     | KASA-332    | Override `brace-expansion` ≥5.0.6 (GHSA-jxxr-4gwj-5jf2, prod)    | backlog    | **new** — only prod-reachable advisory open. Single `pnpm.overrides` entry; can ship in same PR as KASA-333. |
+| F     | KASA-333    | Override `ws` ≥8.20.1 (GHSA-58qx-3vcg-4xpx, dev jsdom)           | backlog    | **new** — dev-only; trivially batched with KASA-332.                                                         |
+
+### 8.6 Cadence note
+
+This audit ran on the routine's actual weekly cadence (KASA-288 was 2026-05-18, this run is 2026-05-25 = T+7d). §5 still documents the monthly refresh target (2026-06-01) for the doc itself — that target is unchanged; this re-audit landed early because Paperclip fires the `Dependency and security audit` routine weekly. Either tighten §5 to match the actual cadence, or relax the routine — flagging as a follow-up but not creating a tracker.
+
+### 8.7 Next refresh
+
+- Next routine audit: **2026-06-01** (routine cadence; aligns with §5 monthly target this once).
+- Any new high or critical against `--prod` between now and then escalates to P1 per [RUNBOOK-ONCALL.md](./RUNBOOK-ONCALL.md) §1.
