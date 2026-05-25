@@ -12,6 +12,7 @@ import {
 } from "../data/api/sales";
 import { useOutlets, useStaff } from "../data/useStore";
 import { formatRupiah, shortId } from "../lib/format";
+import { SalesSummaryPanel } from "./admin.sales.summary";
 
 /*
  * Back-office sales history (KASA-249).
@@ -432,6 +433,12 @@ export function AdminSalesScreen() {
           </p>
         </div>
       ) : null}
+
+      <SalesSummaryPanel
+        outletId={filters.outletIds.length === 1 ? (filters.outletIds[0] ?? null) : null}
+        from={filters.from}
+        to={filters.to}
+      />
 
       <DataTable
         rows={filtered}
