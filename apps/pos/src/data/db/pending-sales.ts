@@ -28,6 +28,16 @@ export interface PendingSalesRepo {
    * acknowledged it.
    */
   listRecentByOutlet(outletId: string, limit?: number): Promise<PendingSale[]>;
+  /**
+   * KASA-369 — receipt-code lookup for the `/find-sale` counter flow. The
+   * code is the last six chars of `localSaleId` uppercased; we filter by
+   * outlet first (so a multi-outlet device never crosses tenants), then
+   * scan in-memory for the matching tail. Dexie can't index a computed
+   * suffix without a duplicated column, and the per-outlet candidate set
+   * is bounded by the same write volume that powers `listRecentByOutlet`
+   * (≤ a few hundred rows per shift) so the linear scan stays cheap.
+   */
+  findByReceiptCode(outletId: string, receiptCode: string): Promise<PendingSale | null>;
   listAll(): Promise<PendingSale[]>;
   /** Count of outbox rows the drain still owes the server. */
   countOutstanding(): Promise<number>;
@@ -118,6 +128,14 @@ export function pendingSalesRepo(db: KassaDexie): PendingSalesRepo {
       const rows = await db.pending_sales.where("outletId").equals(outletId).sortBy("createdAt");
       const newestFirst = rows.slice().reverse();
       return newestFirst.slice(0, limit);
+    },
+    async findByReceiptCode(outletId, receiptCode) {
+      const normalized = receiptCode.toUpperCase();
+      const rows = await db.pending_sales.where("outletId").equals(outletId).toArray();
+      for (const row of rows) {
+        if (row.localSaleId.slice(-6).toUpperCase() === normalized) return row;
+      }
+      return null;
     },
     listAll() {
       return db.pending_sales.orderBy("createdAt").toArray();

@@ -178,6 +178,19 @@ const saleVoidRoute = createRoute({
   component: lazyRouteComponent(() => import("./routes/sale.$id.void"), "SaleVoidScreen"),
 });
 
+// KASA-369 — counter-side find-sale lookup. Reachable from the cart top
+// bar and `/admin`; routes the clerk into the reprint or manager-PIN
+// void flows once a sale is resolved. `guardEnrolled` (no shift gate) so
+// reprints work when a shift just closed and a customer returns minutes
+// later — the void action inside the screen still respects the shift
+// guard via `canVoidSale`.
+const findSaleRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/find-sale",
+  beforeLoad: guardEnrolled,
+  component: lazyRouteComponent(() => import("./routes/find-sale"), "FindSaleScreen"),
+});
+
 const adminRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/admin",
@@ -228,6 +241,7 @@ export const routeTree = rootRoute.addChildren([
   salesHistoryRoute,
   salesReprintRoute,
   saleVoidRoute,
+  findSaleRoute,
   adminRoute,
   eodRoute,
   shiftOpenRoute,

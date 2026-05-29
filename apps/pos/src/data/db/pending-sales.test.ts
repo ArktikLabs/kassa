@@ -133,3 +133,43 @@ describe("pendingSalesRepo.listRecentByOutlet", () => {
     expect(rows.map((r) => r.localSaleId)).toEqual(["sale-06", "sale-05", "sale-04"]);
   });
 });
+
+describe("pendingSalesRepo.findByReceiptCode (KASA-369)", () => {
+  let fixture: Fixture;
+  beforeEach(async () => {
+    fixture = await setupFixture();
+  });
+  afterEach(async () => {
+    await teardownFixture(fixture);
+  });
+
+  it("matches the last-six tail of localSaleId, case-insensitively", async () => {
+    const repo = fixture.repos.pendingSales;
+    await repo.enqueue(makeSale({ localSaleId: "018f9c1a-4b2e-7c00-b000-000000abc123" }));
+    await repo.enqueue(makeSale({ localSaleId: "018f9c1a-4b2e-7c00-b000-000000def456" }));
+
+    const hit = await repo.findByReceiptCode("outlet-a", "abc123");
+    expect(hit?.localSaleId).toBe("018f9c1a-4b2e-7c00-b000-000000abc123");
+  });
+
+  it("scopes by outletId so multi-outlet devices never cross tenants", async () => {
+    const repo = fixture.repos.pendingSales;
+    await repo.enqueue(
+      makeSale({ localSaleId: "018f9c1a-4b2e-7c00-b000-000000abc123", outletId: "outlet-a" }),
+    );
+    await repo.enqueue(
+      makeSale({ localSaleId: "018f9c1a-4b2e-7c00-b000-999999abc123", outletId: "outlet-b" }),
+    );
+
+    const hitA = await repo.findByReceiptCode("outlet-a", "ABC123");
+    expect(hitA?.outletId).toBe("outlet-a");
+    const hitB = await repo.findByReceiptCode("outlet-b", "ABC123");
+    expect(hitB?.outletId).toBe("outlet-b");
+  });
+
+  it("returns null when no sale matches", async () => {
+    const repo = fixture.repos.pendingSales;
+    await repo.enqueue(makeSale({ localSaleId: "018f9c1a-4b2e-7c00-b000-000000abc123" }));
+    expect(await repo.findByReceiptCode("outlet-a", "999999")).toBeNull();
+  });
+});

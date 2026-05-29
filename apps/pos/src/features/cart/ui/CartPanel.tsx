@@ -1,6 +1,6 @@
 import { useState } from "react";
-import { useNavigate } from "@tanstack/react-router";
-import { useIntl } from "react-intl";
+import { Link, useNavigate } from "@tanstack/react-router";
+import { FormattedMessage, useIntl } from "react-intl";
 import { useCartStore } from "../store.ts";
 import type { CartLine } from "../types.ts";
 import { CartLineRow } from "./CartLineRow.tsx";
@@ -20,10 +20,25 @@ export function CartPanel() {
 
   return (
     <section aria-label={intl.formatMessage({ id: "cart.aria" })} className="flex h-full flex-col">
-      <header className="border-b border-neutral-200 px-4 py-3">
+      <header className="flex items-center justify-between gap-3 border-b border-neutral-200 px-4 py-3">
         <h1 className="text-lg font-bold text-neutral-900">
           {intl.formatMessage({ id: "cart.heading" })}
         </h1>
+        {/*
+         * KASA-369 — counter-side entry point for the find-sale lookup.
+         * A customer who returns 20-40 minutes later asks the cashier at
+         * the same counter that's about to ring up the next sale; the
+         * cart screen is where that conversation happens, so the link
+         * lives in the cart header rather than in the bottom nav (which
+         * is already full at five tabs).
+         */}
+        <Link
+          to="/find-sale"
+          className="text-sm font-semibold text-primary-700 hover:text-primary-800"
+          data-testid="cart-find-sale-link"
+        >
+          <FormattedMessage id="nav.findSale" />
+        </Link>
       </header>
       <div className="flex-1 overflow-y-auto">
         {lines.length === 0 ? (
