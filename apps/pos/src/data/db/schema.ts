@@ -6,6 +6,7 @@ import type {
   EodClosure,
   Item,
   Outlet,
+  ParkedSale,
   PendingCatalogMutation,
   PendingSale,
   PendingShiftEvent,
@@ -18,7 +19,7 @@ import type {
 } from "./types.ts";
 
 export const DB_NAME = "kassa-pos";
-export const DB_VERSION = 6;
+export const DB_VERSION = 7;
 
 export class KassaDexie extends Dexie {
   items!: Table<Item, string>;
@@ -36,6 +37,7 @@ export class KassaDexie extends Dexie {
   shift_state!: Table<ShiftState, string>;
   pending_catalog_mutations!: Table<PendingCatalogMutation, string>;
   pending_voids!: Table<PendingVoid, string>;
+  parked_sales!: Table<ParkedSale, string>;
 
   constructor(name: string = DB_NAME) {
     super(name);
@@ -158,6 +160,28 @@ export class KassaDexie extends Dexie {
             if (row.availability === undefined) row.availability = "available";
           });
       });
+    // v7 — KASA-366 `parked_sales`. Clerk-parked carts waiting to be
+    // resumed during a warung interruption. Local-only (no server sync);
+    // rows are scoped to `(outletId, localShiftId)` so they auto-clear
+    // on shift close and don't leak across shifts.
+    this.version(7).stores({
+      items: "id, code, name, isActive, updatedAt",
+      boms: "id, itemId, updatedAt",
+      uoms: "id, code, updatedAt",
+      outlets: "id, code, updatedAt",
+      stock_snapshot: "key, outletId, itemId, updatedAt",
+      pending_sales: "localSaleId, status, outletId, createdAt",
+      sync_state: "table",
+      device_secret: "id",
+      device_meta: "id",
+      eod_closures: "key, outletId, businessDate, closedAt",
+      printed_qris: "outletId, fetchedAt",
+      pending_shift_events: "eventId, status, outletId, createdAt, kind",
+      shift_state: "id",
+      pending_catalog_mutations: "itemId, status, createdAt",
+      pending_voids: "localVoidId, status, saleId, localSaleId, outletId, createdAt",
+      parked_sales: "id, outletId, localShiftId, parkedAt",
+    });
   }
 }
 

@@ -13,6 +13,7 @@ import { deviceSecretRepo, type DeviceSecretRepo } from "./device-secret.ts";
 import { eodClosuresRepo, type EodClosuresRepo } from "./eod-closures.ts";
 import { itemsRepo, type ItemsRepo } from "./items.ts";
 import { outletsRepo, type OutletsRepo } from "./outlets.ts";
+import { parkedSalesRepo, type ParkedSalesRepo } from "./parked-sales.ts";
 import {
   pendingCatalogMutationsRepo,
   type PendingCatalogMutationsRepo,
@@ -36,6 +37,7 @@ export interface Repos {
   pendingShiftEvents: PendingShiftEventsRepo;
   pendingCatalogMutations: PendingCatalogMutationsRepo;
   pendingVoids: PendingVoidsRepo;
+  parkedSales: ParkedSalesRepo;
   shiftState: ShiftStateRepo;
   syncState: SyncStateRepo;
   deviceSecret: DeviceSecretRepo;
@@ -55,6 +57,7 @@ export function createRepos(db: KassaDexie): Repos {
     pendingShiftEvents: pendingShiftEventsRepo(db),
     pendingCatalogMutations: pendingCatalogMutationsRepo(db),
     pendingVoids: pendingVoidsRepo(db),
+    parkedSales: parkedSalesRepo(db),
     shiftState: shiftStateRepo(db),
     syncState: syncStateRepo(db),
     deviceSecret: deviceSecretRepo(db),
