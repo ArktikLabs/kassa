@@ -7,7 +7,8 @@ import { apiBaseUrl } from "../../data/api/config.ts";
 import { getDatabase, type Database } from "../../data/db/index.ts";
 import { getSnapshot } from "../../lib/enrolment.ts";
 import { useSyncActions } from "../../lib/sync-context.tsx";
-import type { PendingSale, ShiftState } from "../../data/db/types.ts";
+import type { ParkedSale, PendingSale, ShiftState } from "../../data/db/types.ts";
+import { clearParkedForCurrentShift } from "../parked-sales/repository.ts";
 import { closeShift } from "./api.ts";
 import { enqueueCloseShift, getCurrentShift } from "./repository.ts";
 
@@ -44,6 +45,7 @@ export function ShiftCloseScreen() {
   const [counted, setCounted] = useState<Rupiah>(zeroRupiah);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [confirmingParked, setConfirmingParked] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -71,6 +73,12 @@ export function ShiftCloseScreen() {
     );
   }, [db, shift?.outletId, shift?.businessDate]);
 
+  const parkedRows = useLiveQuery<readonly ParkedSale[] | undefined>(async () => {
+    if (!db || !shift) return undefined;
+    return db.repos.parkedSales.listForShift(shift.outletId, shift.localShiftId);
+  }, [db, shift?.outletId, shift?.localShiftId]);
+  const parkedCount = parkedRows?.length ?? 0;
+
   const handleKey = useCallback((key: Parameters<typeof applyKeypadKey>[1]) => {
     setCounted((current) => {
       const next = applyKeypadKey(current as number, key);
@@ -80,7 +88,7 @@ export function ShiftCloseScreen() {
   }, []);
 
   const openShiftId = shift?.openShiftId ?? null;
-  const handleSubmit = useCallback(async () => {
+  const finalizeClose = useCallback(async () => {
     if (submitting || !openShiftId) return;
     const snap = getSnapshot();
     if (snap.state !== "enrolled") {
@@ -90,6 +98,15 @@ export function ShiftCloseScreen() {
     setSubmitting(true);
     setError(null);
     try {
+      // KASA-366 — clear the parked tray atomically with the shift close
+      // so a parked cart from a closed shift cannot resurface in the next
+      // one. Failure here is non-fatal: stranded rows are still scoped to
+      // a now-closed `localShiftId` and won't show up in the live query.
+      try {
+        await clearParkedForCurrentShift();
+      } catch {
+        // best-effort
+      }
       const result = await enqueueCloseShift({
         countedCashIdr: counted as number,
       });
@@ -122,6 +139,14 @@ export function ShiftCloseScreen() {
       setSubmitting(false);
     }
   }, [counted, navigate, openShiftId, submitting, triggerPush]);
+
+  const handleSubmit = useCallback(async () => {
+    if (parkedCount > 0 && !confirmingParked) {
+      setConfirmingParked(true);
+      return;
+    }
+    await finalizeClose();
+  }, [confirmingParked, finalizeClose, parkedCount]);
 
   if (!shift) {
     return (
@@ -205,6 +230,19 @@ export function ShiftCloseScreen() {
         aria-label="Keypad nominal tunai dihitung"
       />
 
+      {parkedCount > 0 ? (
+        <p
+          role="status"
+          className="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800"
+          data-testid="shift-close-parked-warning"
+          data-parked-count={parkedCount}
+        >
+          {parkedCount === 1
+            ? "Ada 1 keranjang yang masih diparkir. Menutup shift akan membuangnya."
+            : `Ada ${parkedCount} keranjang yang masih diparkir. Menutup shift akan membuangnya.`}
+        </p>
+      ) : null}
+
       {error ? (
         <p
           role="alert"
@@ -223,6 +261,52 @@ export function ShiftCloseScreen() {
       >
         {submitting ? "Menutup…" : "Tutup shift"}
       </button>
+
+      {confirmingParked ? (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="shift-close-parked-confirm-title"
+          className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 sm:items-center"
+          data-testid="shift-close-parked-confirm"
+        >
+          <div className="w-full max-w-md rounded-t-2xl bg-white p-4 shadow-xl sm:rounded-2xl">
+            <h2
+              id="shift-close-parked-confirm-title"
+              className="text-lg font-bold text-neutral-900"
+            >
+              Tutup shift &amp; buang keranjang diparkir?
+            </h2>
+            <p className="mt-1 text-sm text-neutral-600">
+              {parkedCount === 1
+                ? "1 keranjang masih ada di parkiran. Lanjutkan akan menghapusnya secara permanen."
+                : `${parkedCount} keranjang masih ada di parkiran. Lanjutkan akan menghapus semuanya secara permanen.`}
+            </p>
+            <div className="mt-4 flex gap-2">
+              <button
+                type="button"
+                onClick={() => setConfirmingParked(false)}
+                disabled={submitting}
+                data-testid="shift-close-parked-cancel"
+                className="h-11 flex-1 rounded-md border border-neutral-300 bg-white font-semibold text-neutral-700 hover:bg-neutral-100 disabled:cursor-not-allowed"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  void finalizeClose();
+                }}
+                disabled={submitting}
+                data-testid="shift-close-parked-confirm-button"
+                className="h-11 flex-1 rounded-md bg-red-700 font-semibold text-white hover:bg-red-800 disabled:cursor-not-allowed disabled:bg-red-300"
+              >
+                Buang &amp; tutup
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </section>
   );
 }
