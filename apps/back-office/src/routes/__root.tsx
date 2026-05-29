@@ -21,6 +21,7 @@ const NAV: readonly NavItem[] = [
   { to: "/staff", labelId: "nav.staff" },
   { to: "/devices", labelId: "nav.devices" },
   { to: "/reports/reconciliation", labelId: "nav.reconciliation" },
+  { to: "/reports/cashier-day", labelId: "nav.cashier_day" },
   { to: "/admin/reconciliation", labelId: "nav.admin_reconciliation", ownerOnly: true },
   { to: "/settings", labelId: "nav.settings", ownerOnly: true },
 ];

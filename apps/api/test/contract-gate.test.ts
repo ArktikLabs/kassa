@@ -39,6 +39,7 @@ import * as eodModule from "@kassa/schemas/eod";
 import * as errorsModule from "@kassa/schemas/errors";
 import * as paymentsModule from "@kassa/schemas/payments";
 import * as reconciliationModule from "@kassa/schemas/reconciliation";
+import * as reportsModule from "@kassa/schemas/reports";
 
 import { buildApp } from "../src/app.js";
 
@@ -74,6 +75,7 @@ const exportedSchemas = collectZods([
   errorsModule,
   paymentsModule,
   reconciliationModule,
+  reportsModule,
 ]);
 
 function collectZods(modules: ReadonlyArray<Record<string, unknown>>): Set<ZodType> {

@@ -7,6 +7,7 @@ import { BomsScreen } from "./routes/catalog.boms";
 import { StaffScreen } from "./routes/staff";
 import { DevicesScreen } from "./routes/devices";
 import { ReconciliationScreen } from "./routes/reports.reconciliation";
+import { AdminCashierDayScreen } from "./routes/admin.reports.cashier-day";
 import { AdminDashboardScreen } from "./routes/admin.dashboard";
 import { AdminReconciliationScreen } from "./routes/admin.reconciliation";
 import { AdminSalesScreen } from "./routes/admin.sales";
@@ -119,6 +120,17 @@ const reconciliationRoute = createRoute({
     ),
 });
 
+const cashierDayRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: "reports/cashier-day",
+  component: () =>
+    loadSession()?.role && roleCanManage(loadSession()!.role) ? (
+      <AdminCashierDayScreen />
+    ) : (
+      <Forbidden />
+    ),
+});
+
 const adminDashboardRoute = createRoute({
   getParentRoute: () => appRoute,
   path: "admin/dashboard",
@@ -182,6 +194,7 @@ const routeTree = rootRoute.addChildren([
     staffRoute,
     devicesRoute,
     reconciliationRoute,
+    cashierDayRoute,
     adminReconciliationRoute,
     settingsRoute,
     adminCatalogImportRoute,

@@ -33,6 +33,7 @@ import {
   ItemsService,
   UomsService,
 } from "./services/catalog/index.js";
+import { CashierDayService, InMemoryCashierDayRepository } from "./services/cashier-day/index.js";
 import { DashboardService, InMemoryDashboardRepository } from "./services/dashboard/index.js";
 import {
   EodService,
@@ -133,6 +134,12 @@ export interface BuildAppOptions {
    */
   reports?: {
     service: DashboardService;
+    /**
+     * KASA-368 — per-cashier daily report aggregator. Defaults to an
+     * in-memory repository (canonical empty shape) so deploys without a
+     * configured aggregator still register the route cleanly.
+     */
+    cashierDay?: CashierDayService;
     staffBootstrapToken?: string;
   };
   sales?: {
@@ -377,6 +384,12 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   const reports = options.reports ?? {
     service: new DashboardService({ repository: new InMemoryDashboardRepository() }),
   };
+  /**
+   * KASA-368 — wire the cashier-day aggregator. Defaults to an in-memory
+   * repository so `buildApp({})` answers with the canonical empty shape.
+   */
+  const cashierDayService =
+    reports.cashierDay ?? new CashierDayService({ repository: new InMemoryCashierDayRepository() });
 
   const v1Deps: V1RouteDeps = {
     requireDevice,
@@ -458,6 +471,8 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     },
     reports: {
       service: reports.service,
+      cashierDay: cashierDayService,
+      cashierDayOutletReader: outletsCfg.service,
       ...(reports.staffBootstrapToken !== undefined
         ? { staffBootstrapToken: reports.staffBootstrapToken }
         : {}),

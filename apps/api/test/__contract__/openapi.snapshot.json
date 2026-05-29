@@ -8953,6 +8953,548 @@
           }
         }
       }
+    },
+    "/v1/reports/cashier-day": {
+      "get": {
+        "summary": "Per-cashier daily sales report",
+        "tags": [
+          "reports"
+        ],
+        "description": "Aggregates a single (outlet, business_date) bucket into per-cashier rows: sale count, gross, void count + total, tender mix (cash / QRIS dynamic / QRIS static), and the expected drawer (opening float + cash net) when the matched shift carries one. Owner-or-manager only.",
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "outletId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "businessDate": {
+                      "type": "string",
+                      "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                    },
+                    "rows": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "cashierStaffId": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "cashierName": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "saleCount": {
+                            "type": "integer",
+                            "minimum": 0
+                          },
+                          "grossIdr": {
+                            "type": "integer",
+                            "minimum": 0
+                          },
+                          "netIdr": {
+                            "type": "integer",
+                            "minimum": 0
+                          },
+                          "voidCount": {
+                            "type": "integer",
+                            "minimum": 0
+                          },
+                          "voidIdr": {
+                            "type": "integer",
+                            "minimum": 0
+                          },
+                          "tenderMix": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "method": {
+                                  "type": "string",
+                                  "enum": [
+                                    "cash",
+                                    "qris_dynamic",
+                                    "qris_static"
+                                  ]
+                                },
+                                "amountIdr": {
+                                  "type": "integer",
+                                  "minimum": 0
+                                },
+                                "count": {
+                                  "type": "integer",
+                                  "minimum": 0
+                                }
+                              },
+                              "required": [
+                                "method",
+                                "amountIdr",
+                                "count"
+                              ],
+                              "additionalProperties": false
+                            }
+                          },
+                          "drawerExpectedIdr": {
+                            "type": "integer",
+                            "nullable": true
+                          }
+                        },
+                        "required": [
+                          "cashierStaffId",
+                          "cashierName",
+                          "saleCount",
+                          "grossIdr",
+                          "netIdr",
+                          "voidCount",
+                          "voidIdr",
+                          "tenderMix",
+                          "drawerExpectedIdr"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "totals": {
+                      "type": "object",
+                      "properties": {
+                        "saleCount": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "grossIdr": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "netIdr": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "voidCount": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "voidIdr": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "tenderMix": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "method": {
+                                "type": "string",
+                                "enum": [
+                                  "cash",
+                                  "qris_dynamic",
+                                  "qris_static"
+                                ]
+                              },
+                              "amountIdr": {
+                                "type": "integer",
+                                "minimum": 0
+                              },
+                              "count": {
+                                "type": "integer",
+                                "minimum": 0
+                              }
+                            },
+                            "required": [
+                              "method",
+                              "amountIdr",
+                              "count"
+                            ],
+                            "additionalProperties": false
+                          }
+                        },
+                        "drawerExpectedIdr": {
+                          "type": "integer",
+                          "nullable": true
+                        }
+                      },
+                      "required": [
+                        "saleCount",
+                        "grossIdr",
+                        "netIdr",
+                        "voidCount",
+                        "voidIdr",
+                        "tenderMix",
+                        "drawerExpectedIdr"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "outletId",
+                    "businessDate",
+                    "rows",
+                    "totals"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Standard Kassa API error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "description": "Machine-readable error code, snake_case."
+                        },
+                        "message": {
+                          "type": "string",
+                          "description": "Human-readable error message."
+                        },
+                        "details": {
+                          "description": "Optional structured detail payload."
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Standard Kassa API error envelope."
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Standard Kassa API error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "description": "Machine-readable error code, snake_case."
+                        },
+                        "message": {
+                          "type": "string",
+                          "description": "Human-readable error message."
+                        },
+                        "details": {
+                          "description": "Optional structured detail payload."
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Standard Kassa API error envelope."
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Standard Kassa API error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "description": "Machine-readable error code, snake_case."
+                        },
+                        "message": {
+                          "type": "string",
+                          "description": "Human-readable error message."
+                        },
+                        "details": {
+                          "description": "Optional structured detail payload."
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Standard Kassa API error envelope."
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Standard Kassa API error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "description": "Machine-readable error code, snake_case."
+                        },
+                        "message": {
+                          "type": "string",
+                          "description": "Human-readable error message."
+                        },
+                        "details": {
+                          "description": "Optional structured detail payload."
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Standard Kassa API error envelope."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/reports/cashier-day/export.csv": {
+      "get": {
+        "summary": "Download per-cashier daily sales CSV (owner/manager)",
+        "tags": [
+          "reports"
+        ],
+        "description": "Same rows as `GET /cashier-day` plus a totals row. UTF-8 BOM, `;` separator, RFC-4180 quoting, plain integer rupiah.",
+        "responses": {
+          "401": {
+            "description": "Standard Kassa API error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "description": "Machine-readable error code, snake_case."
+                        },
+                        "message": {
+                          "type": "string",
+                          "description": "Human-readable error message."
+                        },
+                        "details": {
+                          "description": "Optional structured detail payload."
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Standard Kassa API error envelope."
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Standard Kassa API error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "description": "Machine-readable error code, snake_case."
+                        },
+                        "message": {
+                          "type": "string",
+                          "description": "Human-readable error message."
+                        },
+                        "details": {
+                          "description": "Optional structured detail payload."
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Standard Kassa API error envelope."
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Standard Kassa API error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "description": "Machine-readable error code, snake_case."
+                        },
+                        "message": {
+                          "type": "string",
+                          "description": "Human-readable error message."
+                        },
+                        "details": {
+                          "description": "Optional structured detail payload."
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Standard Kassa API error envelope."
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Standard Kassa API error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "description": "Machine-readable error code, snake_case."
+                        },
+                        "message": {
+                          "type": "string",
+                          "description": "Human-readable error message."
+                        },
+                        "details": {
+                          "description": "Optional structured detail payload."
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Standard Kassa API error envelope."
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Standard Kassa API error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "description": "Machine-readable error code, snake_case."
+                        },
+                        "message": {
+                          "type": "string",
+                          "description": "Human-readable error message."
+                        },
+                        "details": {
+                          "description": "Optional structured detail payload."
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Standard Kassa API error envelope."
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "tags": [
