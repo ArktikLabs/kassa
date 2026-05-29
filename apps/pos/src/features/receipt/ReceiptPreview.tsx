@@ -1,6 +1,7 @@
 import { useIntl } from "react-intl";
 import { formatIdr, type Rupiah } from "../../shared/money/index.ts";
 import type { Outlet, PendingSale } from "../../data/db/types.ts";
+import { receiptCodeFor } from "../find-sale/receiptCode.ts";
 import { PAPER_WIDTH_PX, type PaperWidth } from "./paperWidth.ts";
 
 /**
@@ -131,6 +132,19 @@ export function ReceiptPreview({
           {formatDateTime(sale.createdAt, outlet?.timezone)}
         </p>
         <p className="text-[11px] text-neutral-600">ID {sale.localSaleId.slice(0, 8)}</p>
+        {/*
+         * KASA-369 — customer-facing receipt code. The clerk reads this off
+         * the slip to look up the sale on `/find-sale` for void/reprint.
+         * Six chars of the random UUIDv7 tail is plenty of entropy for a
+         * single-outlet lookup window without asking the cashier to type a
+         * full UUID.
+         */}
+        <p
+          className="text-[11px] font-semibold tracking-[0.3em] text-neutral-700"
+          data-testid="receipt-code"
+        >
+          {intl.formatMessage({ id: "findSale.summary.code" })} {receiptCodeFor(sale.localSaleId)}
+        </p>
       </header>
       <hr className="my-2 border-dashed border-neutral-400" />
       <ul data-testid="receipt-lines" className="space-y-1">
