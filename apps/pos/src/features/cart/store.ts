@@ -22,6 +22,12 @@ export interface CartStore {
   setLineQuantity(itemId: string, quantity: number): void;
   removeLine(itemId: string): void;
   clear(): void;
+  /**
+   * KASA-366 — replace the active cart in one go. Used by the park-cart
+   * resume flow to hydrate a previously parked cart back into the active
+   * cart without going line-by-line through `addLine`.
+   */
+  replace(state: CartState): void;
   totals(): CartTotals;
   count(): number;
 }
@@ -39,6 +45,7 @@ export const useCartStore = create<CartStore>((set, get) => ({
   removeLine: (itemId) =>
     set((s) => removeLine({ lines: s.lines, discountIdr: s.discountIdr }, itemId)),
   clear: () => set((s) => clearCart({ lines: s.lines, discountIdr: s.discountIdr })),
+  replace: (state) => set({ lines: state.lines, discountIdr: state.discountIdr }),
   totals: () => totals({ lines: get().lines, discountIdr: get().discountIdr }),
   count: () => lineCount({ lines: get().lines, discountIdr: get().discountIdr }),
 }));
