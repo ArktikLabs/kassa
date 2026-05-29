@@ -29,6 +29,12 @@ const OUTLET: Outlet = {
   code: "MAIN",
   name: "Warung Maju",
   timezone: "Asia/Jakarta",
+  displayName: null,
+  addressLine1: null,
+  addressLine2: null,
+  taxId: null,
+  receiptFooterLine1: null,
+  receiptFooterLine2: null,
   updatedAt: "2026-04-23T00:00:00.000Z",
 };
 
@@ -182,6 +188,64 @@ describe("buildPdfReceiptInput", () => {
       i18n: I18N,
     });
     expect(input.outletName).toBe("Outlet");
+  });
+
+  // KASA-367 — per-outlet receipt branding overrides.
+  describe("KASA-367 per-outlet branding", () => {
+    const brandedOutlet: Outlet = {
+      ...OUTLET,
+      displayName: "Warung Pusat",
+      addressLine1: "Jl. Sudirman No.1",
+      addressLine2: null,
+      taxId: "012345678901000",
+      receiptFooterLine1: "Terima kasih atas kunjungan Anda",
+      receiptFooterLine2: null,
+    };
+
+    it("derives outletBranding from the outlet row's KASA-367 fields", () => {
+      const input = buildPdfReceiptInput({
+        sale: makeSale(),
+        outlet: brandedOutlet,
+        paperWidth: "58mm",
+        i18n: I18N,
+      });
+      expect(input.outletBranding).toEqual({
+        displayName: "Warung Pusat",
+        addressLine1: "Jl. Sudirman No.1",
+        addressLine2: null,
+        taxId: "012345678901000",
+        footerLine1: "Terima kasih atas kunjungan Anda",
+        footerLine2: null,
+      });
+    });
+
+    it("renders the branded header + NPWP mask + custom footer into the PDF bytes", () => {
+      const input = buildPdfReceiptInput({
+        sale: makeSale(),
+        outlet: brandedOutlet,
+        paperWidth: "58mm",
+        i18n: I18N,
+      });
+      const bytes = encodePdfReceipt(input);
+      const text = new TextDecoder("latin1").decode(bytes);
+      expect(text).toContain("Warung Pusat");
+      expect(text).toContain("Jl. Sudirman No.1");
+      expect(text).toContain("NPWP 01.234.567.8-901.000");
+      expect(text).toContain("Terima kasih atas kunjungan Anda");
+    });
+
+    it("falls back to the bare outlet name when no branding overrides are set", () => {
+      const input = buildPdfReceiptInput({
+        sale: makeSale(),
+        outlet: OUTLET,
+        paperWidth: "58mm",
+        i18n: I18N,
+      });
+      const bytes = encodePdfReceipt(input);
+      const text = new TextDecoder("latin1").decode(bytes);
+      expect(text).toContain("Warung Maju");
+      expect(text).not.toContain("NPWP");
+    });
   });
 });
 

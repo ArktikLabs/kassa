@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { EscPosBuilder, centerLineForWidth, encodeReceipt, padBetweenForWidth } from "./escpos.ts";
+import {
+  EscPosBuilder,
+  centerLineForWidth,
+  encodeReceipt,
+  formatTaxIdForReceipt,
+  padBetweenForWidth,
+} from "./escpos.ts";
 
 describe("EscPosBuilder", () => {
   it("emits ESC @ at the start when init() is called", () => {
@@ -171,6 +177,94 @@ describe("encodeReceipt", () => {
     expect(text).toContain("Sampai jumpa lagi");
     // Default footer is not used when merchant supplies one.
     expect(text).not.toContain("Terima kasih");
+  });
+
+  // KASA-367 — per-outlet receipt branding overrides.
+  describe("KASA-367 per-outlet branding", () => {
+    it("renders outlet displayName, address lines, NPWP, and footer overrides", () => {
+      const bytes = encodeReceipt({
+        ...basePayload,
+        outletBranding: {
+          displayName: "Warung Pusat",
+          addressLine1: "Jl. Sudirman No.1",
+          addressLine2: "Jakarta Pusat",
+          taxId: "012345678901000",
+          footerLine1: "Terima kasih atas",
+          footerLine2: "kunjungan Anda",
+        },
+        npwpLabel: "NPWP",
+      });
+      const text = decodeAscii(bytes);
+      const displayAt = text.indexOf("Warung Pusat");
+      const addr1At = text.indexOf("Jl. Sudirman No.1");
+      const addr2At = text.indexOf("Jakarta Pusat");
+      const npwpAt = text.indexOf("NPWP 01.234.567.8-901.000");
+      expect(displayAt).toBeGreaterThan(-1);
+      expect(addr1At).toBeGreaterThan(displayAt);
+      expect(addr2At).toBeGreaterThan(addr1At);
+      expect(npwpAt).toBeGreaterThan(addr2At);
+      // Outlet displayName replaces the bare outletName as the top heading.
+      expect(text).toContain("Warung Maju");
+      // Owner-set footer replaces the i18n thanks line.
+      expect(text).toContain("Terima kasih atas");
+      expect(text).toContain("kunjungan Anda");
+      expect(text).not.toContain("Terima kasih·"); // default not used
+    });
+
+    it("renders no blank lines when the outlet has no overrides (legacy layout)", () => {
+      const bytes = encodeReceipt({
+        ...basePayload,
+        outletBranding: {
+          displayName: null,
+          addressLine1: null,
+          addressLine2: null,
+          taxId: null,
+          footerLine1: null,
+          footerLine2: null,
+        },
+      });
+      const text = decodeAscii(bytes);
+      // Existing bare-outlet header is preserved.
+      expect(text).toContain("Warung Maju");
+      expect(text).toContain("Terima kasih");
+      // No NPWP / address blank lines.
+      expect(text).not.toContain("NPWP");
+    });
+
+    it("falls back to merchant address when outlet has no address override", () => {
+      const bytes = encodeReceipt({
+        ...basePayload,
+        merchant: {
+          displayName: "Warung Pusat Indonesia",
+          addressLine: "Jl. Merchant 1",
+          phone: null,
+          npwp: null,
+          npwpLabel: "NPWP",
+          receiptFooterText: null,
+        },
+        outletBranding: {
+          displayName: "Warung Pusat",
+          addressLine1: null,
+          addressLine2: null,
+          taxId: null,
+          footerLine1: null,
+          footerLine2: null,
+        },
+      });
+      const text = decodeAscii(bytes);
+      // Outlet displayName wins over merchant displayName.
+      expect(text).toContain("Warung Pusat");
+      // Merchant address falls through because outlet didn't override.
+      expect(text).toContain("Jl. Merchant 1");
+    });
+
+    it("formats a 15-digit NPWP with the canonical mask", () => {
+      expect(formatTaxIdForReceipt("012345678901000")).toBe("01.234.567.8-901.000");
+    });
+
+    it("formats a 16-digit NIK-NPWP as four 4-digit groups", () => {
+      expect(formatTaxIdForReceipt("0123456789012345")).toBe("0123 4567 8901 2345");
+    });
   });
 
   it("omits optional merchant fields when null and falls back to the default footer", () => {

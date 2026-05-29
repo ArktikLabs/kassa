@@ -263,3 +263,133 @@ describe("GET /v1/outlets/:outletId", () => {
     expect((res.json() as { error: { code: string } }).error.code).toBe("not_implemented");
   });
 });
+
+describe("PATCH /v1/outlets/:outletId — receipt branding (KASA-367)", () => {
+  let h: Harness;
+  const OUTLET_A = seededUuid(0x3000);
+
+  beforeAll(async () => {
+    h = await setup();
+    h.repo.seedOutlet({
+      id: OUTLET_A,
+      merchantId: MERCHANT_A,
+      code: "WRG-01",
+      name: "Warung Pusat",
+      timezone: "Asia/Jakarta",
+      createdAt: new Date("2026-04-24T00:00:00Z"),
+      updatedAt: new Date("2026-04-24T00:00:00Z"),
+    });
+    h.repo.seedOutlet({
+      id: seededUuid(0x3001),
+      merchantId: MERCHANT_B,
+      code: "OTHER-1",
+      name: "Other tenant",
+      createdAt: new Date("2026-04-24T00:00:00Z"),
+      updatedAt: new Date("2026-04-24T00:00:00Z"),
+    });
+  });
+  afterAll(async () => {
+    await h.app.close();
+  });
+
+  const writeHeaders = (overrides: Partial<Record<string, string>> = {}): Record<string, string> =>
+    headers({ "x-staff-role": "owner", ...overrides });
+
+  it("403s when the staff role is not owner", async () => {
+    const res = await h.app.inject({
+      method: "PATCH",
+      url: `/v1/outlets/${OUTLET_A}`,
+      headers: writeHeaders({ "x-staff-role": "cashier" }),
+      payload: { displayName: "Warung Pusat" },
+    });
+    expect(res.statusCode).toBe(403);
+  });
+
+  it("422s on an empty PATCH body", async () => {
+    const res = await h.app.inject({
+      method: "PATCH",
+      url: `/v1/outlets/${OUTLET_A}`,
+      headers: writeHeaders(),
+      payload: {},
+    });
+    expect(res.statusCode).toBe(422);
+    expect((res.json() as { error: { code: string } }).error.code).toBe("validation_error");
+  });
+
+  it("422s on a malformed NPWP", async () => {
+    const res = await h.app.inject({
+      method: "PATCH",
+      url: `/v1/outlets/${OUTLET_A}`,
+      headers: writeHeaders(),
+      payload: { taxId: "01.234.567.8-901.000" },
+    });
+    expect(res.statusCode).toBe(422);
+  });
+
+  it("422s on a footer line longer than 32 chars", async () => {
+    const res = await h.app.inject({
+      method: "PATCH",
+      url: `/v1/outlets/${OUTLET_A}`,
+      headers: writeHeaders(),
+      payload: { receiptFooterLine1: "x".repeat(33) },
+    });
+    expect(res.statusCode).toBe(422);
+  });
+
+  it("404s for an outlet under a different tenant", async () => {
+    const otherTenantOutlet = seededUuid(0x3001);
+    const res = await h.app.inject({
+      method: "PATCH",
+      url: `/v1/outlets/${otherTenantOutlet}`,
+      headers: writeHeaders(),
+      payload: { displayName: "tried to update" },
+    });
+    expect(res.statusCode).toBe(404);
+    expect((res.json() as { error: { code: string } }).error.code).toBe("outlet_not_found");
+  });
+
+  it("persists branding fields and bumps updatedAt", async () => {
+    const before = await h.repo.findById({ merchantId: MERCHANT_A, outletId: OUTLET_A });
+    const res = await h.app.inject({
+      method: "PATCH",
+      url: `/v1/outlets/${OUTLET_A}`,
+      headers: writeHeaders(),
+      payload: {
+        displayName: "Warung Pusat",
+        addressLine1: "Jl. Sudirman No.1",
+        taxId: "012345678901000",
+        receiptFooterLine1: "Terima kasih",
+      },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json() as {
+      id: string;
+      displayName: string;
+      addressLine1: string;
+      taxId: string;
+      receiptFooterLine1: string;
+      updatedAt: string;
+    };
+    expect(body.displayName).toBe("Warung Pusat");
+    expect(body.taxId).toBe("012345678901000");
+    expect(body.receiptFooterLine1).toBe("Terima kasih");
+    expect(new Date(body.updatedAt).getTime()).toBeGreaterThan(before?.updatedAt.getTime() ?? 0);
+  });
+
+  it("clears a field when sent null", async () => {
+    await h.app.inject({
+      method: "PATCH",
+      url: `/v1/outlets/${OUTLET_A}`,
+      headers: writeHeaders(),
+      payload: { displayName: "First" },
+    });
+    const res = await h.app.inject({
+      method: "PATCH",
+      url: `/v1/outlets/${OUTLET_A}`,
+      headers: writeHeaders(),
+      payload: { displayName: null },
+    });
+    expect(res.statusCode).toBe(200);
+    expect((res.json() as { displayName: string | null }).displayName).toBeNull();
+  });
+});

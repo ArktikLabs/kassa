@@ -98,6 +98,55 @@ export interface ReceiptMerchant {
   receiptFooterText: string | null;
 }
 
+/**
+ * KASA-367 — per-outlet receipt branding overrides. Optional; when
+ * present, fields override the merchant-wide block above for this
+ * outlet's receipt. Empty fields render no blank line.
+ *
+ *  - `displayName` overrides the merchant's `displayName` as the bold
+ *    header. If null/empty, the merchant header (or `outletName`) is
+ *    used unchanged.
+ *  - `addressLine1` / `addressLine2` print one per line under the
+ *    display name. They replace the merchant's `addressLine` when at
+ *    least one is set; otherwise the merchant address falls through.
+ *  - `taxId` is the bare NPWP digits (15 or 16). The encoder formats
+ *    15-digit values with the canonical `00.000.000.0-000.000` mask
+ *    and the 16-digit NIK-NPWP as `0000 0000 0000 0000`.
+ *  - `footerLine1` / `footerLine2` are the customer-facing footer the
+ *    owner wants printed above the cut. When at least one is set they
+ *    replace the merchant footer; the i18n `footerThanks` is only used
+ *    when neither outlet nor merchant supplies one.
+ */
+export interface ReceiptOutletBranding {
+  displayName: string | null;
+  addressLine1: string | null;
+  addressLine2: string | null;
+  taxId: string | null;
+  footerLine1: string | null;
+  footerLine2: string | null;
+}
+
+/**
+ * Format a bare NPWP for the receipt header. 15-digit NPWP uses the
+ * canonical `00.000.000.0-000.000` mask; 16-digit NIK-NPWP (DJP 2024)
+ * prints as four 4-digit groups separated by spaces. Falls back to the
+ * raw input when the shape is unexpected so a stray digit count still
+ * prints something rather than nothing.
+ */
+export function formatTaxIdForReceipt(taxId: string): string {
+  const digits = taxId.replace(/\D+/g, "");
+  if (digits.length === 15) {
+    return `${digits.slice(0, 2)}.${digits.slice(2, 5)}.${digits.slice(5, 8)}.${digits.slice(
+      8,
+      9,
+    )}-${digits.slice(9, 12)}.${digits.slice(12, 15)}`;
+  }
+  if (digits.length === 16) {
+    return `${digits.slice(0, 4)} ${digits.slice(4, 8)} ${digits.slice(8, 12)} ${digits.slice(12, 16)}`;
+  }
+  return taxId;
+}
+
 export interface ReceiptPayload {
   outletName: string;
   outletTimezone?: string | null;
@@ -108,6 +157,13 @@ export interface ReceiptPayload {
   address?: string | null;
   /** Merchant brand block printed at the top of the receipt (KASA-219). */
   merchant?: ReceiptMerchant | null;
+  /**
+   * KASA-367 — per-outlet override block. Wins over `merchant` fields
+   * when the corresponding override is non-null/non-empty.
+   */
+  outletBranding?: ReceiptOutletBranding | null;
+  /** Locale-owned NPWP label (e.g. "NPWP"). Required when `outletBranding.taxId` is set. */
+  npwpLabel?: string;
   createdAtIso: string;
   localSaleId: string;
   items: readonly ReceiptLine[];
@@ -172,20 +228,47 @@ export function encodeReceipt(payload: ReceiptPayload): Uint8Array {
   const width = payload.width;
   const b = new EscPosBuilder().init();
 
+  // KASA-367 — resolve the effective header block. Outlet overrides win
+  // per-field over merchant fields; either or both falling through
+  // preserves the existing layout for outlets without overrides.
+  const branding = payload.outletBranding ?? null;
+  const merchant = payload.merchant ?? null;
+  const headerName = nonEmpty(branding?.displayName) ?? merchant?.displayName ?? null;
+  const outletAddressLines = collectAddressLines(branding);
+  const merchantAddressLine = merchant?.addressLine ?? null;
+  const addressLines =
+    outletAddressLines.length > 0
+      ? outletAddressLines
+      : merchantAddressLine
+        ? [merchantAddressLine]
+        : [];
+  const phone = merchant?.phone ?? null;
+  const outletTaxId = nonEmpty(branding?.taxId);
+  const npwpLabel = payload.npwpLabel ?? merchant?.npwpLabel ?? "NPWP";
+  // KASA-367 — only outlet-level NPWP is reformatted with the canonical
+  // mask. Merchant-level `npwp` (KASA-219) is printed as-supplied so
+  // pre-KASA-367 receipts stay byte-identical.
+  const taxIdDisplay = outletTaxId ? formatTaxIdForReceipt(outletTaxId) : (merchant?.npwp ?? null);
+
   b.align("center");
   if (payload.salinan) {
     b.bold(true).line("*** SALINAN ***").bold(false);
   }
-  if (payload.merchant) {
-    const m = payload.merchant;
-    b.bold(true).line(m.displayName).bold(false);
-    if (m.addressLine) b.line(m.addressLine);
-    if (m.phone) b.line(m.phone);
-    if (m.npwp) b.line(`${m.npwpLabel} ${m.npwp}`);
-    b.line(payload.outletName);
+  if (headerName) {
+    b.bold(true).line(headerName).bold(false);
+    for (const line of addressLines) b.line(line);
+    if (phone) b.line(phone);
+    if (taxIdDisplay) b.line(`${npwpLabel} ${taxIdDisplay}`);
+    // Print the outlet name as a sub-line only when it differs from the
+    // bold display name; otherwise duplicating it adds a blank-looking row.
+    if (payload.outletName && payload.outletName !== headerName) {
+      b.line(payload.outletName);
+    }
   } else {
     b.bold(true).line(payload.outletName).bold(false);
-    if (payload.address) b.line(payload.address);
+    for (const line of addressLines) b.line(line);
+    if (taxIdDisplay) b.line(`${npwpLabel} ${taxIdDisplay}`);
+    if (!addressLines.length && payload.address) b.line(payload.address);
   }
   b.line(formatCreatedAt(payload.createdAtIso, payload.outletTimezone ?? null));
   b.line(`ID ${payload.localSaleId.slice(0, 8)}`);
@@ -213,10 +296,46 @@ export function encodeReceipt(payload: ReceiptPayload): Uint8Array {
   b.line(padBetween(payload.changeLabel, payload.change, width));
   b.line("");
 
-  b.align("center").line(payload.merchant?.receiptFooterText || payload.footerThanks);
+  // KASA-367 — outlet footer overrides the merchant footer; merchant footer
+  // overrides the locale fallback. An outlet may set either or both lines;
+  // both append in order. Empty lines are skipped so receipts render
+  // unchanged when no overrides are set.
+  const outletFooterLines = collectFooterLines(branding);
+  if (outletFooterLines.length > 0) {
+    b.align("center");
+    for (const line of outletFooterLines) b.line(line);
+  } else {
+    b.align("center").line(merchant?.receiptFooterText || payload.footerThanks);
+  }
   b.lineFeed(3);
   b.cut(true);
   return b.build();
+}
+
+function nonEmpty(value: string | null | undefined): string | null {
+  if (value === undefined || value === null) return null;
+  const trimmed = value.trim();
+  return trimmed.length === 0 ? null : trimmed;
+}
+
+function collectAddressLines(branding: ReceiptOutletBranding | null): string[] {
+  if (!branding) return [];
+  const lines: string[] = [];
+  const a = nonEmpty(branding.addressLine1);
+  const b = nonEmpty(branding.addressLine2);
+  if (a) lines.push(a);
+  if (b) lines.push(b);
+  return lines;
+}
+
+function collectFooterLines(branding: ReceiptOutletBranding | null): string[] {
+  if (!branding) return [];
+  const lines: string[] = [];
+  const a = nonEmpty(branding.footerLine1);
+  const b = nonEmpty(branding.footerLine2);
+  if (a) lines.push(a);
+  if (b) lines.push(b);
+  return lines;
 }
 
 export function centerLineForWidth(value: string, width: 32 | 42): string {

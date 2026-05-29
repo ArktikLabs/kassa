@@ -14,6 +14,28 @@ export interface ListOutletsResult {
 }
 
 /**
+ * KASA-367 — partial PATCH against an outlet. Each field is tri-state:
+ *  - `undefined` → column unchanged
+ *  - `null` → column cleared
+ *  - string → column overwritten
+ *
+ * `merchantId` scopes the row; an `outletId` belonging to another tenant
+ * resolves the same as an unknown id (returns `null`).
+ */
+export interface UpdateOutletInput {
+  merchantId: string;
+  outletId: string;
+  patch: {
+    displayName?: string | null | undefined;
+    addressLine1?: string | null | undefined;
+    addressLine2?: string | null | undefined;
+    taxId?: string | null | undefined;
+    receiptFooterLine1?: string | null | undefined;
+    receiptFooterLine2?: string | null | undefined;
+  };
+}
+
+/**
  * Data plane for the `outlets` aggregate (KASA-122).
  *
  * Reads are merchant-scoped; the merchantId comes from the authenticated
@@ -31,4 +53,11 @@ export interface OutletsRepository {
    * render the file and `Content-Disposition` header.
    */
   findById(input: { merchantId: string; outletId: string }): Promise<Outlet | null>;
+  /**
+   * Apply a partial PATCH and return the updated row. Returns `null` when
+   * `outletId` is unknown OR belongs to another tenant (404 semantics).
+   * Implementations stamp `updatedAt` so the delta-pull cursor advances
+   * and the POS picks up the change on the next sync cycle.
+   */
+  updateOutlet(input: UpdateOutletInput): Promise<Outlet | null>;
 }

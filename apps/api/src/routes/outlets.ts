@@ -1,5 +1,13 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
-import { outletPullResponse, referencePullQuery, type ReferencePullQuery } from "@kassa/schemas";
+import {
+  outletDetailParam,
+  outletPullResponse,
+  outletRecord,
+  outletUpdateRequest,
+  referencePullQuery,
+  type OutletUpdateRequest,
+  type ReferencePullQuery,
+} from "@kassa/schemas";
 import { makeMerchantScopedStaffPreHandler } from "../auth/staff-bootstrap.js";
 import { sendError } from "../lib/errors.js";
 import { errorBodySchema, notImplementedResponses } from "../lib/openapi.js";
@@ -15,6 +23,13 @@ export interface OutletsRouteDeps {
    */
   staffBootstrapToken?: string;
 }
+
+/**
+ * KASA-367 — receipt branding edits are owner-only. Aligns with merchant
+ * settings (KASA-219), which gate the same surface area at the merchant
+ * level. Cashier and read-only roles get a 403 from the preHandler.
+ */
+const OUTLET_WRITE_ROLES = ["owner"] as const;
 
 function requireStaffPrincipal(
   req: FastifyRequest,
@@ -33,9 +48,15 @@ export function outletsRoutes(deps: OutletsRouteDeps) {
     const requireStaff = deps.staffBootstrapToken
       ? makeMerchantScopedStaffPreHandler(deps.staffBootstrapToken)
       : null;
+    const requireStaffWrite = deps.staffBootstrapToken
+      ? makeMerchantScopedStaffPreHandler(deps.staffBootstrapToken, {
+          allowedRoles: OUTLET_WRITE_ROLES,
+        })
+      : null;
 
-    const gatedPreHandler = async (req: FastifyRequest, reply: FastifyReply) => {
-      if (!requireStaff) {
+    const makeGate = (handler: ReturnType<typeof makeMerchantScopedStaffPreHandler> | null) => {
+      if (handler) return handler;
+      return async (_req: FastifyRequest, reply: FastifyReply) => {
         sendError(
           reply,
           503,
@@ -43,9 +64,10 @@ export function outletsRoutes(deps: OutletsRouteDeps) {
           "Set STAFF_BOOTSTRAP_TOKEN to enable outlet reads until KASA-25 ships staff sessions.",
         );
         return reply;
-      }
-      return requireStaff(req, reply);
+      };
     };
+    const gatedPreHandler = makeGate(requireStaff);
+    const gatedWritePreHandler = makeGate(requireStaffWrite);
 
     // GET /v1/outlets — merchant-scoped delta pull (KASA-122).
     app.get<{ Querystring: ReferencePullQuery }>(
@@ -95,9 +117,7 @@ export function outletsRoutes(deps: OutletsRouteDeps) {
       },
     );
 
-    // GET /v1/outlets/:outletId — single-outlet detail (KASA-122 follow-up
-    // PRs may extend this; for now it remains 501 because the pull endpoint is
-    // sufficient for KASA-68 and the detail shape is undefined).
+    // GET /v1/outlets/:outletId — single-outlet detail (reserved).
     app.get(
       "/:outletId",
       {
@@ -114,6 +134,52 @@ export function outletsRoutes(deps: OutletsRouteDeps) {
       async (_req, reply) => {
         sendError(reply, 501, "not_implemented", "Outlet detail endpoint is not yet implemented.");
         return reply;
+      },
+    );
+
+    // PATCH /v1/outlets/:outletId — owner-only receipt branding edit (KASA-367).
+    app.patch<{ Params: { outletId: string }; Body: OutletUpdateRequest }>(
+      "/:outletId",
+      {
+        schema: {
+          tags: ["outlets"],
+          summary: "Update outlet receipt branding (KASA-367)",
+          description:
+            "Owner-only. Partial PATCH: `undefined` leaves a field unchanged, " +
+            "`null` clears it, a string overwrites. Empty body is a 422 " +
+            "(`validation_error`).",
+          response: {
+            200: outletRecord,
+            401: errorBodySchema,
+            403: errorBodySchema,
+            404: errorBodySchema,
+            422: errorBodySchema,
+            503: errorBodySchema,
+          },
+        },
+        preHandler: [
+          gatedWritePreHandler,
+          validate({ params: outletDetailParam, body: outletUpdateRequest }),
+        ],
+      },
+      async (req, reply) => {
+        const principal = requireStaffPrincipal(req, reply);
+        if (!principal) return reply;
+        try {
+          const row = await deps.outlets.update({
+            merchantId: principal.merchantId,
+            outletId: req.params.outletId,
+            patch: req.body,
+          });
+          reply.code(200).send(toOutletResponse(row));
+          return reply;
+        } catch (err) {
+          if (err instanceof OutletError && err.code === "outlet_not_found") {
+            sendError(reply, 404, "outlet_not_found", err.message);
+            return reply;
+          }
+          throw err;
+        }
       },
     );
   };

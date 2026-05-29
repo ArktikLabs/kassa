@@ -64,6 +64,25 @@ export type Outlet = {
   taxProfile: "none" | "ppn_11";
   receiptHeader: string;
   addressLine: string;
+  /*
+   * KASA-367 — per-outlet receipt branding overrides. Each is optional; an
+   * empty string means "no override" and the POS receipt falls back to the
+   * merchant-level branding (KASA-219) or the legacy outlet-name header.
+   *
+   *   - `displayName` overrides the merchant legal name as the top heading.
+   *   - `addressLine1` / `addressLine2` print on the receipt header below
+   *     the name (multi-line).
+   *   - `taxId` is the bare NPWP (15 or 16 digits); the POS template
+   *     formats it with the canonical `00.000.000.0-000.000` mask.
+   *   - `receiptFooterLine1` / `receiptFooterLine2` print above the
+   *     receipt code (≤ 32 chars each to fit a 58 mm column).
+   */
+  displayName: string;
+  addressLine1: string;
+  addressLine2: string;
+  taxId: string;
+  receiptFooterLine1: string;
+  receiptFooterLine2: string;
 };
 
 /* Merchant-wide receipt branding (KASA-219). Owner-editable; rendered

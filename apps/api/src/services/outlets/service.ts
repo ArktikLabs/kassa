@@ -5,7 +5,7 @@ import type { ListOutletsResult, OutletsRepository } from "./repository.js";
 export const DEFAULT_OUTLET_PAGE_LIMIT = 100;
 export const MAX_OUTLET_PAGE_LIMIT = 500;
 
-export type OutletErrorCode = "invalid_page_token";
+export type OutletErrorCode = "invalid_page_token" | "outlet_not_found";
 
 export class OutletError extends Error {
   constructor(
@@ -26,6 +26,26 @@ export interface ListOutletsCommand {
   updatedAfter?: Date | undefined;
   pageToken?: string | undefined;
   limit?: number | undefined;
+}
+
+/**
+ * KASA-367 — `PATCH /v1/outlets/:outletId`. `merchantId` scopes the row so
+ * a cross-tenant id resolves the same as an unknown id (404). Each field
+ * is tri-state: `undefined` leaves the column unchanged, `null` clears it,
+ * a string overwrites. The `updatedAt` bump is delegated to the repository
+ * so both backings stamp the same cursor semantics the delta-pull relies on.
+ */
+export interface UpdateOutletCommand {
+  merchantId: string;
+  outletId: string;
+  patch: {
+    displayName?: string | null | undefined;
+    addressLine1?: string | null | undefined;
+    addressLine2?: string | null | undefined;
+    taxId?: string | null | undefined;
+    receiptFooterLine1?: string | null | undefined;
+    receiptFooterLine2?: string | null | undefined;
+  };
 }
 
 export class OutletsService {
@@ -73,6 +93,18 @@ export class OutletsService {
       limit,
     });
   }
+
+  async update(cmd: UpdateOutletCommand): Promise<Outlet> {
+    const updated = await this.repository.updateOutlet({
+      merchantId: cmd.merchantId,
+      outletId: cmd.outletId,
+      patch: cmd.patch,
+    });
+    if (!updated) {
+      throw new OutletError("outlet_not_found", "Outlet not found.");
+    }
+    return updated;
+  }
 }
 
 export function toOutletResponse(row: Outlet): {
@@ -80,6 +112,12 @@ export function toOutletResponse(row: Outlet): {
   code: string;
   name: string;
   timezone: string;
+  displayName: string | null;
+  addressLine1: string | null;
+  addressLine2: string | null;
+  taxId: string | null;
+  receiptFooterLine1: string | null;
+  receiptFooterLine2: string | null;
   updatedAt: string;
 } {
   return {
@@ -87,6 +125,12 @@ export function toOutletResponse(row: Outlet): {
     code: row.code,
     name: row.name,
     timezone: row.timezone,
+    displayName: row.displayName ?? null,
+    addressLine1: row.addressLine1 ?? null,
+    addressLine2: row.addressLine2 ?? null,
+    taxId: row.taxId ?? null,
+    receiptFooterLine1: row.receiptFooterLine1 ?? null,
+    receiptFooterLine2: row.receiptFooterLine2 ?? null,
     updatedAt: row.updatedAt.toISOString(),
   };
 }

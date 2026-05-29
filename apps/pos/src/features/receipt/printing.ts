@@ -74,10 +74,23 @@ export function usePrintReceipt(): UsePrintReceipt {
         const tendered = sale.tenders.reduce((acc, t) => acc + (t.amountIdr as number), 0);
         const change = Math.max(0, tendered - (sale.totalIdr as number));
         const taxIdr = sale.taxIdr;
+        // KASA-367 — per-outlet branding flows through Dexie's outlet row.
+        const outletBranding = outlet
+          ? {
+              displayName: outlet.displayName ?? null,
+              addressLine1: outlet.addressLine1 ?? null,
+              addressLine2: outlet.addressLine2 ?? null,
+              taxId: outlet.taxId ?? null,
+              footerLine1: outlet.receiptFooterLine1 ?? null,
+              footerLine2: outlet.receiptFooterLine2 ?? null,
+            }
+          : null;
         const payload = {
           outletName: outlet?.name ?? intl.formatMessage({ id: "receipt.outlet.unknown" }),
           outletTimezone: outlet?.timezone ?? null,
           address: null,
+          outletBranding,
+          npwpLabel: intl.formatMessage({ id: "receipt.merchant.npwp" }),
           createdAtIso: sale.createdAt,
           localSaleId: sale.localSaleId,
           items: lines,

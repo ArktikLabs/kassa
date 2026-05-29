@@ -55,6 +55,12 @@ function seed(): State {
         taxProfile: "none",
         receiptHeader: "Warung Pusat · Jl. Sudirman No.1",
         addressLine: "Jl. Sudirman No.1, Jakarta",
+        displayName: "",
+        addressLine1: "",
+        addressLine2: "",
+        taxId: "",
+        receiptFooterLine1: "",
+        receiptFooterLine2: "",
       },
     ],
     items: [
@@ -172,10 +178,28 @@ function seed(): State {
  * stale snapshot the moment a screen does `[...state.<newSlice>]`.
  * Seed defaults are used so devs still see scaffold rows when they
  * had only a partial snapshot from an older build. */
+/* KASA-367 — back-fill new branding fields on outlets persisted before the
+ * branding columns were added so the form doesn't render `undefined`. */
+function hydrateOutlet(row: Partial<Outlet> & { id: string; name: string }): Outlet {
+  return {
+    id: row.id,
+    name: row.name,
+    taxProfile: row.taxProfile ?? "none",
+    receiptHeader: row.receiptHeader ?? "",
+    addressLine: row.addressLine ?? "",
+    displayName: row.displayName ?? "",
+    addressLine1: row.addressLine1 ?? "",
+    addressLine2: row.addressLine2 ?? "",
+    taxId: row.taxId ?? "",
+    receiptFooterLine1: row.receiptFooterLine1 ?? "",
+    receiptFooterLine2: row.receiptFooterLine2 ?? "",
+  };
+}
+
 function hydrate(parsed: Partial<State>): State {
   const defaults = seed();
   return {
-    outlets: parsed.outlets ?? defaults.outlets,
+    outlets: parsed.outlets ? parsed.outlets.map(hydrateOutlet) : defaults.outlets,
     items: parsed.items ?? defaults.items,
     boms: parsed.boms ?? defaults.boms,
     staff: parsed.staff ?? defaults.staff,

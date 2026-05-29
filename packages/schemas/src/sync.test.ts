@@ -3,6 +3,7 @@ import {
   bomPullResponse,
   itemPullResponse,
   outletPullResponse,
+  outletUpdateRequest,
   saleSubmitTender,
   stockLedgerPullQuery,
   stockLedgerPullResponse,
@@ -202,5 +203,92 @@ describe("saleSubmitTender", () => {
       reference: null,
     });
     expect(parsed.method).toBe("synthetic");
+  });
+});
+
+describe("outletUpdateRequest (KASA-367)", () => {
+  it("accepts a partial PATCH with only displayName", () => {
+    const parsed = outletUpdateRequest.parse({ displayName: "Warung Pusat" });
+    expect(parsed.displayName).toBe("Warung Pusat");
+  });
+
+  it("accepts null to clear a field", () => {
+    const parsed = outletUpdateRequest.parse({ taxId: null });
+    expect(parsed.taxId).toBeNull();
+  });
+
+  it("accepts a 15-digit NPWP", () => {
+    const parsed = outletUpdateRequest.parse({ taxId: "012345678901000" });
+    expect(parsed.taxId).toBe("012345678901000");
+  });
+
+  it("accepts a 16-digit NPWP (KASA-367 NIK-NPWP unified form)", () => {
+    const parsed = outletUpdateRequest.parse({ taxId: "0123456789012345" });
+    expect(parsed.taxId).toBe("0123456789012345");
+  });
+
+  it("rejects a NPWP that includes formatting punctuation", () => {
+    expect(() => outletUpdateRequest.parse({ taxId: "01.234.567.8-901.000" })).toThrow();
+  });
+
+  it("rejects a NPWP shorter than 15 digits", () => {
+    expect(() => outletUpdateRequest.parse({ taxId: "01234567890" })).toThrow();
+  });
+
+  it("rejects a receipt footer line longer than 32 chars", () => {
+    expect(() => outletUpdateRequest.parse({ receiptFooterLine1: "x".repeat(33) })).toThrow();
+  });
+
+  it("rejects an empty PATCH body", () => {
+    expect(() => outletUpdateRequest.parse({})).toThrow();
+  });
+
+  it("rejects unknown keys via .strict()", () => {
+    expect(() =>
+      outletUpdateRequest.parse({ displayName: "ok", logoUrl: "https://example.test" }),
+    ).toThrow();
+  });
+});
+
+describe("outletPullResponse (KASA-367 — branded outlet record)", () => {
+  it("accepts an outlet with KASA-367 branding fields", () => {
+    const parsed = outletPullResponse.parse({
+      records: [
+        {
+          id: "018f9c1a-4b2e-7c00-b000-000000000001",
+          code: "JKT-01",
+          name: "Jakarta Selatan",
+          timezone: "Asia/Jakarta",
+          displayName: "Warung Pusat",
+          addressLine1: "Jl. Sudirman No.1",
+          addressLine2: "Jakarta",
+          taxId: "012345678901000",
+          receiptFooterLine1: "Terima kasih atas kunjungan",
+          receiptFooterLine2: null,
+          updatedAt: "2026-04-24T01:00:00Z",
+        },
+      ],
+      nextCursor: null,
+      nextPageToken: null,
+    });
+    expect(parsed.records[0]?.displayName).toBe("Warung Pusat");
+    expect(parsed.records[0]?.taxId).toBe("012345678901000");
+  });
+
+  it("accepts an outlet without any KASA-367 branding fields (legacy)", () => {
+    const parsed = outletPullResponse.parse({
+      records: [
+        {
+          id: "018f9c1a-4b2e-7c00-b000-000000000001",
+          code: "JKT-01",
+          name: "Jakarta Selatan",
+          timezone: "Asia/Jakarta",
+          updatedAt: "2026-04-24T01:00:00Z",
+        },
+      ],
+      nextCursor: null,
+      nextPageToken: null,
+    });
+    expect(parsed.records[0]?.displayName).toBeUndefined();
   });
 });

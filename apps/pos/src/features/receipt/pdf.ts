@@ -16,6 +16,7 @@
 
 import { formatIdr, toRupiah } from "../../shared/money/index.ts";
 import type { Outlet, PendingSale } from "../../data/db/types.ts";
+import { formatTaxIdForReceipt, type ReceiptOutletBranding } from "./escpos.ts";
 import type { ReceiptMerchant } from "./ReceiptPreview.tsx";
 import { PAPER_WIDTH_CHAR_COLUMNS, type PaperWidth } from "./paperWidth.ts";
 
@@ -106,6 +107,8 @@ export interface PdfReceiptInput {
   outletName: string;
   outletTimezone: string | null;
   merchant?: ReceiptMerchant | null;
+  /** KASA-367 — per-outlet branding overrides. */
+  outletBranding?: ReceiptOutletBranding | null;
   npwpLabel: string;
   createdAtIso: string;
   localSaleId: string;
@@ -153,15 +156,42 @@ function buildReceiptLines(input: PdfReceiptInput): PdfLine[] {
     });
   }
 
-  if (input.merchant) {
-    lines.push({ text: input.merchant.displayName, align: "center", bold: true });
-    if (input.merchant.addressLine)
-      lines.push({ text: input.merchant.addressLine, align: "center" });
-    if (input.merchant.phone) lines.push({ text: input.merchant.phone, align: "center" });
-    if (input.merchant.npwp) {
-      lines.push({ text: `${input.npwpLabel} ${input.merchant.npwp}`, align: "center" });
+  // KASA-367 — outlet overrides win per-field over the merchant block. When
+  // an outlet sets at least one branding field the receipt header reads
+  // outlet-first; merchant is the fallback layer; the bare outlet name is
+  // the final fallback.
+  const branding = input.outletBranding ?? null;
+  const merchant = input.merchant ?? null;
+  const brandingDisplayName = nonEmptyString(branding?.displayName);
+  const headerName = brandingDisplayName ?? merchant?.displayName ?? null;
+  const outletAddressLines: string[] = [];
+  if (branding) {
+    const a = nonEmptyString(branding.addressLine1);
+    const b = nonEmptyString(branding.addressLine2);
+    if (a) outletAddressLines.push(a);
+    if (b) outletAddressLines.push(b);
+  }
+  const addressLines =
+    outletAddressLines.length > 0
+      ? outletAddressLines
+      : merchant?.addressLine
+        ? [merchant.addressLine]
+        : [];
+  // KASA-367 — only outlet-level NPWP is reformatted; merchant-level
+  // `npwp` (KASA-219) is rendered as-supplied so pre-KASA-367 receipts
+  // stay byte-identical.
+  const outletTaxId = nonEmptyString(branding?.taxId);
+  const taxIdDisplay = outletTaxId ? formatTaxIdForReceipt(outletTaxId) : (merchant?.npwp ?? null);
+  if (headerName) {
+    lines.push({ text: headerName, align: "center", bold: true });
+    for (const addr of addressLines) lines.push({ text: addr, align: "center" });
+    if (merchant?.phone) lines.push({ text: merchant.phone, align: "center" });
+    if (taxIdDisplay) {
+      lines.push({ text: `${input.npwpLabel} ${taxIdDisplay}`, align: "center" });
     }
-    lines.push({ text: input.outletName, align: "center" });
+    if (input.outletName && input.outletName !== headerName) {
+      lines.push({ text: input.outletName, align: "center" });
+    }
   } else {
     lines.push({ text: input.outletName, align: "center", bold: true });
   }
@@ -188,9 +218,30 @@ function buildReceiptLines(input: PdfReceiptInput): PdfLine[] {
     lines.push({ text: input.voidedQrisRefundNotice, align: "center", bold: true });
   }
   lines.push({ text: "-".repeat(width) });
-  lines.push({ text: input.footerText, align: "center" });
+  // KASA-367 — outlet-level footer wins over the merchant footer (which
+  // is pre-resolved into `input.footerText`); we keep one line per
+  // configured override and skip the merchant fallback entirely so the
+  // owner controls the customer-facing thanks line.
+  const outletFooterLines: string[] = [];
+  if (branding) {
+    const a = nonEmptyString(branding.footerLine1);
+    const b = nonEmptyString(branding.footerLine2);
+    if (a) outletFooterLines.push(a);
+    if (b) outletFooterLines.push(b);
+  }
+  if (outletFooterLines.length > 0) {
+    for (const fl of outletFooterLines) lines.push({ text: fl, align: "center" });
+  } else {
+    lines.push({ text: input.footerText, align: "center" });
+  }
 
   return lines;
+}
+
+function nonEmptyString(value: string | null | undefined): string | null {
+  if (value === undefined || value === null) return null;
+  const trimmed = value.trim();
+  return trimmed.length === 0 ? null : trimmed;
 }
 
 function encodeContentStream(
@@ -356,6 +407,18 @@ export function buildPdfReceiptInput(opts: BuildReceiptPayloadInput): PdfReceipt
     left: `${item.quantity}x ${item.itemId.slice(0, 8)}`,
     right: formatIdr(item.lineTotalIdr),
   }));
+  // KASA-367 — per-outlet receipt branding overrides flow through the
+  // Dexie outlet row. Null/empty fields preserve the existing layout.
+  const outletBranding: ReceiptOutletBranding | null = outlet
+    ? {
+        displayName: outlet.displayName ?? null,
+        addressLine1: outlet.addressLine1 ?? null,
+        addressLine2: outlet.addressLine2 ?? null,
+        taxId: outlet.taxId ?? null,
+        footerLine1: outlet.receiptFooterLine1 ?? null,
+        footerLine2: outlet.receiptFooterLine2 ?? null,
+      }
+    : null;
 
   return {
     paperWidth,
@@ -368,6 +431,7 @@ export function buildPdfReceiptInput(opts: BuildReceiptPayloadInput): PdfReceipt
     outletName: outlet?.name ?? i18n.outletUnknown,
     outletTimezone: outlet?.timezone ?? null,
     merchant: merchant ?? null,
+    outletBranding,
     npwpLabel: i18n.npwpLabel,
     createdAtIso: sale.createdAt,
     localSaleId: sale.localSaleId,

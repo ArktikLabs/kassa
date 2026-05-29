@@ -63,6 +63,18 @@ export interface Outlet {
   code: string;
   name: string;
   timezone: string;
+  /*
+   * KASA-367 — per-outlet receipt branding. `null` means "no override";
+   * outlets without overrides leave the receipt layout unchanged.
+   * `taxId` is the bare NPWP digits; the receipt template formats with
+   * the canonical mask.
+   */
+  displayName: string | null;
+  addressLine1: string | null;
+  addressLine2: string | null;
+  taxId: string | null;
+  receiptFooterLine1: string | null;
+  receiptFooterLine2: string | null;
   updatedAt: string;
 }
 

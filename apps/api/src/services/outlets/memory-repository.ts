@@ -1,6 +1,11 @@
 import type { Outlet } from "../../db/schema/outlets.js";
 import { decodePageToken, encodePageToken } from "../../lib/page-token.js";
-import type { ListOutletsInput, ListOutletsResult, OutletsRepository } from "./repository.js";
+import type {
+  ListOutletsInput,
+  ListOutletsResult,
+  OutletsRepository,
+  UpdateOutletInput,
+} from "./repository.js";
 
 export interface SeedOutletInput {
   id: string;
@@ -8,6 +13,12 @@ export interface SeedOutletInput {
   code: string;
   name: string;
   timezone?: string;
+  displayName?: string | null;
+  addressLine1?: string | null;
+  addressLine2?: string | null;
+  taxId?: string | null;
+  receiptFooterLine1?: string | null;
+  receiptFooterLine2?: string | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -27,6 +38,12 @@ export class InMemoryOutletsRepository implements OutletsRepository {
       code: input.code,
       name: input.name,
       timezone: input.timezone ?? "Asia/Jakarta",
+      displayName: input.displayName ?? null,
+      addressLine1: input.addressLine1 ?? null,
+      addressLine2: input.addressLine2 ?? null,
+      taxId: input.taxId ?? null,
+      receiptFooterLine1: input.receiptFooterLine1 ?? null,
+      receiptFooterLine2: input.receiptFooterLine2 ?? null,
       createdAt: input.createdAt,
       updatedAt: input.updatedAt,
     };
@@ -37,6 +54,22 @@ export class InMemoryOutletsRepository implements OutletsRepository {
     const row = this.outlets.get(input.outletId);
     if (!row || row.merchantId !== input.merchantId) return null;
     return { ...row };
+  }
+
+  async updateOutlet(input: UpdateOutletInput): Promise<Outlet | null> {
+    const row = this.outlets.get(input.outletId);
+    if (!row || row.merchantId !== input.merchantId) return null;
+    const next: Outlet = { ...row };
+    const { patch } = input;
+    if (patch.displayName !== undefined) next.displayName = patch.displayName;
+    if (patch.addressLine1 !== undefined) next.addressLine1 = patch.addressLine1;
+    if (patch.addressLine2 !== undefined) next.addressLine2 = patch.addressLine2;
+    if (patch.taxId !== undefined) next.taxId = patch.taxId;
+    if (patch.receiptFooterLine1 !== undefined) next.receiptFooterLine1 = patch.receiptFooterLine1;
+    if (patch.receiptFooterLine2 !== undefined) next.receiptFooterLine2 = patch.receiptFooterLine2;
+    next.updatedAt = new Date(Math.max(Date.now(), row.updatedAt.getTime() + 1));
+    this.outlets.set(next.id, next);
+    return { ...next };
   }
 
   async listOutlets(input: ListOutletsInput): Promise<ListOutletsResult> {

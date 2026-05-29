@@ -116,7 +116,24 @@ function buildTableSpecs(): SpecMap {
       table: "outlets",
       path: "/v1/outlets",
       schema: outletPullResponse as unknown as z.ZodType<PullEnvelope<OutletRecord>>,
-      toRows: (records) => records.map((r) => ({ ...r })),
+      // KASA-367 — `null`-normalise the optional branding fields so the
+      // Dexie row matches the `string | null` shape (no undefineds) the
+      // strict POS Outlet type uses. Servers that pre-date KASA-367
+      // simply omit the keys; we treat that as "no override".
+      toRows: (records) =>
+        records.map((r) => ({
+          id: r.id,
+          code: r.code,
+          name: r.name,
+          timezone: r.timezone,
+          displayName: r.displayName ?? null,
+          addressLine1: r.addressLine1 ?? null,
+          addressLine2: r.addressLine2 ?? null,
+          taxId: r.taxId ?? null,
+          receiptFooterLine1: r.receiptFooterLine1 ?? null,
+          receiptFooterLine2: r.receiptFooterLine2 ?? null,
+          updatedAt: r.updatedAt,
+        })),
       upsert: async (db, rows) => {
         if (rows.length === 0) return;
         await db.outlets.bulkPut([...rows]);

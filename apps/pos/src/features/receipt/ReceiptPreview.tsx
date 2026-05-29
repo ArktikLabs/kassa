@@ -1,6 +1,7 @@
 import { useIntl } from "react-intl";
 import { formatIdr, type Rupiah } from "../../shared/money/index.ts";
 import type { Outlet, PendingSale } from "../../data/db/types.ts";
+import { formatTaxIdForReceipt } from "./escpos.ts";
 import { PAPER_WIDTH_PX, type PaperWidth } from "./paperWidth.ts";
 
 /**
@@ -61,7 +62,18 @@ export function ReceiptPreview({
   const change = Math.max(0, (totalTendered as number) - (sale.totalIdr as number)) as Rupiah;
   const npwpLabel = intl.formatMessage({ id: "receipt.merchant.npwp" });
   const fallbackFooter = intl.formatMessage({ id: "receipt.footer.thanks" });
-  const footerText = merchant?.receiptFooterText?.trim() || fallbackFooter;
+  // KASA-367 — outlet-level override wins over merchant footer; merchant
+  // footer wins over the i18n fallback.
+  const outletFooterLines = collectNonEmpty([
+    outlet?.receiptFooterLine1,
+    outlet?.receiptFooterLine2,
+  ]);
+  const footerText =
+    outletFooterLines.length > 0 ? null : merchant?.receiptFooterText?.trim() || fallbackFooter;
+  const outletDisplayName = (outlet?.displayName ?? "").trim() || null;
+  const outletAddressLines = collectNonEmpty([outlet?.addressLine1, outlet?.addressLine2]);
+  const outletTaxIdDigits = (outlet?.taxId ?? "").trim() || null;
+  const outletTaxIdDisplay = outletTaxIdDigits ? formatTaxIdForReceipt(outletTaxIdDigits) : null;
   const voided = sale.voidedAt != null;
   // KASA-236-B — voided sales whose money landed via QRIS need a refund
   // line in the printed copy: QRIS funds are off-device, so the cashier
@@ -98,7 +110,28 @@ export function ReceiptPreview({
         </p>
       ) : null}
       <header className="text-center" data-testid="receipt-header">
-        {merchant ? (
+        {outletDisplayName ? (
+          <div data-testid="receipt-outlet-branding">
+            <p className="font-bold uppercase" data-testid="receipt-outlet-display-name">
+              {outletDisplayName}
+            </p>
+            {outletAddressLines.map((line) => (
+              <p key={line} className="text-[12px] text-neutral-700">
+                {line}
+              </p>
+            ))}
+            {outletTaxIdDisplay ? (
+              <p className="text-[12px] text-neutral-700" data-testid="receipt-outlet-tax-id">
+                {npwpLabel} {outletTaxIdDisplay}
+              </p>
+            ) : null}
+            {outlet?.name && outlet.name !== outletDisplayName ? (
+              <p className="text-[12px] text-neutral-700" data-testid="receipt-outlet-name">
+                {outlet.name}
+              </p>
+            ) : null}
+          </div>
+        ) : merchant ? (
           <div data-testid="receipt-merchant">
             <p className="font-bold uppercase" data-testid="receipt-merchant-name">
               {merchant.displayName}
@@ -187,10 +220,22 @@ export function ReceiptPreview({
       ) : null}
       <hr className="my-2 border-dashed border-neutral-400" />
       <footer className="text-center text-[12px]" data-testid="receipt-footer">
-        {footerText}
+        {outletFooterLines.length > 0
+          ? outletFooterLines.map((line) => <p key={line}>{line}</p>)
+          : footerText}
       </footer>
     </article>
   );
+}
+
+function collectNonEmpty(values: ReadonlyArray<string | null | undefined>): string[] {
+  const out: string[] = [];
+  for (const v of values) {
+    if (typeof v !== "string") continue;
+    const trimmed = v.trim();
+    if (trimmed) out.push(trimmed);
+  }
+  return out;
 }
 
 function Row({

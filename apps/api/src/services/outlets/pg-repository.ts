@@ -2,7 +2,12 @@ import { and, asc, eq, getTableColumns, gt, sql } from "drizzle-orm";
 import type { Database } from "../../db/client.js";
 import { type Outlet, outlets } from "../../db/schema/outlets.js";
 import { decodePageToken, encodePageToken } from "../../lib/page-token.js";
-import type { ListOutletsInput, ListOutletsResult, OutletsRepository } from "./repository.js";
+import type {
+  ListOutletsInput,
+  ListOutletsResult,
+  OutletsRepository,
+  UpdateOutletInput,
+} from "./repository.js";
 
 /**
  * Drizzle-backed `OutletsRepository`. List queries hit the
@@ -26,6 +31,26 @@ export class PgOutletsRepository implements OutletsRepository {
       .from(outlets)
       .where(and(eq(outlets.id, input.outletId), eq(outlets.merchantId, input.merchantId)))
       .limit(1);
+    return rows[0] ?? null;
+  }
+
+  async updateOutlet(input: UpdateOutletInput): Promise<Outlet | null> {
+    const setExpr: Record<string, unknown> = { updatedAt: new Date() };
+    const { patch } = input;
+    if (patch.displayName !== undefined) setExpr.displayName = patch.displayName;
+    if (patch.addressLine1 !== undefined) setExpr.addressLine1 = patch.addressLine1;
+    if (patch.addressLine2 !== undefined) setExpr.addressLine2 = patch.addressLine2;
+    if (patch.taxId !== undefined) setExpr.taxId = patch.taxId;
+    if (patch.receiptFooterLine1 !== undefined)
+      setExpr.receiptFooterLine1 = patch.receiptFooterLine1;
+    if (patch.receiptFooterLine2 !== undefined)
+      setExpr.receiptFooterLine2 = patch.receiptFooterLine2;
+
+    const rows = await this.db
+      .update(outlets)
+      .set(setExpr)
+      .where(and(eq(outlets.id, input.outletId), eq(outlets.merchantId, input.merchantId)))
+      .returning();
     return rows[0] ?? null;
   }
 

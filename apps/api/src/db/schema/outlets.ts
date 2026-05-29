@@ -20,6 +20,19 @@ export const outlets = pgTable(
     code: text("code").notNull(),
     name: text("name").notNull(),
     timezone: text("timezone").notNull().default("Asia/Jakarta"),
+    /*
+     * KASA-367 — per-outlet receipt branding. All optional; an outlet
+     * without overrides falls back to merchant-wide branding (KASA-219)
+     * and the legacy outlet-name-only header. `taxId` is the bare digit
+     * NPWP (15 or 16 digits) — the POS receipt template formats with
+     * the canonical `00.000.000.0-000.000` mask.
+     */
+    displayName: text("display_name"),
+    addressLine1: text("address_line1"),
+    addressLine2: text("address_line2"),
+    taxId: text("tax_id"),
+    receiptFooterLine1: text("receipt_footer_line1"),
+    receiptFooterLine2: text("receipt_footer_line2"),
     createdAt: createdAtCol(),
     updatedAt: updatedAtCol(),
   },

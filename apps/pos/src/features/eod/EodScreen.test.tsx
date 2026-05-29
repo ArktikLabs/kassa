@@ -82,6 +82,12 @@ async function seedDatabase(sales: ReturnType<typeof makeSale>[]): Promise<void>
       code: "OUT-1",
       name: "Warung Bu Tini",
       timezone: "Asia/Jakarta",
+      displayName: null,
+      addressLine1: null,
+      addressLine2: null,
+      taxId: null,
+      receiptFooterLine1: null,
+      receiptFooterLine2: null,
       updatedAt: "2026-04-23T00:00:00.000Z",
     },
   ]);

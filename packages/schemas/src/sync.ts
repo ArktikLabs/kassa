@@ -46,16 +46,68 @@ function envelope<T extends z.ZodTypeAny>(record: T) {
     .strict();
 }
 
+/**
+ * NPWP (Indonesian taxpayer id) is 15 or 16 digits. Stored bare (digits only)
+ * so the receipt template can format with the canonical
+ * `00.000.000.0-000.000` mask without ambiguity over whether the dashes are
+ * persisted; back-office strips formatting on submit. The 16-digit form
+ * matches the unified NIK-NPWP that DJP began issuing in 2024 — accepting
+ * both shapes lets pilot merchants enrol whichever id their tax preparer
+ * has on file (KASA-367).
+ */
+const npwpDigits = z.string().regex(/^\d{15,16}$/, "must be 15 or 16 digits");
+
+/**
+ * Receipt-footer line limit. 32 chars fits one 58 mm thermal column without
+ * wrap (PAPER_WIDTH_CHAR_COLUMNS); the back-office hint mirrors the same
+ * cap so the merchant doesn't author a line that gets silently truncated
+ * by the POS encoder (KASA-367).
+ */
+const receiptFooterLine = z.string().min(1).max(32);
+
 export const outletRecord = z
   .object({
     id: uuidV7,
     code: z.string().min(1).max(64),
     name: z.string().min(1).max(256),
     timezone: z.string().min(1).max(64),
+    /**
+     * KASA-367 — per-outlet receipt branding. `displayName` overrides the
+     * merchant legal name as the top heading; address lines render as the
+     * outlet's printed address; `taxId` is the NPWP (digits only, formatted
+     * by the receipt template); the two `receiptFooter` lines append above
+     * the receipt code. All optional so merchants without these fields keep
+     * the existing layout unchanged.
+     */
+    displayName: z.string().min(1).max(256).nullable().optional(),
+    addressLine1: z.string().min(1).max(120).nullable().optional(),
+    addressLine2: z.string().min(1).max(120).nullable().optional(),
+    taxId: npwpDigits.nullable().optional(),
+    receiptFooterLine1: receiptFooterLine.nullable().optional(),
+    receiptFooterLine2: receiptFooterLine.nullable().optional(),
     updatedAt: isoTimestamp,
   })
   .strict();
 export type OutletRecord = z.infer<typeof outletRecord>;
+
+/**
+ * KASA-367 — `PATCH /v1/outlets/:outletId`. Owner-editable receipt branding
+ * per outlet. Every field is optional so a partial PATCH can clear or update
+ * one field at a time; sending `null` clears the stored value, sending
+ * `undefined` (omitting the key) leaves it unchanged.
+ */
+export const outletUpdateRequest = z
+  .object({
+    displayName: z.string().min(1).max(256).nullable().optional(),
+    addressLine1: z.string().min(1).max(120).nullable().optional(),
+    addressLine2: z.string().min(1).max(120).nullable().optional(),
+    taxId: npwpDigits.nullable().optional(),
+    receiptFooterLine1: receiptFooterLine.nullable().optional(),
+    receiptFooterLine2: receiptFooterLine.nullable().optional(),
+  })
+  .strict()
+  .refine((value) => Object.keys(value).length > 0, "at least one field must be present");
+export type OutletUpdateRequest = z.infer<typeof outletUpdateRequest>;
 
 export const uomRecord = z
   .object({
@@ -174,6 +226,13 @@ const businessDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
  */
 export const saleIdParam = z.object({ saleId: uuidV7Typed }).strict();
 export type SaleIdParam = z.infer<typeof saleIdParam>;
+
+/**
+ * Path parameter for `PATCH /v1/outlets/:outletId` (KASA-367 — per-outlet
+ * receipt branding).
+ */
+export const outletDetailParam = z.object({ outletId: uuidV7Typed }).strict();
+export type OutletDetailParam = z.infer<typeof outletDetailParam>;
 
 export const saleSubmitItem = z
   .object({

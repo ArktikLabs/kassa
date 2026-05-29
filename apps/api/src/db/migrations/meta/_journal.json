@@ -64,6 +64,13 @@
       "when": 1778889600000,
       "tag": "0008_item_availability",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1779148800000,
+      "tag": "0009_outlet_receipt_branding",
+      "breakpoints": true
     }
   ]
 }
