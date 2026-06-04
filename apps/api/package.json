@@ -36,6 +36,14 @@
       "types": "./dist/services/eod/index.d.ts",
       "default": "./dist/services/eod/index.js"
     },
+    "./services/staff/index.js": {
+      "types": "./dist/services/staff/index.d.ts",
+      "default": "./dist/services/staff/index.js"
+    },
+    "./services/shifts/index.js": {
+      "types": "./dist/services/shifts/index.d.ts",
+      "default": "./dist/services/shifts/index.js"
+    },
     "./auth/staff-bootstrap.js": {
       "types": "./dist/auth/staff-bootstrap.d.ts",
       "default": "./dist/auth/staff-bootstrap.js"

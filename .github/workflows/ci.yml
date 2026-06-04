@@ -236,3 +236,59 @@ jobs:
             apps/pos/test-results
           if-no-files-found: ignore
           retention-days: 14
+
+  # KASA-241 (child of KASA-236) — POS void / refund acceptance gate.
+  #
+  # Runs the Playwright spec at apps/pos/e2e/void.spec.ts against a dedicated
+  # in-memory API harness (`apps/pos/e2e/harness/void-server.ts`) that wires
+  # the manager-PIN + open-shift gates the KASA-68 harness deliberately keeps
+  # off. Four scenarios: happy path online, idempotent replay, cashier
+  # rejection, offline-buffered void.
+  #
+  # Posture matches the KASA-68 gate: informational on PR, blocking on push
+  # to main. Flake quarantine is not permitted.
+  acceptance-void:
+    name: Acceptance — void / refund (KASA-241)
+    runs-on: ubuntu-latest
+    needs: ci
+    timeout-minutes: 15
+    continue-on-error: ${{ github.event_name == 'pull_request' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5.0.0
+        with:
+          run_install: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build workspace
+        run: pnpm -r build
+
+      - name: Install Playwright browsers
+        run: pnpm --filter @kassa/pos exec playwright install --with-deps chromium
+
+      - name: Run void acceptance suite
+        run: pnpm --filter @kassa/pos run test:e2e:void
+        env:
+          CI: "true"
+
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: playwright-void-report
+          path: |
+            apps/pos/playwright-report
+            apps/pos/test-results
+          if-no-files-found: ignore
+          retention-days: 14

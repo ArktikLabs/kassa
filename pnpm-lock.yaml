@@ -266,6 +266,9 @@ importers:
       '@vitejs/plugin-react':
         specifier: ^4.3.4
         version: 4.7.0(vite@7.3.2(@types/node@22.19.17)(jiti@2.6.1)(lightningcss@1.32.0)(terser@5.46.1)(tsx@4.21.0)(yaml@2.8.3))
+      argon2:
+        specifier: ^0.41.1
+        version: 0.41.1
       fake-indexeddb:
         specifier: ^6.0.0
         version: 6.2.5
