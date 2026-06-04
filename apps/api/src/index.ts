@@ -27,6 +27,10 @@ import {
   type DashboardRepository,
 } from "./services/dashboard/index.js";
 import {
+  InMemorySalesSummaryRepository,
+  SalesSummaryService,
+} from "./services/sales-summary/index.js";
+import {
   InMemoryMerchantsRepository,
   MerchantsService,
   PgMerchantsRepository,
@@ -71,6 +75,13 @@ async function main(): Promise<void> {
   const itemsService = new ItemsService({ repository: itemsRepository });
   const merchantsService = new MerchantsService({ repository: merchantsRepository });
   const dashboardService = new DashboardService({ repository: dashboardRepository });
+  // KASA-327 — the period-summary repository lands its Postgres variant in
+  // a follow-up; for now production binds the in-memory repo so the route
+  // registers cleanly and the back-office "Ringkasan periode" panel reads
+  // an empty-but-valid response until the Pg join is wired.
+  const salesSummaryService = new SalesSummaryService({
+    repository: new InMemorySalesSummaryRepository(),
+  });
 
   let midtransProvider: PaymentProvider | undefined;
   if (env.MIDTRANS_SERVER_KEY) {
@@ -133,6 +144,12 @@ async function main(): Promise<void> {
     },
     reports: {
       service: dashboardService,
+      ...(env.STAFF_BOOTSTRAP_TOKEN !== undefined
+        ? { staffBootstrapToken: env.STAFF_BOOTSTRAP_TOKEN }
+        : {}),
+    },
+    adminSales: {
+      service: salesSummaryService,
       ...(env.STAFF_BOOTSTRAP_TOKEN !== undefined
         ? { staffBootstrapToken: env.STAFF_BOOTSTRAP_TOKEN }
         : {}),

@@ -1,5 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import type { DeviceAuthPreHandler } from "../auth/device-auth.js";
+import { adminSalesRoutes, type AdminSalesRouteDeps } from "./admin-sales.js";
 import { authRoutes, type AuthRouteDeps } from "./auth.js";
 import { catalogRoutes, type CatalogRouteDeps } from "./catalog.js";
 import { eodRoutes, type EodRouteDeps } from "./eod.js";
@@ -29,6 +30,7 @@ export interface V1RouteDeps {
   eod: EodRouteDeps;
   reconciliation: ReconciliationRouteDeps;
   reports: ReportsRouteDeps;
+  adminSales: AdminSalesRouteDeps;
 }
 
 export async function registerV1Routes(app: FastifyInstance, deps: V1RouteDeps): Promise<void> {
@@ -44,5 +46,6 @@ export async function registerV1Routes(app: FastifyInstance, deps: V1RouteDeps):
   await app.register(reconciliationRoutes(deps.reconciliation), {
     prefix: "/admin/reconciliation",
   });
+  await app.register(adminSalesRoutes(deps.adminSales), { prefix: "/admin/sales" });
   await app.register(reportsRoutes(deps.reports), { prefix: "/reports" });
 }

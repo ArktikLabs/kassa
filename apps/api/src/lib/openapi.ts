@@ -30,6 +30,11 @@ export const openapiTags = [
     name: "reconciliation",
     description: "Owner-only static-QRIS reconciliation pass and manual matches.",
   },
+  {
+    name: "admin-sales",
+    description:
+      "Back-office period-summary surface — date-range bookkeeping aggregates and groupBy breakdown (KASA-327).",
+  },
 ] as const;
 
 export interface OpenapiOptions {

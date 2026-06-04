@@ -35,6 +35,10 @@ import {
 } from "./services/catalog/index.js";
 import { DashboardService, InMemoryDashboardRepository } from "./services/dashboard/index.js";
 import {
+  InMemorySalesSummaryRepository,
+  SalesSummaryService,
+} from "./services/sales-summary/index.js";
+import {
   EodService,
   InMemoryEodRepository,
   SalesRepositoryEodSyntheticReconciler,
@@ -133,6 +137,17 @@ export interface BuildAppOptions {
    */
   reports?: {
     service: DashboardService;
+    staffBootstrapToken?: string;
+  };
+  /**
+   * Back-office period-summary surface (KASA-327). When omitted the route
+   * binds to an in-memory repository (zero-data shape) so deploys without a
+   * configured sales-summary service still register cleanly. The
+   * `staffBootstrapToken` mirrors `reports` and gates the same `X-Staff-*`
+   * header tier (owner + manager).
+   */
+  adminSales?: {
+    service: SalesSummaryService;
     staffBootstrapToken?: string;
   };
   sales?: {
@@ -378,6 +393,10 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     service: new DashboardService({ repository: new InMemoryDashboardRepository() }),
   };
 
+  const adminSales = options.adminSales ?? {
+    service: new SalesSummaryService({ repository: new InMemorySalesSummaryRepository() }),
+  };
+
   const v1Deps: V1RouteDeps = {
     requireDevice,
     auth: {
@@ -460,6 +479,12 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       service: reports.service,
       ...(reports.staffBootstrapToken !== undefined
         ? { staffBootstrapToken: reports.staffBootstrapToken }
+        : {}),
+    },
+    adminSales: {
+      service: adminSales.service,
+      ...(adminSales.staffBootstrapToken !== undefined
+        ? { staffBootstrapToken: adminSales.staffBootstrapToken }
         : {}),
     },
   };

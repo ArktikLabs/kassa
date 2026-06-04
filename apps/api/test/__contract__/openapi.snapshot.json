@@ -8638,6 +8638,441 @@
         }
       }
     },
+    "/v1/admin/sales/summary": {
+      "get": {
+        "summary": "Period sales summary for monthly bookkeeping",
+        "tags": [
+          "admin-sales"
+        ],
+        "description": "Aggregates gross, discount, PPN, tender mix, refunds, and a `groupBy`-keyed breakdown across the `[from, to]` business-date window. Date range capped at 92 days — longer ranges return `400 range_too_large` with a hint so the back-office can prompt the merchant to narrow their pick.",
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "outletId": {
+                      "type": "string",
+                      "format": "uuid",
+                      "nullable": true
+                    },
+                    "from": {
+                      "type": "string",
+                      "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                    },
+                    "to": {
+                      "type": "string",
+                      "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                    },
+                    "groupBy": {
+                      "type": "string",
+                      "enum": [
+                        "day",
+                        "outlet",
+                        "tender",
+                        "item"
+                      ]
+                    },
+                    "grossIdr": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "discountIdr": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "taxIdr": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "netIdr": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "saleCount": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "refundCount": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "refundIdr": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "tenderMix": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "method": {
+                            "type": "string",
+                            "enum": [
+                              "cash",
+                              "qris_dynamic",
+                              "qris_static"
+                            ]
+                          },
+                          "amountIdr": {
+                            "type": "integer",
+                            "minimum": 0
+                          },
+                          "count": {
+                            "type": "integer",
+                            "minimum": 0
+                          }
+                        },
+                        "required": [
+                          "method",
+                          "amountIdr",
+                          "count"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "topItemsByRevenue": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "itemId": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "name": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "revenueIdr": {
+                            "type": "integer",
+                            "minimum": 0
+                          },
+                          "quantity": {
+                            "type": "number",
+                            "minimum": 0
+                          }
+                        },
+                        "required": [
+                          "itemId",
+                          "name",
+                          "revenueIdr",
+                          "quantity"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "maxItems": 10
+                    },
+                    "topItemsByQuantity": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "itemId": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "name": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "revenueIdr": {
+                            "type": "integer",
+                            "minimum": 0
+                          },
+                          "quantity": {
+                            "type": "number",
+                            "minimum": 0
+                          }
+                        },
+                        "required": [
+                          "itemId",
+                          "name",
+                          "revenueIdr",
+                          "quantity"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "maxItems": 10
+                    },
+                    "groups": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "key": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "label": {
+                            "type": "string"
+                          },
+                          "grossIdr": {
+                            "type": "integer",
+                            "minimum": 0
+                          },
+                          "discountIdr": {
+                            "type": "integer",
+                            "minimum": 0
+                          },
+                          "taxIdr": {
+                            "type": "integer",
+                            "minimum": 0
+                          },
+                          "netIdr": {
+                            "type": "integer",
+                            "minimum": 0
+                          },
+                          "saleCount": {
+                            "type": "integer",
+                            "minimum": 0
+                          },
+                          "refundCount": {
+                            "type": "integer",
+                            "minimum": 0
+                          },
+                          "refundIdr": {
+                            "type": "integer",
+                            "minimum": 0
+                          },
+                          "quantity": {
+                            "type": "number",
+                            "minimum": 0
+                          }
+                        },
+                        "required": [
+                          "key",
+                          "label",
+                          "grossIdr",
+                          "discountIdr",
+                          "taxIdr",
+                          "netIdr",
+                          "saleCount",
+                          "refundCount",
+                          "refundIdr",
+                          "quantity"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "outletId",
+                    "from",
+                    "to",
+                    "groupBy",
+                    "grossIdr",
+                    "discountIdr",
+                    "taxIdr",
+                    "netIdr",
+                    "saleCount",
+                    "refundCount",
+                    "refundIdr",
+                    "tenderMix",
+                    "topItemsByRevenue",
+                    "topItemsByQuantity",
+                    "groups"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Standard Kassa API error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "description": "Machine-readable error code, snake_case."
+                        },
+                        "message": {
+                          "type": "string",
+                          "description": "Human-readable error message."
+                        },
+                        "details": {
+                          "description": "Optional structured detail payload."
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Standard Kassa API error envelope."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Standard Kassa API error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "description": "Machine-readable error code, snake_case."
+                        },
+                        "message": {
+                          "type": "string",
+                          "description": "Human-readable error message."
+                        },
+                        "details": {
+                          "description": "Optional structured detail payload."
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Standard Kassa API error envelope."
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Standard Kassa API error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "description": "Machine-readable error code, snake_case."
+                        },
+                        "message": {
+                          "type": "string",
+                          "description": "Human-readable error message."
+                        },
+                        "details": {
+                          "description": "Optional structured detail payload."
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Standard Kassa API error envelope."
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Standard Kassa API error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "description": "Machine-readable error code, snake_case."
+                        },
+                        "message": {
+                          "type": "string",
+                          "description": "Human-readable error message."
+                        },
+                        "details": {
+                          "description": "Optional structured detail payload."
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Standard Kassa API error envelope."
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Standard Kassa API error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "description": "Machine-readable error code, snake_case."
+                        },
+                        "message": {
+                          "type": "string",
+                          "description": "Human-readable error message."
+                        },
+                        "details": {
+                          "description": "Optional structured detail payload."
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Standard Kassa API error envelope."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/reports/dashboard": {
       "get": {
         "summary": "Back-office today-tile summary",
@@ -8995,6 +9430,10 @@
     {
       "name": "reconciliation",
       "description": "Owner-only static-QRIS reconciliation pass and manual matches."
+    },
+    {
+      "name": "admin-sales",
+      "description": "Back-office period-summary surface — date-range bookkeeping aggregates and groupBy breakdown (KASA-327)."
     }
   ]
 }

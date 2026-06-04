@@ -151,6 +151,18 @@ function mkSale(overrides: Partial<SaleResponse> & { saleId: string }): SaleResp
 function mockFetchByQuery(map: (url: URL) => SaleResponse[]) {
   return vi.fn().mockImplementation((input: string) => {
     const url = new URL(input);
+    // KASA-327 — the embedded "Ringkasan periode" panel calls
+    // `/v1/admin/sales/summary` from the same mount as the sales table.
+    // Hand back an empty-but-valid summary so the panel doesn't trip on
+    // the schema gate and surface a spurious second `role="alert"`.
+    if (url.pathname.endsWith("/v1/admin/sales/summary")) {
+      return Promise.resolve(
+        new Response(JSON.stringify(emptySummaryResponse(url)), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      );
+    }
     const records = map(url);
     return Promise.resolve(
       new Response(JSON.stringify({ records }), {
@@ -159,6 +171,26 @@ function mockFetchByQuery(map: (url: URL) => SaleResponse[]) {
       }),
     );
   });
+}
+
+function emptySummaryResponse(url: URL): Record<string, unknown> {
+  return {
+    outletId: url.searchParams.get("outletId"),
+    from: url.searchParams.get("from") ?? "2026-05-11",
+    to: url.searchParams.get("to") ?? "2026-05-11",
+    groupBy: url.searchParams.get("groupBy") ?? "day",
+    grossIdr: 0,
+    discountIdr: 0,
+    taxIdr: 0,
+    netIdr: 0,
+    saleCount: 0,
+    refundCount: 0,
+    refundIdr: 0,
+    tenderMix: [],
+    topItemsByRevenue: [],
+    topItemsByQuantity: [],
+    groups: [],
+  };
 }
 
 describe("applyClientFilters", () => {
@@ -410,6 +442,173 @@ describe("AdminSalesScreen", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     renderAt("/admin/sales", [{ path: "/admin/sales", component: AdminSalesScreen }]);
-    expect(await screen.findByRole("alert")).toHaveTextContent(/Akses dibatasi|Gagal/);
+    // Both the sales-history fetch and the embedded summary fetch (KASA-327)
+    // hit the same 401, so multiple alerts may render. Either is acceptable.
+    const alerts = await screen.findAllByRole("alert");
+    expect(alerts.some((el) => /Akses dibatasi|Gagal/.test(el.textContent ?? ""))).toBe(true);
+  });
+});
+
+describe("AdminSalesScreen — summary panel (KASA-327)", () => {
+  it("calls GET /v1/admin/sales/summary on mount and renders the tiles", async () => {
+    const fetchMock = vi.fn().mockImplementation((input: string) => {
+      const url = new URL(input);
+      if (url.pathname.endsWith("/v1/admin/sales/summary")) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              outletId: null,
+              from: "2026-05-11",
+              to: "2026-05-11",
+              groupBy: "day",
+              grossIdr: 250_000,
+              discountIdr: 10_000,
+              taxIdr: 24_775,
+              netIdr: 225_225,
+              saleCount: 5,
+              refundCount: 1,
+              refundIdr: 15_000,
+              tenderMix: [{ method: "cash", amountIdr: 250_000, count: 5 }],
+              topItemsByRevenue: [
+                {
+                  itemId: "01890abc-1234-7def-8000-0000000c0001",
+                  name: "Kopi Susu",
+                  revenueIdr: 180_000,
+                  quantity: 8,
+                },
+              ],
+              topItemsByQuantity: [],
+              groups: [
+                {
+                  key: "2026-05-11",
+                  label: "2026-05-11",
+                  grossIdr: 250_000,
+                  discountIdr: 10_000,
+                  taxIdr: 24_775,
+                  netIdr: 225_225,
+                  saleCount: 5,
+                  refundCount: 1,
+                  refundIdr: 15_000,
+                  quantity: 0,
+                },
+              ],
+            }),
+            { status: 200, headers: { "content-type": "application/json" } },
+          ),
+        );
+      }
+      return Promise.resolve(
+        new Response(JSON.stringify({ records: [] }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      );
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderAt("/admin/sales", [{ path: "/admin/sales", component: AdminSalesScreen }]);
+
+    const summaryCalls = await waitFor(() => {
+      const calls = fetchMock.mock.calls.filter((c) =>
+        String(c[0]).includes("/v1/admin/sales/summary"),
+      );
+      expect(calls.length).toBeGreaterThan(0);
+      return calls;
+    });
+    const summaryUrl = new URL(String(summaryCalls[0]![0]));
+    expect(summaryUrl.searchParams.get("from")).toBe("2026-05-11");
+    expect(summaryUrl.searchParams.get("to")).toBe("2026-05-11");
+    expect(summaryUrl.searchParams.get("groupBy")).toBe("day");
+
+    expect(await screen.findByTestId("sales-summary-tile-gross")).toHaveTextContent("Rp 250.000");
+    expect(await screen.findByTestId("sales-summary-tile-tax")).toHaveTextContent("Rp 24.775");
+    expect(await screen.findByTestId("sales-summary-tile-refund-amount")).toHaveTextContent(
+      "Rp 15.000",
+    );
+    const breakdownRow = await screen.findByTestId("sales-summary-row");
+    expect(breakdownRow).toHaveTextContent("2026-05-11");
+  });
+
+  it("refetches with the new groupBy when the dropdown changes", async () => {
+    const fetchMock = vi.fn().mockImplementation((input: string) => {
+      const url = new URL(input);
+      if (url.pathname.endsWith("/v1/admin/sales/summary")) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              outletId: null,
+              from: "2026-05-11",
+              to: "2026-05-11",
+              groupBy: url.searchParams.get("groupBy"),
+              grossIdr: 0,
+              discountIdr: 0,
+              taxIdr: 0,
+              netIdr: 0,
+              saleCount: 0,
+              refundCount: 0,
+              refundIdr: 0,
+              tenderMix: [],
+              topItemsByRevenue: [],
+              topItemsByQuantity: [],
+              groups: [],
+            }),
+            { status: 200, headers: { "content-type": "application/json" } },
+          ),
+        );
+      }
+      return Promise.resolve(
+        new Response(JSON.stringify({ records: [] }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      );
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderAt("/admin/sales", [{ path: "/admin/sales", component: AdminSalesScreen }]);
+
+    await waitFor(() => {
+      expect(
+        fetchMock.mock.calls.some((c) => String(c[0]).includes("/v1/admin/sales/summary?")),
+      ).toBe(true);
+    });
+
+    const select = await screen.findByTestId("sales-summary-group-by");
+    fireEvent.change(select, { target: { value: "outlet" } });
+
+    await waitFor(() => {
+      const calls = fetchMock.mock.calls
+        .map((c) => String(c[0]))
+        .filter((u) => u.includes("/v1/admin/sales/summary"));
+      expect(calls.some((u) => u.includes("groupBy=outlet"))).toBe(true);
+    });
+  });
+
+  it("surfaces the 92-day cap inline as a non-scary message", async () => {
+    const fetchMock = vi.fn().mockImplementation((input: string) => {
+      const url = new URL(input);
+      if (url.pathname.endsWith("/v1/admin/sales/summary")) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              error: { code: "range_too_large", message: "spans 365 days; the cap is 92" },
+            }),
+            { status: 400, headers: { "content-type": "application/json" } },
+          ),
+        );
+      }
+      return Promise.resolve(
+        new Response(JSON.stringify({ records: [] }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      );
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderAt("/admin/sales", [{ path: "/admin/sales", component: AdminSalesScreen }]);
+
+    const error = await screen.findByTestId("sales-summary-error");
+    expect(error).toHaveTextContent(/92 hari/);
   });
 });
