@@ -72,8 +72,8 @@ Defined as code in [`infra/observability/better-stack-monitors.json`](../infra/o
 
 | Monitor                  | URL                                                     | Cadence | Probes (regions)            | Alert after     |
 |:-------------------------|:--------------------------------------------------------|:--------|:----------------------------|:----------------|
-| `api-prod-health`        | `https://kassa-api-prod.fly.dev/health`                 | 60 s    | Singapore + Jakarta         | 2 consecutive failures |
-| `pos-prod-shell`         | `https://app.kassa.id/` (fallback `kassa-pos.pages.dev`) | 60 s    | Singapore + Jakarta         | 2 consecutive failures |
+| `api-prod-health`        | `https://kassa-api-prod.fly.dev/health` (cutover: `https://api.kassa.id/health`) | 60 s    | Singapore + Jakarta         | 2 consecutive failures |
+| `pos-prod-shell`         | `https://kassa-pos.pages.dev/` (cutover: `https://app.kassa.id/`) | 60 s    | Singapore + Jakarta         | 2 consecutive failures |
 | `back-office-prod-shell` | `https://kassa-back-office.pages.dev/`                  | 60 s    | Singapore                   | 2 consecutive failures |
 | `synthetic-sale-heartbeat` | Better Stack heartbeat URL pinged by the synthetic-sale workflow (§4) | every 15 min ±5 min grace | n/a (heartbeat) | 1 missed window |
 

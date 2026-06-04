@@ -213,7 +213,102 @@ There is no "pause" — Fly's rolling deploy advances on its own once started. T
 
 ---
 
-## 6. Where this runbook is wrong
+## 6. Better Stack synthetic monitors and status page
+
+The two production-tier synthetic checks named in [TECH-STACK.md §12.4](./TECH-STACK.md) and [ARCHITECTURE.md §5.5](./ARCHITECTURE.md) — API `/health` and the POS PWA shell — are the live signal that production is reachable from outside. Their config is in [`infra/observability/better-stack-monitors.json`](../infra/observability/better-stack-monitors.json) (KASA-71 wired the schema; KASA-198 tightened the body keyword + 30 s timeout). Apply with [`scripts/observability-apply.sh`](../scripts/observability-apply.sh) — see [`infra/observability/README.md`](../infra/observability/README.md).
+
+### 6.1 Monitor inventory
+
+| Monitor                  | Probe URL                                                  | Body assertion                  | Cadence | Timeout | Pages after  | Better Stack ID |
+|:-------------------------|:-----------------------------------------------------------|:--------------------------------|:--------|:--------|:-------------|:----------------|
+| `kassa-api-prod-health`  | `https://kassa-api-prod.fly.dev/health` *(cutover: `https://api.kassa.id/health`)* | body contains `"status":"ok"`   | 60 s    | 30 s    | 2 fails (~2 min) | _filled by ops post-apply_ |
+| `kassa-pos-prod-shell`   | `https://kassa-pos.pages.dev/` *(cutover: `https://app.kassa.id/`)*               | body contains `<title>Kassa POS</title>` | 60 s    | 30 s    | 2 fails (~2 min) | _filled by ops post-apply_ |
+
+The two-consecutive-failure rule is deliberate (see [RUNBOOK-ONCALL.md §3.2](./RUNBOOK-ONCALL.md#32-better-stack-uptime-monitors)) — it absorbs single Cloudflare-edge or Fly-router blips without paging.
+
+The `Better Stack ID` column is filled by ops after the first `--apply` run. Read the IDs out of the apply log line (`[create] monitor name=kassa-api-prod-health` is followed by the new record's `id` in the API response — the script logs the name, but the ID is on the `id` field of the POST response body) or look them up in the dashboard URL (`uptime.betterstack.com/team/<team>/monitors/<id>`). PR them into this table the same day.
+
+### 6.2 Secret references
+
+| Secret / variable         | Where it lives                                             | What it lets the operator do                |
+|:--------------------------|:-----------------------------------------------------------|:--------------------------------------------|
+| `BETTER_STACK_API_TOKEN`  | Local: `~/.kassa/observability.env`. CI: GitHub `production-prod` environment secret. | Run `scripts/observability-apply.sh --apply` to reconcile monitors + heartbeats. Scope at issue time: `Manage monitors + heartbeats`. |
+| `BETTER_STACK_HEARTBEAT_URL` | GitHub repo secret (already wired in `synthetic-sale.yml`). | Lets the synthetic-sale workflow ping the heartbeat record. |
+| Slack workspace install   | Better Stack → Integrations → Slack                        | Routes step-1 escalation to `#kassa-pilot-oncall`. |
+| Email alias `oncall@kassa.id` | Better Stack → Account → Email aliases                  | Routes step-2 escalation. |
+| CTO user email            | Better Stack → Team members                                | Routes step-3 escalation. |
+
+The token never appears in code, in this runbook, or in any issue comment. Rotation procedure: regenerate in Better Stack → Account → API Tokens, update the GitHub environment secret and the operator's local `~/.kassa/observability.env`, re-run `scripts/observability-apply.sh` to confirm the new token still reconciles. Old token revokes itself after the rotation window.
+
+### 6.3 Override procedure for false alerts during a deploy
+
+A production deploy briefly bounces machines (rolling strategy, ≤60 s per machine; the second machine keeps serving). Better Stack's two-consecutive-failure rule is sized so a routine rolling deploy does **not** page. **Do not pre-mute for a routine deploy** — the alert quieting itself is part of the safety net.
+
+Mute only if a deploy is expected to take a monitor down for **longer than the alert window** (≥120 s on `/health`, ≥120 s on the POS shell). Examples that warrant a mute: a Fly machine-resize that requires `flyctl scale memory`, a Cloudflare Pages project rename, a DNS cutover. A rolling `flyctl deploy` does not.
+
+To mute during a planned event, **before** triggering the destructive change:
+
+1. Better Stack dashboard → Monitors → select the monitor (`kassa-api-prod-health` and/or `kassa-pos-prod-shell`).
+2. **Pause monitoring** → set duration to **30 minutes** (or the planned window + 10 min buffer; never indefinite).
+3. Note the unmute time in the deploy issue thread, with monitor name and operator handle. The deploy issue is the source of truth for "did we remember to unmute".
+4. Run the deploy. Watch `flyctl status` / Cloudflare Pages dashboard directly — you have removed the safety net.
+5. **Unmute as soon as the surface is back up**, even if before the auto-expiry. The dashboard's `Resume monitoring` button is the same place as `Pause`. The free tier's auto-expiry is the safety net for "operator forgot to unmute" — do not lean on it.
+
+If a false page fires from a ≤2 minute blip during a deploy:
+
+1. **Acknowledge** the incident in the Slack thread (`#kassa-pilot-oncall`) so the rest of the pod knows it's spurious.
+2. Do **not** disable the monitor. Acknowledging suppresses paging on the same incident; disabling would also suppress the next, real failure.
+3. File a follow-up ticket if the same blip pages twice in a week — that is the threshold to widen `confirmation_period` or add a second region (PR to `infra/observability/better-stack-monitors.json`, dry-run, merge, re-apply).
+
+### 6.4 Maintenance windows
+
+Better Stack's free tier does **not** support scheduled maintenance windows (recurring or one-shot mute schedules). The substitutes are:
+
+- **Routine rolling deploys** — no action needed; the two-fail threshold absorbs them (see §6.3).
+- **Planned destructive change >2 min** — manual mute via the Pause button per §6.3 step 2.
+- **Recurring-schedule mutes** (e.g. nightly index rebuild that takes the API down for 3 min at 03:00 WIB) — not built. If we ever need this, the upgrade path is either: (a) Better Stack paid tier with Scheduled maintenance windows; or (b) a small workflow that calls the Better Stack API to pause + un-pause around a cron. Neither is justified at pilot scale; revisit when the pilot's incident log shows recurring window-clash flaps.
+
+The deliberate omission means: any planned outage that would last longer than ~2 min on a monitor's surface is operator-driven, manually muted, and noted in the deploy issue. There is no quiet-by-cron path.
+
+### 6.5 Status page
+
+Better Stack hosts a public-or-private status page per workspace. The Kassa pilot status page exposes the same uptime feed the on-call sees, scoped down to the merchant-visible surfaces (POS PWA shell, API `/health`, payments).
+
+| Field                    | Value                                                                |
+|:-------------------------|:---------------------------------------------------------------------|
+| Status page URL          | _filled by ops post-creation_ (Better Stack → Status pages → +New)   |
+| Visibility               | **Private** during pilot week (single merchant) → **Public** post-pilot |
+| Components surfaced      | `kassa-api-prod-health`, `kassa-pos-prod-shell` (back-office monitor stays internal) |
+| Subscribed escalations   | None at pilot (single-merchant; out-of-band WhatsApp suffices)       |
+
+Provisioning steps for the operator (one-time, not in the apply script — Better Stack's status-page API is on the paid tier; the pilot uses dashboard click-ops with the URL captured back into this section):
+
+1. Better Stack dashboard → **Status pages** → **+ Create status page**. Name `Kassa pilot`. Subdomain `kassa.betteruptime.com` (free) or skip and use the random URL.
+2. Visibility → **Password-protected**. Share the password with the pilot merchant via the same channel as the §6.6 of `RUNBOOK-ONCALL.md` merchant contact card.
+3. **Add resources** → select `kassa-api-prod-health` and `kassa-pos-prod-shell`. Group both under a single section "Kassa POS service".
+4. Save. Copy the page URL into the table above and PR it (this same file).
+5. Open the URL once from a non-VPN connection to confirm it loads and the password gate works.
+
+Status-page incidents auto-publish from the same monitor failures that page on-call. No extra wiring.
+
+### 6.6 First-time apply playbook (KASA-198 acceptance)
+
+The operator running this for the first time after the secrets land:
+
+1. Set `BETTER_STACK_API_TOKEN` in `~/.kassa/observability.env` (or export inline).
+2. `scripts/observability-apply.sh` — dry-run, confirm the diff matches the JSON.
+3. `scripts/observability-apply.sh --apply` — reconcile.
+4. Capture the two new monitor IDs into §6.1's table; PR.
+5. In the dashboard, complete the Slack + email + status-page provisioning per §6.2 and §6.5.
+6. Wait 30 minutes; confirm both monitors show `up` (the KASA-198 acceptance check).
+7. Run the §3.4 dry-fire from `RUNBOOK-ONCALL.md` (Better Stack `Test alert` button) — confirm the page reaches `#kassa-pilot-oncall` within 2 min.
+8. Close KASA-198 with the monitor IDs, the status-page URL, and a screenshot of the Better Stack dashboard showing both green.
+
+If the deploy-prod cutover URL changes (KASA-149: `kassa-api-prod.fly.dev` → `api.kassa.id`, `kassa-pos.pages.dev` → `app.kassa.id`), update the JSON's `url` fields, re-run `--apply`, and update §6.1's URL column in the same PR. The monitor records survive the URL change — `pronounceable_name` is the idempotency key, not the URL.
+
+---
+
+## 7. Where this runbook is wrong
 
 Update this file whenever any of the following changes:
 
