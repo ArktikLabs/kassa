@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import * as Sentry from "@sentry/node";
 import { applyDeviceTags } from "./lib/sentry.js";
 import fastifyCookie, { type CookieSerializeOptions } from "@fastify/cookie";
@@ -25,6 +26,10 @@ import { registerOpenapi } from "./lib/openapi.js";
 import { createInMemoryDedupeStore, type WebhookDedupeStore } from "./lib/webhook-dedupe.js";
 import { EnrolmentService, InMemoryEnrolmentRepository } from "./services/enrolment/index.js";
 import { InMemoryStaffRepository, type StaffRepository } from "./services/staff/index.js";
+import {
+  InMemoryLoginAttemptsRepository,
+  type LoginAttemptsRepository,
+} from "./services/login-attempts/index.js";
 import {
   BomsService,
   InMemoryBomsRepository,
@@ -84,6 +89,18 @@ export interface BuildAppOptions {
     rateLimitPerMinute?: number;
     now?: () => Date;
     cookieOptions?: Partial<CookieSerializeOptions>;
+    /**
+     * Brute-force / credential-stuffing audit log (KASA-312). When
+     * present together with `loginAttemptHmacSecret`, the route layers
+     * the per-account progressive lockout (5 fails → 30s, 10 → 5m,
+     * 15 → 1h) on top of the existing per-IP rate limit. When omitted
+     * the lockout is disabled — the IP cap still fires and the route
+     * still 401s on bad credentials, but a single source can grind one
+     * account without escalating backoff.
+     */
+    loginAttempts?: LoginAttemptsRepository;
+    /** HMAC secret keying `auth_login_attempts.account_id_hash` / `ip_hash`. Min 32 bytes. */
+    loginAttemptHmacSecret?: string;
   };
   /**
    * CORS allow-list. Each entry is a literal origin (`https://host`)
@@ -399,6 +416,18 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
             ...(options.staffSession.cookieOptions !== undefined
               ? { sessionCookieOptions: options.staffSession.cookieOptions }
               : {}),
+            // KASA-312 — wire the per-account brute-force lockout. When
+            // the caller doesn't supply a repository we fall back to
+            // an in-memory store + a per-boot random HMAC secret so the
+            // lockout is default-on for `buildApp({ staffSession })`
+            // without leaving production callers to remember a second
+            // env var. Production deploys pass the Pg-backed repo +
+            // `LOGIN_ATTEMPT_HMAC_SECRET` from env so the bucket
+            // survives restarts and is shared across instances.
+            loginAttempts:
+              options.staffSession.loginAttempts ?? new InMemoryLoginAttemptsRepository(),
+            loginAttemptHmacSecret:
+              options.staffSession.loginAttemptHmacSecret ?? generateEphemeralHmacSecret(),
           }
         : {}),
     },
@@ -480,6 +509,18 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
  * implements `findById` once and feeds both routes without either coupling
  * to the other's payload shape.
  */
+/**
+ * KASA-312 — fallback HMAC secret for the login-attempts audit log when
+ * the caller doesn't pass one. 32 bytes of `crypto.randomBytes` mean the
+ * fallback satisfies `LOGIN_ATTEMPT_HMAC_SECRET_MIN_LENGTH` and is unique
+ * per boot. Only useful for tests / single-instance dev deploys; multi-
+ * instance production must pass `loginAttemptHmacSecret` explicitly so
+ * the hash buckets line up across instances.
+ */
+function generateEphemeralHmacSecret(): string {
+  return randomBytes(32).toString("base64url");
+}
+
 function makeManagerPinReader(repo: StaffRepository): ManagerPinReader {
   return {
     async findStaffById(input) {

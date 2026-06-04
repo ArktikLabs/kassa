@@ -1,6 +1,7 @@
 import type { CookieSerializeOptions } from "@fastify/cookie";
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyRequest } from "fastify";
 import rateLimit from "@fastify/rate-limit";
+import * as Sentry from "@sentry/node";
 import argon2 from "argon2";
 import {
   deviceEnrolRequest,
@@ -26,10 +27,53 @@ import {
   issueSessionCookie,
   type StaffSessionPayload,
 } from "../auth/staff-session.js";
+import { hashAccountId, hashIp, nextLockout } from "../auth/login-lockout.js";
+import type { LoginAttemptsRepository } from "../services/login-attempts/index.js";
 import type { StaffRepository } from "../services/staff/index.js";
 import type { StaffRole } from "../db/schema/staff.js";
 
 const ENROLMENT_CODE_ISSUE_ROLES: readonly StaffRole[] = ["owner", "manager"];
+
+interface LockoutSignalInput {
+  req: FastifyRequest;
+  accountIdHash: string;
+  ipHash: string;
+  consecutiveFails: number;
+  retryAfter: number;
+}
+
+/**
+ * KASA-312 — emit the dual-channel observability signal whenever the
+ * login route returns 429 for the per-account lockout: a pino `warn`
+ * line and a Sentry breadcrumb. Both fields use the HMAC hash, never
+ * the plaintext email or IP (ADR-010). Sentry runs in the same isolated
+ * scope as the request, so the breadcrumb is attached to any error
+ * captured later in the same handler chain; on the happy 429 path it
+ * lives long enough to be flushed by `setupFastifyErrorHandler`.
+ */
+function emitLockoutSignal(input: LockoutSignalInput): void {
+  input.req.log.warn(
+    {
+      event: "auth.login.locked_out",
+      accountIdHash: input.accountIdHash,
+      ipHash: input.ipHash,
+      consecutiveFails: input.consecutiveFails,
+      retryAfterSeconds: input.retryAfter,
+    },
+    "staff login locked out (brute-force backoff)",
+  );
+  Sentry.addBreadcrumb({
+    category: "auth.login.locked_out",
+    level: "warning",
+    message: "Staff login locked out (brute-force backoff)",
+    data: {
+      accountIdHash: input.accountIdHash,
+      ipHash: input.ipHash,
+      consecutiveFails: input.consecutiveFails,
+      retryAfterSeconds: input.retryAfter,
+    },
+  });
+}
 
 /**
  * Argon2id options mirror the device-secret hasher (services/enrolment
@@ -61,8 +105,31 @@ export interface AuthRouteDeps {
    * cookies with an empty secret.
    */
   sessionCookieSecret?: string;
-  /** Per-IP requests per minute against `/v1/auth/session/login`. Defaults to 5. */
+  /**
+   * Per-IP requests per minute against `/v1/auth/session/login`.
+   * Defaults to 30 (KASA-312) — the per-account progressive lockout
+   * below is the primary brute-force defence; the IP limit is just the
+   * distributed credential-stuffing brake.
+   */
   loginRateLimitPerMinute?: number;
+  /**
+   * Audit log of login attempts (KASA-312). When omitted the per-account
+   * progressive lockout is disabled — the IP rate-limit above still
+   * applies and the route logs each rejected attempt, but a single
+   * source can grind a single account without lockout. Production
+   * callers MUST wire `PgLoginAttemptsRepository`; the in-memory variant
+   * is for tests and the bootstrap window.
+   */
+  loginAttempts?: LoginAttemptsRepository;
+  /**
+   * HMAC secret keying the `account_id_hash` / `ip_hash` columns of the
+   * `auth_login_attempts` table. Must be at least 32 bytes
+   * (`LOGIN_ATTEMPT_HMAC_SECRET_MIN_LENGTH`); kept narrow to this route
+   * so a rotation never touches the staff session cookie secret. When
+   * `loginAttempts` is set, this is required — the route refuses to
+   * start signing hashes with an empty secret.
+   */
+  loginAttemptHmacSecret?: string;
   /** Test seam — overrides `Date.now()` for the issuedAt/expiresAt stamps. */
   now?: () => Date;
   /**
@@ -267,6 +334,14 @@ export function authRoutes(deps: AuthRouteDeps) {
       async (req, reply) => notImplemented(req, reply),
     );
 
+    const loginAttempts = deps.loginAttempts ?? null;
+    const loginAttemptHmacSecret = deps.loginAttemptHmacSecret ?? null;
+    if (loginAttempts && !loginAttemptHmacSecret) {
+      throw new Error(
+        "authRoutes: loginAttempts repository requires loginAttemptHmacSecret to key the account_id_hash/ip_hash columns (KASA-312).",
+      );
+    }
+
     app.post<{ Body: SessionLoginRequest }>(
       "/session/login",
       {
@@ -278,8 +353,10 @@ export function authRoutes(deps: AuthRouteDeps) {
             "signed HTTP-only session cookie (`SameSite=Lax`, `Secure`, " +
             "30-day rolling Max-Age). Returns the staff identity the back-office " +
             "needs to render the shell. 401 on bad credentials; 429 when the " +
-            "per-IP rate limit (5/min by default) trips. 503 when the route " +
-            "has not been configured with a staff repository or session secret.",
+            "per-IP rate limit (30/min by default) trips or when the per-account " +
+            "progressive lockout fires (5 fails → 30s, 10 → 5m, 15 → 1h). " +
+            "503 when the route has not been configured with a staff repository " +
+            "or session secret.",
           response: {
             200: sessionLoginResponse,
             401: errorBodySchema,
@@ -290,7 +367,7 @@ export function authRoutes(deps: AuthRouteDeps) {
         },
         config: {
           rateLimit: {
-            max: deps.loginRateLimitPerMinute ?? 5,
+            max: deps.loginRateLimitPerMinute ?? 30,
             timeWindow: "1 minute",
           },
         },
@@ -308,6 +385,42 @@ export function authRoutes(deps: AuthRouteDeps) {
         }
         const email = req.body.email.trim().toLowerCase();
         const password = req.body.password;
+        const nowAt = now();
+
+        // Per-account lockout pre-check. The hash keys the
+        // `auth_login_attempts` table so the route never holds plaintext
+        // email / IP after this point; everything below references the
+        // hashes only.
+        let accountIdHash: string | null = null;
+        let ipHash: string | null = null;
+        if (loginAttempts && loginAttemptHmacSecret) {
+          accountIdHash = hashAccountId(email, loginAttemptHmacSecret);
+          ipHash = hashIp(req.ip, loginAttemptHmacSecret);
+          const summary = await loginAttempts.summarizeAccount(accountIdHash);
+          const policy = nextLockout(summary.consecutiveFails);
+          if (policy && summary.lastFailureAt) {
+            const lockUntil = summary.lastFailureAt.getTime() + policy.durationSeconds * 1000;
+            const remainingMs = lockUntil - nowAt.getTime();
+            if (remainingMs > 0) {
+              const retryAfter = Math.max(1, Math.ceil(remainingMs / 1000));
+              emitLockoutSignal({
+                req,
+                accountIdHash,
+                ipHash,
+                consecutiveFails: summary.consecutiveFails,
+                retryAfter,
+              });
+              reply.header("Retry-After", String(retryAfter));
+              sendError(
+                reply,
+                429,
+                "too_many_requests",
+                "Too many failed attempts; try again later.",
+              );
+              return reply;
+            }
+          }
+        }
 
         const staff = await deps.staffRepository.findByEmail(email);
         // Hash to compare against — the decoy keeps "no such email" and
@@ -322,30 +435,51 @@ export function authRoutes(deps: AuthRouteDeps) {
           // argon2 throws on malformed hashes (e.g. a hand-edited row);
           // log and treat as auth failure rather than 500 so a single
           // corrupt row can't take the login route down.
-          req.log.warn({ err, email }, "staff password verify threw");
+          req.log.warn({ err, accountIdHash }, "staff password verify threw");
           passwordOk = false;
         }
-        if (!staff || !passwordOk) {
+        const success = Boolean(staff) && passwordOk;
+
+        if (loginAttempts && accountIdHash && ipHash) {
+          // Record BEFORE responding so the next request sees the updated
+          // counter. The repository is awaited; a transient DB failure
+          // throws and the route returns 500, which is the right answer
+          // — we don't want to silently lose the audit row.
+          await loginAttempts.record({
+            accountIdHash,
+            ipHash,
+            success,
+            attemptedAt: nowAt,
+          });
+        }
+
+        if (!success) {
           req.log.info(
             {
               event: "staff_login.rejected",
-              email,
+              accountIdHash,
               reason: staff ? "bad_password" : "unknown_email",
             },
             "staff login rejected",
           );
+          // The pre-check above is the only lockout gate; once we have
+          // recorded the failure here, the NEXT attempt will see the
+          // updated counter and 429. This keeps the AC semantics clean:
+          // "five wrong attempts return 401, the sixth returns 429
+          // with Retry-After: 30". Re-checking post-record would 429
+          // the fifth attempt itself, which breaks the spec.
           sendError(reply, 401, "invalid_credentials", "Email or password is incorrect.");
           return reply;
         }
 
-        const issuedAt = now();
+        const issuedAt = nowAt;
         const expiresAt = new Date(issuedAt.getTime() + STAFF_SESSION_TTL_MS);
         const payload: StaffSessionPayload = {
-          userId: staff.id,
-          merchantId: staff.merchantId,
-          email: staff.email,
-          displayName: staff.displayName,
-          role: staff.role,
+          userId: staff!.id,
+          merchantId: staff!.merchantId,
+          email: staff!.email,
+          displayName: staff!.displayName,
+          role: staff!.role,
           iat: issuedAt.getTime(),
           exp: expiresAt.getTime(),
         };
@@ -357,14 +491,14 @@ export function authRoutes(deps: AuthRouteDeps) {
         });
 
         const responseBody: SessionLoginResponse = {
-          email: staff.email,
-          displayName: staff.displayName,
-          role: staff.role,
-          merchantId: staff.merchantId,
+          email: staff!.email,
+          displayName: staff!.displayName,
+          role: staff!.role,
+          merchantId: staff!.merchantId,
           issuedAt: issuedAt.toISOString(),
         };
         req.log.info(
-          { event: "staff_login.accepted", userId: staff.id, merchantId: staff.merchantId },
+          { event: "staff_login.accepted", userId: staff!.id, merchantId: staff!.merchantId },
           "staff login accepted",
         );
         reply.code(200).send(responseBody);
