@@ -1,10 +1,11 @@
 import "fake-indexeddb/auto";
+import Dexie from "dexie";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { IntlProvider } from "react-intl";
 import { DEFAULT_LOCALE, messagesFor } from "../../i18n/messages.ts";
-import { _resetDatabaseSingletonForTest, getDatabase } from "../../data/db/index.ts";
+import { _resetDatabaseSingletonForTest, DB_NAME, getDatabase } from "../../data/db/index.ts";
 import { _resetForTest as resetEnrolmentForTest } from "../../lib/enrolment.ts";
 import { toRupiah } from "../../shared/money/index.ts";
 import type { PendingSale, ShiftState } from "../../data/db/types.ts";
@@ -143,6 +144,11 @@ describe("reduceFindSale", () => {
     expect(next.kind).toBe("searching");
   });
 
+  it("submit_remote → searching_remote (KASA-370 server fallback hint)", () => {
+    const next = reduceFindSale({ kind: "searching" }, { type: "submit_remote" });
+    expect(next.kind).toBe("searching_remote");
+  });
+
   it("found carries the sale + shift snapshot", () => {
     const next = reduceFindSale(
       { kind: "searching" },
@@ -163,14 +169,49 @@ describe("reduceFindSale", () => {
 });
 
 describe("<FindSaleScreen />", () => {
+  // The screen now performs a KASA-370 server fallback after a Dexie miss
+  // when the device is online. The default test environment is "offline"
+  // so the existing same-device assertions stay deterministic — tests
+  // that exercise the network branch set `setNavigatorOnLine(true)` and
+  // stub fetch with `stubFetch(...)`.
+  let originalOnLine: PropertyDescriptor | undefined;
+  let fetchMock: ReturnType<typeof vi.fn> | null = null;
+
+  function setNavigatorOnLine(value: boolean): void {
+    Object.defineProperty(navigator, "onLine", {
+      configurable: true,
+      get: () => value,
+    });
+  }
+
+  function stubFetch(impl: typeof fetch): void {
+    fetchMock = vi.fn(impl) as unknown as ReturnType<typeof vi.fn>;
+    vi.stubGlobal("fetch", fetchMock);
+  }
+
   beforeEach(() => {
     resetEnrolmentForTest();
     navigateMock.mockReset();
+    originalOnLine = Object.getOwnPropertyDescriptor(
+      Object.getPrototypeOf(navigator) ?? navigator,
+      "onLine",
+    );
+    setNavigatorOnLine(false);
+    fetchMock = null;
   });
 
   afterEach(async () => {
-    await _resetDatabaseSingletonForTest();
+    _resetDatabaseSingletonForTest();
+    // Purge the actual IDB store too — KASA-370 hydrates a `synced` row
+    // into Dexie on a remote hit, and without a delete the row would
+    // leak into subsequent tests and short-circuit the lookup.
+    await Dexie.delete(DB_NAME);
     resetEnrolmentForTest();
+    if (originalOnLine) {
+      Object.defineProperty(navigator, "onLine", originalOnLine);
+    }
+    vi.unstubAllGlobals();
+    fetchMock = null;
   });
 
   it("warns when the device is not enrolled", async () => {
@@ -315,6 +356,174 @@ describe("<FindSaleScreen />", () => {
     expect(navigateMock).toHaveBeenCalledWith({
       to: "/sale/$id/void",
       params: { id: "018f9c1a-4b2e-7c00-b000-000000abc123" },
+    });
+  });
+
+  // KASA-370 — cross-device fallback. The counter tablet rings a Dexie
+  // miss; while online it attempts `GET /v1/sales?receiptCode=…&outletId=…`
+  // and, on hit, hydrates the summary card from the server's canonical
+  // shape. Offline keeps today's id-ID dead-end so the cashier still
+  // reaches for the back-office reconciliation flow.
+  describe("KASA-370 cross-device server fallback", () => {
+    function remoteSaleBody(overrides: Partial<Record<string, unknown>> = {}) {
+      return {
+        saleId: "11111111-1111-7000-8000-000000000001",
+        name: "SALE-X1",
+        localSaleId: "018f9c1a-4b2e-7c00-b000-000000cafe01",
+        outletId: "outlet-a",
+        clerkId: "kitchen-clerk",
+        businessDate: "2026-05-29",
+        subtotalIdr: 35_000,
+        discountIdr: 0,
+        totalIdr: 35_000,
+        taxIdr: 0,
+        items: [
+          {
+            itemId: "item-kopi",
+            bomId: null,
+            quantity: 1,
+            uomId: "uom-cup",
+            unitPriceIdr: 35_000,
+            lineTotalIdr: 35_000,
+          },
+        ],
+        tenders: [{ method: "cash", amountIdr: 35_000, reference: null }],
+        createdAt: "2026-05-29T09:05:00.000Z",
+        voidedAt: null,
+        voidBusinessDate: null,
+        voidReason: null,
+        localVoidId: null,
+        refunds: [],
+        ...overrides,
+      };
+    }
+
+    it("hydrates the summary card from the API when Dexie misses and we are online", async () => {
+      await seedEnrolment();
+      await seedShift({ businessDate: "2026-05-29" });
+      setNavigatorOnLine(true);
+      stubFetch(
+        async () =>
+          new Response(JSON.stringify(remoteSaleBody()), {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          }),
+      );
+      renderScreen();
+
+      const input = await screen.findByTestId("find-sale-input");
+      const user = userEvent.setup();
+      // Same-device Dexie has nothing for "cafe01" — the network fallback
+      // hits the kitchen tablet's sale at outlet-a.
+      await user.type(input, "cafe01");
+      await user.click(screen.getByTestId("find-sale-submit"));
+
+      const summary = await screen.findByTestId("find-sale-summary");
+      expect(summary).toHaveAttribute("data-local-sale-id", "018f9c1a-4b2e-7c00-b000-000000cafe01");
+      expect(screen.getByTestId("find-sale-summary-code")).toHaveTextContent("CAFE01");
+      // Reprint + void buttons are enabled because the server-sourced sale
+      // landed in Dexie as `status: "synced"` so the downstream screens
+      // can read it like a same-device hit.
+      expect(screen.getByTestId("find-sale-reprint")).not.toBeDisabled();
+      expect(screen.getByTestId("find-sale-void")).not.toBeDisabled();
+
+      // We hit the server with the normalised receiptCode and outlet
+      // scope so the route's tenant gate fires.
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      const calledUrl = String((fetchMock as ReturnType<typeof vi.fn>).mock.calls[0]?.[0] ?? "");
+      expect(calledUrl).toContain("/v1/sales");
+      expect(calledUrl).toContain("outletId=outlet-a");
+      expect(calledUrl).toContain("receiptCode=CAFE01");
+    });
+
+    it("skips the server fallback when the device is offline and still shows the dead-end", async () => {
+      await seedEnrolment();
+      await seedShift();
+      setNavigatorOnLine(false);
+      stubFetch(async () => {
+        throw new Error("fetch must not be called while offline");
+      });
+      renderScreen();
+
+      const input = await screen.findByTestId("find-sale-input");
+      const user = userEvent.setup();
+      await user.type(input, "cafe01");
+      await user.click(screen.getByTestId("find-sale-submit"));
+
+      await waitFor(() => {
+        expect(screen.getByTestId("find-sale-not-found")).toBeInTheDocument();
+      });
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it("shows the dead-end when the server returns 404", async () => {
+      await seedEnrolment();
+      await seedShift();
+      setNavigatorOnLine(true);
+      stubFetch(
+        async () =>
+          new Response(
+            JSON.stringify({
+              error: { code: "sale_not_found", message: "Struk tidak ditemukan." },
+            }),
+            { status: 404, headers: { "content-type": "application/json" } },
+          ),
+      );
+      renderScreen();
+
+      const input = await screen.findByTestId("find-sale-input");
+      const user = userEvent.setup();
+      await user.type(input, "cafe01");
+      await user.click(screen.getByTestId("find-sale-submit"));
+
+      await waitFor(() => {
+        expect(screen.getByTestId("find-sale-not-found")).toBeInTheDocument();
+      });
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+
+    it("falls back to the dead-end when the network fetch rejects", async () => {
+      await seedEnrolment();
+      await seedShift();
+      setNavigatorOnLine(true);
+      stubFetch(async () => {
+        throw new TypeError("Failed to fetch");
+      });
+      renderScreen();
+
+      const input = await screen.findByTestId("find-sale-input");
+      const user = userEvent.setup();
+      await user.type(input, "cafe01");
+      await user.click(screen.getByTestId("find-sale-submit"));
+
+      await waitFor(() => {
+        expect(screen.getByTestId("find-sale-not-found")).toBeInTheDocument();
+      });
+    });
+
+    it("prefers the same-device Dexie row without calling the server", async () => {
+      await seedEnrolment();
+      await seedShift({ businessDate: "2026-05-29" });
+      // Local row already exists for the searched code; the server must
+      // not be hit at all.
+      await seedSale("018f9c1a-4b2e-7c00-b000-000000abc123", {
+        businessDate: "2026-05-29",
+        serverSaleId: "server-sale-1",
+      });
+      setNavigatorOnLine(true);
+      stubFetch(async () => {
+        throw new Error("server must not be called on a same-device hit");
+      });
+      renderScreen();
+
+      const input = await screen.findByTestId("find-sale-input");
+      const user = userEvent.setup();
+      await user.type(input, "abc123");
+      await user.click(screen.getByTestId("find-sale-submit"));
+
+      const summary = await screen.findByTestId("find-sale-summary");
+      expect(summary).toHaveAttribute("data-local-sale-id", "018f9c1a-4b2e-7c00-b000-000000abc123");
+      expect(fetchMock).not.toHaveBeenCalled();
     });
   });
 });
