@@ -182,6 +182,27 @@ export class InMemorySalesRepository implements SalesRepository {
     return sale;
   }
 
+  async findSaleByReceiptCode(input: {
+    merchantId: string;
+    outletId: string;
+    normalizedReceiptCode: string;
+  }): Promise<Sale | null> {
+    let best: Sale | null = null;
+    for (const sale of this.sales.values()) {
+      if (sale.merchantId !== input.merchantId) continue;
+      if (sale.outletId !== input.outletId) continue;
+      if (sale.synthetic) continue;
+      const tail = sale.localSaleId.slice(-input.normalizedReceiptCode.length).toUpperCase();
+      if (tail !== input.normalizedReceiptCode) continue;
+      // Most recent createdAt wins on the rare hex collision so the cashier
+      // gets the sale a customer actually presented today, not a six-month-
+      // old replay. Hex tails of UUIDv7 give 1/16,777,216 collision odds
+      // per outlet — vanishingly rare, but deterministic ordering matters.
+      if (!best || sale.createdAt > best.createdAt) best = sale;
+    }
+    return best;
+  }
+
   async listLedger(input: ListLedgerInput): Promise<ListLedgerResult> {
     // Tenancy gate: an outlet that does not belong to the caller's merchant
     // returns an empty bucket so cross-tenant existence is indistinguishable

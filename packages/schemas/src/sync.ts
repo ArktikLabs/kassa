@@ -465,12 +465,44 @@ export const saleResponse = z
   .strict();
 export type SaleResponse = z.infer<typeof saleResponse>;
 
+/**
+ * KASA-370 — wire shape for the `receiptCode` query parameter shared by
+ * `GET /v1/sales?receiptCode=...` (cross-device find-sale fallback) and the
+ * POS-side input normaliser. Six chars of the trailing UUIDv7 hex tail,
+ * uppercased; cashier input is forgiving so the schema strips hyphens,
+ * spaces, and the leading `#` clerks sometimes prefix the code with before
+ * applying the length check.
+ */
+export const RECEIPT_CODE_LENGTH = 6;
+export const receiptCodeQueryParam = z
+  .string()
+  .min(1)
+  .max(64)
+  .transform((s) => s.replace(/[^A-Za-z0-9]/g, "").toUpperCase())
+  .pipe(
+    z.string().regex(/^[A-Z0-9]{6}$/, "receiptCode must normalise to 6 alphanumeric characters"),
+  );
+
+/**
+ * `GET /v1/sales?outletId=...` is two endpoints under one path. With
+ * `businessDate` it is the EOD-aligned day bucket lister (KASA-122); with
+ * `receiptCode` it is the cross-device find-sale fallback (KASA-370) the
+ * counter tablet hits when its same-device Dexie miss could still belong
+ * to a kitchen tablet on the same outlet. The two modes are mutually
+ * exclusive — the refine rejects both / neither so the handler can dispatch
+ * by checking `receiptCode` alone.
+ */
 export const saleListQuery = z
   .object({
     outletId: uuidV7Typed,
-    businessDate,
+    businessDate: businessDate.optional(),
+    receiptCode: receiptCodeQueryParam.optional(),
   })
-  .strict();
+  .strict()
+  .refine((q) => (q.businessDate ? 1 : 0) + (q.receiptCode ? 1 : 0) === 1, {
+    message: "exactly one of `businessDate` or `receiptCode` must be provided",
+    path: ["businessDate"],
+  });
 export type SaleListQuery = z.infer<typeof saleListQuery>;
 
 /**
