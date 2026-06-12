@@ -266,14 +266,31 @@ export function salesRoutes(deps: SalesRouteDeps) {
       {
         schema: {
           tags: ["sales"],
-          summary: "List sales for an outlet/business date",
+          summary: "List sales for an outlet/business date, or look up by receipt code",
           description:
-            "Returns every sale (including voids and refunds) recorded for " +
-            "the (merchant, outletId, businessDate) bucket. No pagination — " +
-            "the bucket key caps cardinality at one outlet's daily volume.",
+            "Two modes under one path:\n\n" +
+            "- `outletId` + `businessDate` returns every sale (including " +
+            "voids and refunds) recorded for the (merchant, outlet, day) " +
+            "bucket. No pagination — the bucket key caps cardinality at " +
+            "one outlet's daily volume.\n" +
+            "- `outletId` + `receiptCode` is the KASA-370 cross-device " +
+            "find-sale fallback. Cashier input is stripped of non-" +
+            "alphanumerics and uppercased before matching the last six " +
+            "chars of `localSaleId`. Returns the single matching sale in " +
+            "the same shape as `GET /v1/sales/{saleId}`, or 404 " +
+            "`sale_not_found` with copy `Struk tidak ditemukan.`. The " +
+            "match is outlet-scoped: a code that collides with a sibling " +
+            "outlet's sale stays a 404.\n\n" +
+            "Exactly one of `businessDate` or `receiptCode` must be " +
+            "supplied (422 otherwise).",
           response: {
-            200: saleListResponse,
+            // Dual-shape 200: the list mode returns `saleListResponse`;
+            // the receiptCode mode returns a single `saleResponse`. The
+            // Zod serializer compiler picks whichever branch matches the
+            // outgoing body.
+            200: z.union([saleListResponse, saleResponse]),
             401: errorBodySchema,
+            404: errorBodySchema,
             422: errorBodySchema,
           },
         },
@@ -285,10 +302,28 @@ export function salesRoutes(deps: SalesRouteDeps) {
           sendError(reply, 401, "unauthorized", "Merchant context is required.");
           return reply;
         }
+        if (req.query.receiptCode) {
+          const sale = await deps.service.findSaleByReceiptCode(
+            merchantId,
+            req.query.outletId,
+            req.query.receiptCode,
+          );
+          if (!sale) {
+            // id-ID copy mirrors the POS not-found panel so a cross-device
+            // fallback miss surfaces the same "Struk tidak ditemukan." line.
+            sendError(reply, 404, "sale_not_found", "Struk tidak ditemukan.");
+            return reply;
+          }
+          const body: SaleResponse = toSaleWire(sale);
+          reply.code(200).send(body);
+          return reply;
+        }
+        // saleListQuery.refine guarantees `businessDate` is present whenever
+        // `receiptCode` is not.
         const sales = await deps.service.listSalesByBusinessDate(
           merchantId,
           req.query.outletId,
-          req.query.businessDate,
+          req.query.businessDate as string,
         );
         const body: SaleListResponse = { records: sales.map(toSaleWire) };
         reply.code(200).send(body);

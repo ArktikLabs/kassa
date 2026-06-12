@@ -173,3 +173,124 @@ describe("pendingSalesRepo.findByReceiptCode (KASA-369)", () => {
     expect(await repo.findByReceiptCode("outlet-a", "999999")).toBeNull();
   });
 });
+
+describe("pendingSalesRepo.upsertSyncedFromRemote (KASA-370)", () => {
+  let fixture: Fixture;
+  beforeEach(async () => {
+    fixture = await setupFixture();
+  });
+  afterEach(async () => {
+    await teardownFixture(fixture);
+  });
+
+  it("hydrates a cross-device sale as `synced` with server identifiers", async () => {
+    const repo = fixture.repos.pendingSales;
+    const row = await repo.upsertSyncedFromRemote({
+      serverSaleId: "server-sale-xyz",
+      serverSaleName: "SALE-9001",
+      localSaleId: "018f9c1a-4b2e-7c00-b000-000000cafe01",
+      outletId: "outlet-a",
+      clerkId: "kitchen-clerk",
+      businessDate: "2026-04-23",
+      createdAt: "2026-04-23T08:00:00.000Z",
+      subtotalIdr: toRupiah(40_000),
+      discountIdr: toRupiah(0),
+      totalIdr: toRupiah(40_000),
+      taxIdr: toRupiah(0),
+      items: [
+        {
+          itemId: "item-1",
+          bomId: null,
+          quantity: 2,
+          uomId: "uom-cup",
+          unitPriceIdr: toRupiah(20_000),
+          lineTotalIdr: toRupiah(40_000),
+        },
+      ],
+      tenders: [{ method: "cash", amountIdr: toRupiah(40_000), reference: null }],
+      voidedAt: null,
+      voidBusinessDate: null,
+      voidReason: null,
+      voidLocalId: null,
+      hydratedAt: "2026-04-23T08:10:00.000Z",
+    });
+    expect(row.status).toBe("synced");
+    expect(row.serverSaleId).toBe("server-sale-xyz");
+    expect(row.serverSaleName).toBe("SALE-9001");
+    // Reading back through getById proves the row was actually persisted.
+    const persisted = await repo.getById("018f9c1a-4b2e-7c00-b000-000000cafe01");
+    expect(persisted?.status).toBe("synced");
+    expect(persisted?.clerkId).toBe("kitchen-clerk");
+  });
+
+  it("propagates the void lifecycle from the server response", async () => {
+    const repo = fixture.repos.pendingSales;
+    const row = await repo.upsertSyncedFromRemote({
+      serverSaleId: "server-sale-void",
+      serverSaleName: "SALE-9002",
+      localSaleId: "018f9c1a-4b2e-7c00-b000-000000beef02",
+      outletId: "outlet-a",
+      clerkId: "kitchen-clerk",
+      businessDate: "2026-04-23",
+      createdAt: "2026-04-23T08:00:00.000Z",
+      subtotalIdr: toRupiah(25_000),
+      discountIdr: toRupiah(0),
+      totalIdr: toRupiah(25_000),
+      items: [
+        {
+          itemId: "item-1",
+          bomId: null,
+          quantity: 1,
+          uomId: "uom-cup",
+          unitPriceIdr: toRupiah(25_000),
+          lineTotalIdr: toRupiah(25_000),
+        },
+      ],
+      tenders: [{ method: "cash", amountIdr: toRupiah(25_000), reference: null }],
+      voidedAt: "2026-04-23T09:00:00.000Z",
+      voidBusinessDate: "2026-04-23",
+      voidReason: "wrong cup",
+      voidLocalId: "void-server-1",
+      hydratedAt: "2026-04-23T09:10:00.000Z",
+    });
+    expect(row.voidedAt).toBe("2026-04-23T09:00:00.000Z");
+    expect(row.voidReason).toBe("wrong cup");
+  });
+
+  it("leaves an in-flight outbox row alone so the drain still owns the push", async () => {
+    const repo = fixture.repos.pendingSales;
+    // A `queued` outbox row already exists locally — the cashier rang it
+    // moments before checking find-sale. The cross-device hydration must
+    // not flip it to synced or overwrite its payload; only the void mirror
+    // is allowed to advance, so the summary card reflects the server's
+    // canonical void state when the kitchen device confirmed the void.
+    await repo.enqueue(
+      makeSale({
+        localSaleId: "018f9c1a-4b2e-7c00-b000-000000abc123",
+        clerkId: "counter-clerk",
+      }),
+    );
+    const row = await repo.upsertSyncedFromRemote({
+      serverSaleId: "server-sale-keep",
+      serverSaleName: "SALE-9999",
+      localSaleId: "018f9c1a-4b2e-7c00-b000-000000abc123",
+      outletId: "outlet-a",
+      clerkId: "kitchen-clerk", // server's clerk; must NOT overwrite the local one
+      businessDate: "2026-04-23",
+      createdAt: "2026-04-23T08:00:00.000Z",
+      subtotalIdr: toRupiah(10_000),
+      discountIdr: toRupiah(0),
+      totalIdr: toRupiah(10_000),
+      items: [],
+      tenders: [],
+      voidedAt: "2026-04-23T09:00:00.000Z",
+      voidBusinessDate: "2026-04-23",
+      voidReason: "kitchen mistake",
+      voidLocalId: "void-server-1",
+      hydratedAt: "2026-04-23T09:10:00.000Z",
+    });
+    expect(row.status).toBe("queued"); // drain still owns it
+    expect(row.clerkId).toBe("counter-clerk"); // local payload untouched
+    expect(row.voidedAt).toBe("2026-04-23T09:00:00.000Z"); // mirror advanced
+  });
+});

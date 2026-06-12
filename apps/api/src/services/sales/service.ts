@@ -745,6 +745,30 @@ export class SalesService {
   }
 
   /**
+   * KASA-370 — cross-device find-sale fallback. Returns the sale whose
+   * `localSaleId` ends with `normalizedReceiptCode` (uppercased hex tail)
+   * scoped to (merchantId, outletId), or null if there is no match. The
+   * receipt code is the cashier-visible last six chars of the UUIDv7 random
+   * tail; the route handler normalises cashier input through the schema's
+   * strip/uppercase transform before reaching here so this method assumes
+   * the input is already canonicalised. Synthetic sales (KASA-151) are
+   * filtered out the same way `getSale` and `listSalesByBusinessDate` do.
+   */
+  async findSaleByReceiptCode(
+    merchantId: string,
+    outletId: string,
+    normalizedReceiptCode: string,
+  ): Promise<Sale | null> {
+    const sale = await this.repository.findSaleByReceiptCode({
+      merchantId,
+      outletId,
+      normalizedReceiptCode,
+    });
+    if (!sale || sale.synthetic) return null;
+    return sale;
+  }
+
+  /**
    * Read-side accessor used by `GET /v1/sales?outletId=&businessDate=`. The
    * acceptance suite uses this to assert "all 50 sales are present
    * server-side with matching totals" after the offline outbox drains.

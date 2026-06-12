@@ -497,3 +497,196 @@ describe("GET /v1/sales", () => {
     expect(a2?.voidedAt).toBeNull();
   });
 });
+
+/*
+ * KASA-370 — cross-device find-sale fallback. The same `GET /v1/sales`
+ * route accepts `(outletId, receiptCode)` instead of `(outletId,
+ * businessDate)` and returns the single matching sale (same shape as
+ * `GET /v1/sales/{saleId}`) or 404 `sale_not_found`. The match is the
+ * cashier-visible last six chars of `localSaleId`, normalised via the
+ * schema's strip/uppercase transform, scoped to the caller's merchant +
+ * the provided outletId.
+ */
+describe("GET /v1/sales?receiptCode= (KASA-370 cross-device find-sale)", () => {
+  let fixture: Fixture;
+
+  beforeEach(async () => {
+    fixture = await buildFixture();
+  });
+
+  afterAll(async () => {
+    await fixture.app.close();
+  });
+
+  // saleA1 / saleA2 in `buildFixture` are submitted with localSaleIds
+  // `01929b2d-1e01-7f00-80aa-000000000001` and `…02`, so the cashier-
+  // visible receipt codes are the last six hex chars uppercased.
+  // (saleA2's code, "000002", is exercised inline via "#00 00-02" so the
+  // normaliser proof lives next to its assertion, not in a constant.)
+  const RECEIPT_CODE_A1 = "000001";
+  const RECEIPT_CODE_B1 = "000003"; // cross-outlet
+  const RECEIPT_CODE_A1Y = "000004"; // a1y was on outlet A yesterday
+
+  it("rejects missing merchant context with 401", async () => {
+    const res = await fixture.app.inject({
+      method: "GET",
+      url: `/v1/sales?outletId=${OUTLET_A}&receiptCode=${RECEIPT_CODE_A1}`,
+    });
+    expect(res.statusCode).toBe(401);
+    expect(res.json()).toMatchObject({ error: { code: "unauthorized" } });
+  });
+
+  it("returns 422 when neither businessDate nor receiptCode is supplied", async () => {
+    const res = await fixture.app.inject({
+      method: "GET",
+      url: `/v1/sales?outletId=${OUTLET_A}`,
+      headers: { "x-kassa-merchant-id": MERCHANT },
+    });
+    expect(res.statusCode).toBe(422);
+    expect(res.json()).toMatchObject({ error: { code: "validation_error" } });
+  });
+
+  it("returns 422 when both businessDate and receiptCode are supplied", async () => {
+    const res = await fixture.app.inject({
+      method: "GET",
+      url: `/v1/sales?outletId=${OUTLET_A}&businessDate=2026-04-24&receiptCode=${RECEIPT_CODE_A1}`,
+      headers: { "x-kassa-merchant-id": MERCHANT },
+    });
+    expect(res.statusCode).toBe(422);
+    expect(res.json()).toMatchObject({ error: { code: "validation_error" } });
+  });
+
+  it("returns 422 when the normalised receiptCode is not 6 chars", async () => {
+    const res = await fixture.app.inject({
+      method: "GET",
+      url: `/v1/sales?outletId=${OUTLET_A}&receiptCode=abc`,
+      headers: { "x-kassa-merchant-id": MERCHANT },
+    });
+    expect(res.statusCode).toBe(422);
+    expect(res.json()).toMatchObject({ error: { code: "validation_error" } });
+  });
+
+  it("returns the matching sale in the same shape as GET /v1/sales/{saleId}", async () => {
+    const res = await fixture.app.inject({
+      method: "GET",
+      url: `/v1/sales?outletId=${OUTLET_A}&receiptCode=${RECEIPT_CODE_A1}`,
+      headers: { "x-kassa-merchant-id": MERCHANT },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json() as {
+      saleId: string;
+      outletId: string;
+      businessDate: string;
+      totalIdr: number;
+      items: { itemId: string; quantity: number }[];
+      tenders: { method: string; amountIdr: number }[];
+      voidedAt: string | null;
+      refunds: unknown[];
+    };
+    expect(body.saleId).toBe(fixture.saleA1);
+    expect(body.outletId).toBe(OUTLET_A);
+    expect(body.businessDate).toBe("2026-04-24");
+    expect(body.totalIdr).toBe(50_000);
+    expect(body.items[0]).toMatchObject({ itemId: ITEM_COFFEE, quantity: 2 });
+    expect(body.tenders[0]).toMatchObject({ method: "cash", amountIdr: 50_000 });
+    expect(body.voidedAt).toBeNull();
+    expect(body.refunds).toEqual([]);
+  });
+
+  it("normalises cashier input (lowercase, hyphens, spaces, leading #) before matching", async () => {
+    // saleA2's receipt code is `000002`. Cashiers commonly type it as
+    // `#000-002` or `00 00 02`; the schema strips non-alphanumerics and
+    // uppercases before the match.
+    const res = await fixture.app.inject({
+      method: "GET",
+      url: `/v1/sales?outletId=${OUTLET_A}&receiptCode=${encodeURIComponent("#00 00-02")}`,
+      headers: { "x-kassa-merchant-id": MERCHANT },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json() as { saleId: string };
+    expect(body.saleId).toBe(fixture.saleA2);
+  });
+
+  it("404s when the receiptCode matches a sale on a sibling outlet", async () => {
+    // RECEIPT_CODE_B1 is the code printed by outlet B's slip. Requesting
+    // it scoped to outlet A must NOT cross tenants: the cashier sees the
+    // same id-ID `Struk tidak ditemukan.` as if the code was never issued.
+    const res = await fixture.app.inject({
+      method: "GET",
+      url: `/v1/sales?outletId=${OUTLET_A}&receiptCode=${RECEIPT_CODE_B1}`,
+      headers: { "x-kassa-merchant-id": MERCHANT },
+    });
+    expect(res.statusCode).toBe(404);
+    const body = res.json() as { error: { code: string; message: string } };
+    expect(body.error.code).toBe("sale_not_found");
+    expect(body.error.message).toBe("Struk tidak ditemukan.");
+  });
+
+  it("404s when the receiptCode matches a sale belonging to a different merchant", async () => {
+    // Cross-tenant: a foreign merchant calling outlet A's code sees the
+    // same 404 as a genuinely missing code (no existence leak).
+    const res = await fixture.app.inject({
+      method: "GET",
+      url: `/v1/sales?outletId=${OUTLET_A}&receiptCode=${RECEIPT_CODE_A1}`,
+      headers: { "x-kassa-merchant-id": OTHER_MERCHANT },
+    });
+    expect(res.statusCode).toBe(404);
+    expect(res.json()).toMatchObject({ error: { code: "sale_not_found" } });
+  });
+
+  it("404s when no sale has the requested receiptCode", async () => {
+    const res = await fixture.app.inject({
+      method: "GET",
+      url: `/v1/sales?outletId=${OUTLET_A}&receiptCode=ZZZZZZ`,
+      headers: { "x-kassa-merchant-id": MERCHANT },
+    });
+    expect(res.statusCode).toBe(404);
+    expect(res.json()).toMatchObject({ error: { code: "sale_not_found" } });
+  });
+
+  it("finds sales irrespective of businessDate (so yesterday's slips still reprint)", async () => {
+    // saleA1Yesterday belongs to outlet A on 2026-04-23. The receipt code
+    // lookup is not bucketed by day — a customer walking in tomorrow with
+    // today's slip can still find it.
+    const res = await fixture.app.inject({
+      method: "GET",
+      url: `/v1/sales?outletId=${OUTLET_A}&receiptCode=${RECEIPT_CODE_A1Y}`,
+      headers: { "x-kassa-merchant-id": MERCHANT },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json() as { saleId: string; businessDate: string };
+    expect(body.saleId).toBe(fixture.saleA1Yesterday);
+    expect(body.businessDate).toBe("2026-04-23");
+  });
+
+  it("reflects void lifecycle on the looked-up sale", async () => {
+    await fixture.app.inject({
+      method: "POST",
+      url: `/v1/sales/${fixture.saleA1}/void`,
+      headers: { "x-kassa-merchant-id": MERCHANT, "content-type": "application/json" },
+      payload: {
+        localVoidId: "01929d00-0001-7000-8000-000000000003",
+        managerStaffId: "77777777-7777-7777-8777-777777777701",
+        managerPin: "1234",
+        voidedAt: "2026-04-24T09:30:00+07:00",
+        voidBusinessDate: "2026-04-24",
+        reason: "wrong cup",
+      },
+    });
+
+    const res = await fixture.app.inject({
+      method: "GET",
+      url: `/v1/sales?outletId=${OUTLET_A}&receiptCode=${RECEIPT_CODE_A1}`,
+      headers: { "x-kassa-merchant-id": MERCHANT },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json() as {
+      saleId: string;
+      voidedAt: string | null;
+      voidReason: string | null;
+    };
+    expect(body.saleId).toBe(fixture.saleA1);
+    expect(body.voidedAt).toBe("2026-04-24T09:30:00+07:00");
+    expect(body.voidReason).toBe("wrong cup");
+  });
+});

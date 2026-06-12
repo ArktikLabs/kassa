@@ -164,3 +164,114 @@ test.describe("KASA-369 find past sale by receipt code", () => {
     await expect(page.getByTestId("find-sale-void-blocked")).toBeVisible();
   });
 });
+
+/*
+ * KASA-370 — cross-device server fallback. The kitchen tablet rang the
+ * sale; the counter tablet has no Dexie row for the receipt code. While
+ * online, `/find-sale` falls back to `GET /v1/sales?receiptCode=…`. We
+ * stub the route via `page.route` so the smoke spec stays harness-free
+ * (the in-memory API runs only under `playwright.full-day-offline.config.ts`).
+ */
+test.describe("KASA-370 cross-device find-sale fallback", () => {
+  const REMOTE_SALE_LOCAL_ID = "018f9c1a-4b2e-7c00-b000-000000cafe01";
+  const REMOTE_RECEIPT_CODE = "CAFE01";
+
+  test("server lookup hydrates the summary card from the kitchen tablet's sale", async ({
+    page,
+  }) => {
+    let calls = 0;
+    let lastUrl = "";
+    await page.route("**/v1/sales*", async (route) => {
+      const url = new URL(route.request().url());
+      // Only intercept the receiptCode variant — the existing list/get
+      // routes must reach the server, even though the smoke config has
+      // none (the test itself doesn't navigate to them, so a 404 is OK).
+      if (!url.searchParams.has("receiptCode")) return route.fallback();
+      calls += 1;
+      lastUrl = url.toString();
+      const body = {
+        saleId: "11111111-1111-7111-8111-111111111111",
+        name: "POS-SALE-X1",
+        localSaleId: REMOTE_SALE_LOCAL_ID,
+        outletId: OUTLET_ID,
+        clerkId: "kitchen-clerk",
+        // Match the seeded shift_state's businessDate so the void CTA
+        // stays enabled — the eligibility gate only allows voids on the
+        // current open shift's day.
+        businessDate: "2026-04-23",
+        subtotalIdr: 35_000,
+        discountIdr: 0,
+        totalIdr: 35_000,
+        taxIdr: 0,
+        items: [
+          {
+            itemId: ITEM_ID,
+            bomId: null,
+            quantity: 1,
+            uomId: UOM_ID,
+            unitPriceIdr: 35_000,
+            lineTotalIdr: 35_000,
+          },
+        ],
+        tenders: [{ method: "cash", amountIdr: 35_000, reference: null }],
+        createdAt: "2026-04-23T09:05:00.000Z",
+        voidedAt: null,
+        voidBusinessDate: null,
+        voidReason: null,
+        localVoidId: null,
+        refunds: [],
+      };
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(body),
+      });
+    });
+
+    await seedEnrolledDevice(page, { outletId: OUTLET_ID, itemId: ITEM_ID, uomId: UOM_ID });
+
+    await page.goto("/find-sale");
+    await expect(page.getByTestId("find-sale-screen")).toBeVisible();
+
+    // Counter tablet has no Dexie row for the kitchen sale, so the
+    // submit must fall through to the server.
+    await page.getByTestId("find-sale-input").fill(REMOTE_RECEIPT_CODE);
+    await page.getByTestId("find-sale-submit").click();
+
+    const summary = page.getByTestId("find-sale-summary");
+    await expect(summary).toBeVisible();
+    await expect(summary).toHaveAttribute("data-local-sale-id", REMOTE_SALE_LOCAL_ID);
+    await expect(page.getByTestId("find-sale-summary-code")).toHaveText(REMOTE_RECEIPT_CODE);
+    await expect(page.getByTestId("find-sale-summary-confirmed")).toBeVisible();
+    // Reprint + Void resolve through Dexie, which the fallback hydrated;
+    // the downstream screens can read the sale just like a same-device hit.
+    await expect(page.getByTestId("find-sale-reprint")).toBeEnabled();
+    await expect(page.getByTestId("find-sale-void")).toBeEnabled();
+
+    expect(calls).toBe(1);
+    expect(lastUrl).toContain(`outletId=${OUTLET_ID}`);
+    expect(lastUrl).toContain(`receiptCode=${REMOTE_RECEIPT_CODE}`);
+  });
+
+  test("server 404 surfaces the same id-ID dead-end the offline branch shows", async ({ page }) => {
+    await page.route("**/v1/sales*", async (route) => {
+      const url = new URL(route.request().url());
+      if (!url.searchParams.has("receiptCode")) return route.fallback();
+      await route.fulfill({
+        status: 404,
+        contentType: "application/json",
+        body: JSON.stringify({
+          error: { code: "sale_not_found", message: "Struk tidak ditemukan." },
+        }),
+      });
+    });
+
+    await seedEnrolledDevice(page, { outletId: OUTLET_ID, itemId: ITEM_ID, uomId: UOM_ID });
+
+    await page.goto("/find-sale");
+    await page.getByTestId("find-sale-input").fill(REMOTE_RECEIPT_CODE);
+    await page.getByTestId("find-sale-submit").click();
+    await expect(page.getByTestId("find-sale-not-found")).toBeVisible();
+    await expect(page.getByTestId("find-sale-summary")).toHaveCount(0);
+  });
+});

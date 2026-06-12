@@ -1,5 +1,5 @@
 /*
- * KASA-369 — find a past sale by receipt code at the counter.
+ * KASA-369 / KASA-370 — find a past sale by receipt code at the counter.
  *
  * Real-warung context: a customer returns 20-40 minutes after their
  * purchase asking to void or reprint. The post-sale `/receipt/$id`
@@ -11,20 +11,24 @@
  *
  * Lookup is Dexie-first: every sale the device has touched (including
  * `synced` rows we keep for reprints) lives in `pending_sales`, scoped
- * by outletId so a multi-outlet device can never cross tenants. We do
- * not call the server in v0 — a fresh tablet with no outbox history
- * cannot resolve a code printed by a different device yet; the issue's
- * AC list only requires the same-device flow and we surface a clear
- * "not found" panel for the cross-device case (clerk falls back to the
- * back office reconciliation flow, which the panel links to).
+ * by outletId so a multi-outlet device can never cross tenants. On a
+ * same-device miss we drop to the KASA-370 server fallback
+ * (`GET /v1/sales?outletId=&receiptCode=`) when the device is online,
+ * so a kitchen-tablet sale resolves at the counter tablet too. The
+ * server response is upserted into Dexie as a `synced` row so the
+ * downstream reprint / void screens (which read from Dexie) can act
+ * on a cross-device sale the same way they would on a same-device hit.
+ * When offline, the not-found dead-end stays — the back-office
+ * reconciliation flow is still the right escape hatch in that case.
  */
 
 import { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { FormattedDate, FormattedMessage, FormattedTime, useIntl } from "react-intl";
-import { formatIdr } from "../../shared/money/index.ts";
+import { formatIdr, toRupiah } from "../../shared/money/index.ts";
 import { getDatabase, type Database } from "../../data/db/index.ts";
 import type { PendingSale, ShiftState } from "../../data/db/types.ts";
+import { findRemoteSaleByReceiptCode, SalesLookupApiError } from "../../data/api/sales.ts";
 import {
   getSnapshot,
   hydrateEnrolment,
@@ -33,15 +37,21 @@ import {
 } from "../../lib/enrolment";
 import { canVoidSale, computeEligibility } from "../sale/SaleVoidScreen.tsx";
 import { normalizeReceiptCode, receiptCodeFor, RECEIPT_CODE_LENGTH } from "./receiptCode.ts";
+import type { RemoteSyncedSale } from "../../data/db/pending-sales.ts";
+import type { SaleResponse } from "@kassa/schemas";
 
 /**
  * Search lifecycle. `idle` is the empty form; `searching` covers the
- * Dexie round-trip (UI shows a busy hint); `found` renders the summary
- * card; `not_found` shows the id-ID dead-end with a retry affordance.
+ * Dexie round-trip; `searching_remote` is the KASA-370 cross-device
+ * server call kicked off after a same-device miss while online (the
+ * UI keeps the busy hint so the cashier can't double-submit); `found`
+ * renders the summary card; `not_found` shows the id-ID dead-end with
+ * a retry affordance.
  */
 export type FindSaleState =
   | { kind: "idle" }
   | { kind: "searching" }
+  | { kind: "searching_remote" }
   | { kind: "found"; sale: PendingSale; shift: ShiftState | null }
   | { kind: "not_found"; code: string };
 
@@ -55,6 +65,7 @@ export function reduceFindSale(
   _prev: FindSaleState,
   event:
     | { type: "submit" }
+    | { type: "submit_remote" }
     | { type: "found"; sale: PendingSale; shift: ShiftState | null }
     | { type: "not_found"; code: string }
     | { type: "reset" },
@@ -62,6 +73,8 @@ export function reduceFindSale(
   switch (event.type) {
     case "submit":
       return { kind: "searching" };
+    case "submit_remote":
+      return { kind: "searching_remote" };
     case "found":
       return { kind: "found", sale: event.sale, shift: event.shift };
     case "not_found":
@@ -69,6 +82,80 @@ export function reduceFindSale(
     case "reset":
       return { kind: "idle" };
   }
+}
+
+/**
+ * Cheap, side-effect-free read of `navigator.onLine`. We intentionally
+ * do not use `useConnectionState()` here: the cashier just hit Submit,
+ * we want the freshest signal, and a stale "online" reading from the
+ * 30 s health probe would lock us out of the offline branch when the
+ * device flipped to offline a few seconds ago. SSR (no `navigator`)
+ * resolves to true so vitest does not need to stub the global; the
+ * server fallback then exercises through `fetchImpl`.
+ */
+function isOnlineNow(): boolean {
+  if (typeof navigator === "undefined") return true;
+  return navigator.onLine !== false;
+}
+
+/**
+ * Translate the server `saleResponse` envelope into the local Dexie
+ * shape the find-sale flow hydrates with. `taxIdr` may be absent on
+ * pre-KASA-218 servers; the optional pass-through preserves the
+ * `PendingSale` schema invariant of "absent vs zero" so reprints don't
+ * break out a misleading PPN line.
+ */
+function remoteSaleToRemoteSyncedSale(sale: SaleResponse, hydratedAt: string): RemoteSyncedSale {
+  const base: RemoteSyncedSale = {
+    serverSaleId: sale.saleId,
+    serverSaleName: sale.name,
+    localSaleId: sale.localSaleId,
+    outletId: sale.outletId,
+    clerkId: sale.clerkId,
+    businessDate: sale.businessDate,
+    createdAt: sale.createdAt,
+    subtotalIdr: toRupiah(sale.subtotalIdr),
+    discountIdr: toRupiah(sale.discountIdr),
+    totalIdr: toRupiah(sale.totalIdr),
+    items: sale.items.map((line) => ({
+      itemId: line.itemId,
+      bomId: line.bomId,
+      quantity: line.quantity,
+      uomId: line.uomId,
+      unitPriceIdr: toRupiah(line.unitPriceIdr),
+      lineTotalIdr: toRupiah(line.lineTotalIdr),
+    })),
+    // `synthetic` is a KASA-71 server-only probe and is filtered out by
+    // the sales service before the route reads it (`service.getSale` /
+    // `findSaleByReceiptCode` skip `sale.synthetic`), so a real find-sale
+    // hit can only carry the five UI-visible methods. We still drop any
+    // stray "synthetic" tender defensively so a future server bug never
+    // surfaces a probe transaction on the cashier's screen.
+    tenders: sale.tenders
+      .filter(
+        (
+          tender,
+        ): tender is typeof tender & { method: Exclude<typeof tender.method, "synthetic"> } =>
+          tender.method !== "synthetic",
+      )
+      .map((tender) => ({
+        method: tender.method,
+        amountIdr: toRupiah(tender.amountIdr),
+        reference: tender.reference,
+        ...(tender.verified !== undefined ? { verified: tender.verified } : {}),
+        ...(tender.buyerRefLast4 !== undefined ? { buyerRefLast4: tender.buyerRefLast4 } : {}),
+      })),
+    voidedAt: sale.voidedAt,
+    voidBusinessDate: sale.voidBusinessDate,
+    voidReason: sale.voidReason,
+    voidLocalId: sale.localVoidId,
+    hydratedAt,
+  };
+  // Pre-KASA-218 servers may omit `taxIdr`; spread it in only when present
+  // so `exactOptionalPropertyTypes` stays happy and the reprint screen does
+  // not surface a misleading PPN line.
+  if (sale.taxIdr !== undefined) base.taxIdr = toRupiah(sale.taxIdr);
+  return base;
 }
 
 export function FindSaleScreen() {
@@ -102,6 +189,10 @@ export function FindSaleScreen() {
   }, []);
 
   const outletId = snapshot.state === "enrolled" ? snapshot.device.outlet.id : null;
+  const auth =
+    snapshot.state === "enrolled"
+      ? { apiKey: snapshot.device.apiKey, apiSecret: snapshot.device.apiSecret }
+      : null;
 
   const handleSubmit = useCallback(
     async (event: React.FormEvent<HTMLFormElement>) => {
@@ -114,16 +205,51 @@ export function FindSaleScreen() {
       }
       setFormatError(null);
       setState({ kind: "searching" });
-      const sale = await db.repos.pendingSales.findByReceiptCode(outletId, code);
-      if (!sale) {
+      const localHit = await db.repos.pendingSales.findByReceiptCode(outletId, code);
+      const shiftRow = await db.repos.shiftState.get();
+      const shift = shiftRow && shiftRow.closedAt === null ? shiftRow : null;
+      if (localHit) {
+        setState({ kind: "found", sale: localHit, shift });
+        return;
+      }
+      // KASA-370 — same-device miss. While offline, surface the existing
+      // dead-end so the cashier reaches for the back-office reconciliation
+      // flow. While online, attempt the cross-device fallback so a sale
+      // rung on a sibling tablet at this outlet still resolves here.
+      if (!auth || !isOnlineNow()) {
         setState({ kind: "not_found", code });
         return;
       }
-      const shiftRow = await db.repos.shiftState.get();
-      const shift = shiftRow && shiftRow.closedAt === null ? shiftRow : null;
-      setState({ kind: "found", sale, shift });
+      setState({ kind: "searching_remote" });
+      let remote: SaleResponse | null = null;
+      try {
+        remote = await findRemoteSaleByReceiptCode({
+          outletId,
+          receiptCode: code,
+          auth,
+        });
+      } catch (err) {
+        // network / 4xx / 5xx all collapse to the same dead-end. We
+        // intentionally do not surface a separate "API error" panel —
+        // the cashier's next move (back-office reconciliation) is the
+        // same regardless of why the lookup failed, and adding a third
+        // failure variant would only slow down the recovery flow.
+        if (err instanceof SalesLookupApiError) {
+          setState({ kind: "not_found", code });
+          return;
+        }
+        throw err;
+      }
+      if (!remote) {
+        setState({ kind: "not_found", code });
+        return;
+      }
+      const hydrated = await db.repos.pendingSales.upsertSyncedFromRemote(
+        remoteSaleToRemoteSyncedSale(remote, new Date().toISOString()),
+      );
+      setState({ kind: "found", sale: hydrated, shift });
     },
-    [db, input, intl, outletId],
+    [auth, db, input, intl, outletId],
   );
 
   const handleReset = useCallback(() => {
@@ -219,17 +345,21 @@ export function FindSaleScreen() {
         <div className="flex gap-2">
           <button
             type="submit"
-            disabled={state.kind === "searching" || input.length === 0}
+            disabled={
+              state.kind === "searching" || state.kind === "searching_remote" || input.length === 0
+            }
             data-testid="find-sale-submit"
             className={[
               "h-12 flex-1 rounded-md text-base font-semibold",
               "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-600 focus-visible:ring-offset-2 focus-visible:ring-offset-white",
-              state.kind === "searching" || input.length === 0
+              state.kind === "searching" || state.kind === "searching_remote" || input.length === 0
                 ? "bg-neutral-200 text-neutral-500"
                 : "bg-primary-600 text-white active:bg-primary-700",
             ].join(" ")}
           >
-            {state.kind === "searching" ? (
+            {state.kind === "searching_remote" ? (
+              <FormattedMessage id="findSale.cta.searchingRemote" />
+            ) : state.kind === "searching" ? (
               <FormattedMessage id="findSale.cta.searching" />
             ) : (
               <FormattedMessage id="findSale.cta" />

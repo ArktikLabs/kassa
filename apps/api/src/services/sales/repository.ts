@@ -111,6 +111,22 @@ export interface SalesRepository {
    */
   findSaleById(merchantId: string, saleId: string): Promise<Sale | null>;
   /**
+   * KASA-370 — cross-device receipt-code lookup. The POS counter tablet
+   * hits this when its local Dexie cache misses a `receiptCode` that was
+   * rung on a sibling tablet at the same outlet. `normalizedReceiptCode`
+   * is the cashier input after the schema's strip/uppercase transform —
+   * implementations match it against `slice(-RECEIPT_CODE_LENGTH)` of
+   * `localSaleId`, uppercased. Scoped to (merchantId, outletId) so a code
+   * that collides with a sibling outlet's sale is invisible. Returns null
+   * on miss. Implementations must skip `synthetic` rows so KASA-71 probe
+   * sales never surface to a real cashier.
+   */
+  findSaleByReceiptCode(input: {
+    merchantId: string;
+    outletId: string;
+    normalizedReceiptCode: string;
+  }): Promise<Sale | null>;
+  /**
    * Delta-pull the append-only stock ledger for one (merchant, outlet)
    * bucket. Ordering is `(occurredAt ASC, id ASC)`; pagination uses the
    * shared opaque page-token shape (`{a: occurredAt, i: id}`). Used by the

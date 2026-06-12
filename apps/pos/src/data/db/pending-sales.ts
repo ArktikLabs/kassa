@@ -1,3 +1,4 @@
+import type { Rupiah } from "../../shared/money/index.ts";
 import type { KassaDexie } from "./schema.ts";
 import type { PendingSale } from "./types.ts";
 
@@ -7,6 +8,35 @@ export type NewPendingSale = Omit<
 >;
 
 export type OutboxRetriableStatus = Extract<PendingSale["status"], "queued" | "error">;
+
+/**
+ * KASA-370 — payload for hydrating a sale fetched from `GET /v1/sales?
+ * receiptCode=…`. Mirrors the server `saleResponse` envelope but typed
+ * locally so the repo stays decoupled from `@kassa/schemas` at runtime.
+ * `hydratedAt` is the wall-clock when the response landed and feeds
+ * `lastAttemptAt` so the row carries the same audit shape as a normal
+ * `markSynced` outcome.
+ */
+export interface RemoteSyncedSale {
+  serverSaleId: string;
+  serverSaleName: string | null;
+  localSaleId: string;
+  outletId: string;
+  clerkId: string;
+  businessDate: string;
+  createdAt: string;
+  subtotalIdr: Rupiah;
+  discountIdr: Rupiah;
+  totalIdr: Rupiah;
+  taxIdr?: Rupiah;
+  items: readonly PendingSale["items"][number][];
+  tenders: readonly PendingSale["tenders"][number][];
+  voidedAt: string | null;
+  voidBusinessDate: string | null;
+  voidReason: string | null;
+  voidLocalId: string | null;
+  hydratedAt: string;
+}
 
 export interface PendingSalesRepo {
   enqueue(sale: NewPendingSale): Promise<PendingSale>;
@@ -38,6 +68,19 @@ export interface PendingSalesRepo {
    * (≤ a few hundred rows per shift) so the linear scan stays cheap.
    */
   findByReceiptCode(outletId: string, receiptCode: string): Promise<PendingSale | null>;
+  /**
+   * KASA-370 — cross-device find-sale hydration. The counter tablet calls
+   * this after a same-device Dexie miss + a successful server lookup
+   * (`GET /v1/sales?receiptCode=…`) so the resulting summary card, the
+   * reprint screen, and the manager-PIN void flow can all read the sale
+   * out of Dexie just like a same-device hit. The row is written with
+   * `status: "synced"` and the server's canonical identifiers so the
+   * outbox drain never picks it up. Idempotent on `localSaleId` — repeat
+   * hydrations during the same find-sale session are safe; an existing
+   * row with a queued outbox attempt is left as-is so we never overwrite
+   * an in-flight push.
+   */
+  upsertSyncedFromRemote(input: RemoteSyncedSale): Promise<PendingSale>;
   listAll(): Promise<PendingSale[]>;
   /** Count of outbox rows the drain still owes the server. */
   countOutstanding(): Promise<number>;
@@ -136,6 +179,52 @@ export function pendingSalesRepo(db: KassaDexie): PendingSalesRepo {
         if (row.localSaleId.slice(-6).toUpperCase() === normalized) return row;
       }
       return null;
+    },
+    async upsertSyncedFromRemote(input) {
+      const existing = await db.pending_sales.get(input.localSaleId);
+      // Don't blow away an in-flight outbox attempt: if the local row is
+      // still queued/sending/error, the drain owns it. We only refresh the
+      // void fields so the summary card reflects the latest server state.
+      if (
+        existing &&
+        (existing.status === "queued" ||
+          existing.status === "sending" ||
+          existing.status === "error")
+      ) {
+        await db.pending_sales.update(input.localSaleId, {
+          voidedAt: input.voidedAt,
+          voidBusinessDate: input.voidBusinessDate,
+          voidReason: input.voidReason,
+          voidLocalId: input.voidLocalId,
+        });
+        const refreshed = await db.pending_sales.get(input.localSaleId);
+        if (refreshed) return refreshed;
+      }
+      const row: PendingSale = {
+        localSaleId: input.localSaleId,
+        outletId: input.outletId,
+        clerkId: input.clerkId,
+        businessDate: input.businessDate,
+        createdAt: input.createdAt,
+        subtotalIdr: input.subtotalIdr,
+        discountIdr: input.discountIdr,
+        totalIdr: input.totalIdr,
+        items: input.items.map((line) => ({ ...line })),
+        tenders: input.tenders.map((tender) => ({ ...tender })),
+        status: "synced",
+        attempts: existing?.attempts ?? 0,
+        lastError: null,
+        lastAttemptAt: input.hydratedAt,
+        serverSaleName: input.serverSaleName,
+        serverSaleId: input.serverSaleId,
+        voidedAt: input.voidedAt,
+        voidBusinessDate: input.voidBusinessDate,
+        voidReason: input.voidReason,
+        voidLocalId: input.voidLocalId,
+      };
+      if (input.taxIdr !== undefined) row.taxIdr = input.taxIdr;
+      await db.pending_sales.put(row);
+      return row;
     },
     listAll() {
       return db.pending_sales.orderBy("createdAt").toArray();
