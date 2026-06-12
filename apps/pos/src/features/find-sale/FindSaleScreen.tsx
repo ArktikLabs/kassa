@@ -85,13 +85,6 @@ export function reduceFindSale(
 }
 
 /**
- * Translate the server `saleResponse` envelope into the local Dexie
- * shape the find-sale flow hydrates with. `taxIdr` may be absent on
- * pre-KASA-218 servers; the optional pass-through preserves the
- * `PendingSale` schema invariant of "absent vs zero" so reprints don't
- * break out a misleading PPN line.
- */
-/**
  * Cheap, side-effect-free read of `navigator.onLine`. We intentionally
  * do not use `useConnectionState()` here: the cashier just hit Submit,
  * we want the freshest signal, and a stale "online" reading from the
@@ -105,6 +98,13 @@ function isOnlineNow(): boolean {
   return navigator.onLine !== false;
 }
 
+/**
+ * Translate the server `saleResponse` envelope into the local Dexie
+ * shape the find-sale flow hydrates with. `taxIdr` may be absent on
+ * pre-KASA-218 servers; the optional pass-through preserves the
+ * `PendingSale` schema invariant of "absent vs zero" so reprints don't
+ * break out a misleading PPN line.
+ */
 function remoteSaleToRemoteSyncedSale(sale: SaleResponse, hydratedAt: string): RemoteSyncedSale {
   const base: RemoteSyncedSale = {
     serverSaleId: sale.saleId,
