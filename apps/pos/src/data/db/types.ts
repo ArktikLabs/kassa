@@ -288,6 +288,41 @@ export function stockSnapshotKey(outletId: string, itemId: string): string {
   return `${outletId}::${itemId}`;
 }
 
+/**
+ * KASA-366 — clerk-parked cart waiting to be resumed.
+ *
+ * Warung clerks routinely get interrupted mid-order. A "park" action
+ * snapshots the in-progress cart into Dexie under a clerk-supplied label
+ * ("Meja 3", "Bapak Ali") and clears the active cart so the next customer
+ * can be rung up immediately. Parked rows are local-only — they never
+ * round-trip to the server because they don't represent a sale.
+ *
+ * Rows are scoped to `(outletId, localShiftId)` so the parked tray
+ * follows the shift lifecycle: the tray is auto-cleared on shift close,
+ * and a parked cart from a previous shift cannot leak into the new one.
+ */
+export interface ParkedSaleLine {
+  itemId: string;
+  name: string;
+  unitPriceIdr: Rupiah;
+  quantity: number;
+  lineTotalIdr: Rupiah;
+}
+
+export interface ParkedSale {
+  /** Primary key. Client-stamped uuidv7. */
+  id: string;
+  outletId: string;
+  /** Ties the row to the shift that produced it; cleared on shift close. */
+  localShiftId: string;
+  cashierStaffId: string;
+  /** Clerk-supplied free-text label. Trimmed and length-limited at write time. */
+  label: string;
+  lines: readonly ParkedSaleLine[];
+  discountIdr: Rupiah;
+  parkedAt: string;
+}
+
 export function eodClosureKey(outletId: string, businessDate: string): string {
   return `${outletId}::${businessDate}`;
 }

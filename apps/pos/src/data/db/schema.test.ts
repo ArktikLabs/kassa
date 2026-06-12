@@ -57,7 +57,7 @@ describe("KassaDexie schema", () => {
   });
 
   it("migrates from an empty database to the current schema version", async () => {
-    expect(fixture.db.verno).toBe(6);
+    expect(fixture.db.verno).toBe(7);
     const tableNames = fixture.db.tables.map((t) => t.name).sort();
     expect(tableNames).toEqual(
       [
@@ -67,6 +67,7 @@ describe("KassaDexie schema", () => {
         "eod_closures",
         "items",
         "outlets",
+        "parked_sales",
         "pending_catalog_mutations",
         "pending_sales",
         "pending_shift_events",
@@ -127,7 +128,7 @@ describe("KassaDexie schema", () => {
     });
 
     expect(attempts).toBe(2);
-    expect(recovered.verno).toBe(6);
+    expect(recovered.verno).toBe(7);
     await expect(recovered.items.count()).resolves.toBe(0);
     recovered.close();
     await Dexie.delete(name);
