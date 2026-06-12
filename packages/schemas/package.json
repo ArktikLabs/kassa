@@ -44,6 +44,10 @@
       "types": "./dist/reconciliation.d.ts",
       "import": "./dist/reconciliation.js"
     },
+    "./reports": {
+      "types": "./dist/reports.d.ts",
+      "import": "./dist/reports.js"
+    },
     "./shifts": {
       "types": "./dist/shifts.d.ts",
       "import": "./dist/shifts.js"
