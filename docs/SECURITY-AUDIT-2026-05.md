@@ -1,8 +1,10 @@
 # Kassa dependency security audit — 2026-05-04
 
-Status: v2 (re-audit KASA-331, 2026-05-25). Prior revisions: KASA-288 / 2026-05-18 (§7) and KASA-185 / 2026-05-04 (§§1–6). Owner: Engineer. Companion docs: [TECH-STACK.md](./TECH-STACK.md), [RUNBOOK-ONCALL.md](./RUNBOOK-ONCALL.md), [CI-CD.md](./CI-CD.md).
+Status: v3 (re-audit KASA-373, 2026-06-12). Prior revisions: KASA-331 / 2026-05-25 (§8), KASA-288 / 2026-05-18 (§7), KASA-185 / 2026-05-04 (§§1–6). Owner: Engineer. Companion docs: [TECH-STACK.md](./TECH-STACK.md), [RUNBOOK-ONCALL.md](./RUNBOOK-ONCALL.md), [CI-CD.md](./CI-CD.md).
 
-Latest re-audit (2026-05-25, origin/main `ab968a1`): production tree picked up its **first advisory** since v0 — `brace-expansion` GHSA-jxxr-4gwj-5jf2 (moderate, CVSS 6.5, CVE-2026-45149, published 2026-05-18) reaches via `@fastify/swagger-ui → @fastify/static → glob → minimatch`. Full-tree count is 2 high + 4 moderate across 908 deps. Net movement vs. KASA-288: two new moderates (`brace-expansion`, `ws`), no advisory resolutions. New remediation tracked under KASA-332 (brace-expansion override) and KASA-333 (ws override); existing KASA-187 / KASA-188 / KASA-189 unchanged. See §8 for the diff. Severity stays sub-P1 per RUNBOOK-ONCALL §1 (no prod-reachable high or critical).
+Latest re-audit (2026-06-12, origin/main `8656493`): production tree picks up its **first high-severity advisories** since v0 — two `@grpc/grpc-js@1.14.3` crash-DoS bugs (`GHSA-5375-pq7m-f5r2` + `GHSA-99f4-grh7-6pcq`, both CVSS 7.5) reach via `@opentelemetry/sdk-node → @opentelemetry/exporter-*-otlp-grpc`. Full-tree adds a new **critical** dev advisory (`GHSA-5xrq-8626-4rwp` on `vitest@3.2.4`, CVSS 9.8). Net movement vs. KASA-331: three new advisories (two prod high, one dev critical), three resolved (brace-expansion via KASA-332, ws via KASA-333, esbuild ≤0.24.2 via KASA-188). Remediation tracked under KASA-378 (`@grpc/grpc-js` override) and KASA-379 (vitest patch bump); KASA-187 / KASA-189 unchanged. See §9 for the diff. Per [RUNBOOK-ONCALL](./RUNBOOK-ONCALL.md) §1 the two prod highs are technically **P1**, but `apps/api/src/lib/otel.ts` instantiates the **OTLP/HTTP** exporter only — the gRPC client is in the tree but never `require()`d at runtime, so practical exploitability is near zero.
+
+Prior headline (KASA-331, 2026-05-25): production tree picked up its **first advisory** since v0 — `brace-expansion` GHSA-jxxr-4gwj-5jf2 (moderate, CVSS 6.5, CVE-2026-45149, published 2026-05-18) reaches via `@fastify/swagger-ui → @fastify/static → glob → minimatch`. Full-tree count was 2 high + 4 moderate across 908 deps. Net movement vs. KASA-288: two new moderates (`brace-expansion`, `ws`), no advisory resolutions. New remediation tracked under KASA-332 (brace-expansion override) and KASA-333 (ws override); existing KASA-187 / KASA-188 / KASA-189 unchanged. See §8 for the diff. Severity stayed sub-P1 per RUNBOOK-ONCALL §1 (no prod-reachable high or critical).
 
 Original v0 (2026-05-04, commit `9f4858b`) text follows below.
 
@@ -238,3 +240,115 @@ This audit ran on the routine's actual weekly cadence (KASA-288 was 2026-05-18, 
 
 - Next routine audit: **2026-06-01** (routine cadence; aligns with §5 monthly target this once).
 - Any new high or critical against `--prod` between now and then escalates to P1 per [RUNBOOK-ONCALL.md](./RUNBOOK-ONCALL.md) §1.
+
+---
+
+## 9. Re-audit log — 2026-06-12 (KASA-373)
+
+Routine audit (`Dependency and security audit`, originId `e00493d6`). Run against `origin/main` at commit `8656493` with a fresh `pnpm install --frozen-lockfile` and `NODE_ENV` unset. Workspace dependency count dropped from 908 → 885 between KASA-331 and this run, mostly from the KASA-188 esbuild-kit shim removal.
+
+### 9.1 Result summary
+
+| Scope                    | Total deps | Critical | High | Moderate | Low | Info |
+|:-------------------------|-----------:|---------:|-----:|---------:|----:|-----:|
+| `--prod` (deployed code) |        299 |        0 |    2 |        0 |   0 |    0 |
+| Full tree (incl. dev)    |        885 |        1 |    4 |        1 |   0 |    0 |
+
+**Headline.** Two new prod-reachable high advisories on `@grpc/grpc-js@1.14.3` (both CVSS 7.5) land via the OTLP gRPC exporters that ship inside `@opentelemetry/sdk-node`. Full-tree picks up a new critical (`vitest@3.2.4`, CVSS 9.8) that only fires when `vitest --ui` is exposed — which Kassa never runs. Three KASA-331 advisories are now resolved (brace-expansion via KASA-332, ws via KASA-333, esbuild ≤0.24.2 via KASA-188). The three vite-plugin-pwa-chain advisories (KASA-187) remain unchanged.
+
+Severity classification: the two prod highs are **technically P1** under [RUNBOOK-ONCALL.md](./RUNBOOK-ONCALL.md) §1, but **practical exploitability is near zero** — see §9.3 below for the reachability analysis. KASA-378 ships a precise `pnpm.overrides` pin as the durable fix. KASA-189 (CI audit gate) remains backlog; this is the **third consecutive routine audit** where it would have caught a new advisory at PR time, and the first where the slipped advisory is high-severity prod-reachable.
+
+### 9.2 Diff vs. KASA-331 (2026-05-25)
+
+| Advisory                                  | Module                                    | KASA-331 (2026-05-25) | KASA-373 (2026-06-12) | Why                                                                                                                            |
+|:------------------------------------------|:------------------------------------------|:----------------------|:----------------------|:-------------------------------------------------------------------------------------------------------------------------------|
+| GHSA-5375-pq7m-f5r2 (high, CVSS 7.5)      | `@grpc/grpc-js` 1.14.0–1.14.3              | not present           | **new (prod)**        | OTel SDK 0.218.0 pulls grpc-js 1.14.3. Reaches via `apps/api > @opentelemetry/sdk-node > @opentelemetry/exporter-*-otlp-grpc`. KASA-378 covers a precise pnpm override. |
+| GHSA-99f4-grh7-6pcq (high, CVSS 7.5)      | `@grpc/grpc-js` 1.14.0–1.14.3              | not present           | **new (prod)**        | Same path as ↑; same fix. Bundled into KASA-378.                                                                                |
+| GHSA-5xrq-8626-4rwp (critical, CVSS 9.8)  | `vitest` <3.2.6                            | not present           | **new (dev only)**    | Affects `vitest --ui` only; Kassa runs `vitest run` exclusively. Patched in 3.2.6. KASA-379 covers the bump.                     |
+| GHSA-jxxr-4gwj-5jf2 (moderate, CVSS 6.5)  | `brace-expansion` 5.0.0–5.0.5              | present (prod + dev)  | **resolved**          | KASA-332 landed the `pnpm.overrides` pin `brace-expansion@>=5.0.0 <5.0.6 → >=5.0.6`. Verified via `pnpm audit --prod`.            |
+| GHSA-58qx-3vcg-4xpx (moderate, CVSS 4.4)  | `ws` 8.0.0–8.20.0                          | present (dev only)    | **resolved**          | KASA-333 landed the `pnpm.overrides` pin `ws@>=8.0.0 <8.20.1 → >=8.20.1`.                                                        |
+| GHSA-67mh-4wv8-2f99 (moderate)            | `esbuild` ≤0.24.2                          | present (1 path)      | **resolved**          | KASA-188 landed: drizzle-kit dropped the `@esbuild-kit/*` shim. No remaining sub-0.25 esbuild paths.                            |
+| GHSA-5c6j-r48x-rmvq (high, CVSS 8.1)      | `serialize-javascript` ≤7.0.2              | present               | present               | Unchanged — `vite-plugin-pwa@0.21 > workbox-build@7.4` chain. KASA-187 closes this.                                             |
+| GHSA-qj8w-gfj5-8c6v (moderate)            | `serialize-javascript` <7.0.5              | present               | present               | Unchanged — same chain. KASA-187 closes this.                                                                                   |
+| GHSA-fv7c-fp4j-7gwp (high, CVSS 8.2)      | `@babel/plugin-transform-modules-systemjs` | present               | present               | Unchanged — same `vite-plugin-pwa@0.21 > workbox-build@7.4 > @babel/preset-env` chain. KASA-187 closes this.                    |
+
+### 9.3 GHSA-5375-pq7m-f5r2 + GHSA-99f4-grh7-6pcq — `@grpc/grpc-js` (high, CVSS 7.5, prod-reachable)
+
+Two distinct advisories in the same patch: `@grpc/grpc-js@1.14.0–1.14.3` crashes on a malformed gRPC request (GHSA-5375-pq7m-f5r2) and on a malformed compressed message (GHSA-99f4-grh7-6pcq). Both are denial-of-service via uncaught exception. Both patched in `@grpc/grpc-js@1.14.4`.
+
+Reachable paths (12 each, all via the OpenTelemetry SDK on `apps/api`):
+
+- `apps/api > @opentelemetry/sdk-node@0.218.0 > @opentelemetry/exporter-trace-otlp-grpc@0.218.0 > @grpc/grpc-js@1.14.3`
+- `apps/api > @opentelemetry/sdk-node@0.218.0 > @opentelemetry/exporter-metrics-otlp-grpc@0.218.0 > @grpc/grpc-js@1.14.3`
+- `apps/api > @opentelemetry/sdk-node@0.218.0 > @opentelemetry/exporter-logs-otlp-grpc@0.218.0 > @grpc/grpc-js@1.14.3`
+- …and the `@opentelemetry/otlp-grpc-exporter-base` re-export of each
+- The same 6 paths repeat via `apps/pos > @kassa/api@link:../api > …` (workspace link, identical code; only the API process actually loads node modules)
+
+**Practical risk for Kassa: near zero.**
+
+`apps/api/src/lib/otel.ts` is the only OTel boot site. It constructs the SDK as:
+
+```ts
+import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http";
+…
+traceExporter: new OTLPTraceExporter(),
+```
+
+The exporter is `@opentelemetry/exporter-trace-otlp-http` — the HTTP/Protobuf variant — and no other code in `apps/api/src` imports `@grpc/grpc-js`, `exporter-*-otlp-grpc`, or `otlp-grpc-exporter-base`. The gRPC exporter modules are pulled into `node_modules` as transitive deps of `@opentelemetry/sdk-node` (which bundles HTTP, gRPC, and Proto variants for convenience) but are never `require()`d at runtime. There is no listening gRPC port and no outbound gRPC channel.
+
+The HTTP exporter has no path through `@grpc/grpc-js`, so neither advisory is reachable on a running Kassa API process. The CVSS 7.5 ratings are nominally accurate for any deployment that does use the gRPC exporter — we do not.
+
+Still: the advisory shows up in `pnpm audit --prod`, will trip any CI audit gate (KASA-189), and is a prod-tree red mark. Fix is a one-line `pnpm.overrides` entry that pins all transitive `@grpc/grpc-js` to ≥1.14.4. KASA-378 carries this.
+
+### 9.4 GHSA-5xrq-8626-4rwp — `vitest` (critical, CVSS 9.8, dev-only)
+
+When `vitest --ui` is running, the local UI server (default `127.0.0.1:51204`) accepts a websocket call that reads + executes an arbitrary file. A malicious page open in the same browser can therefore drop a file via the API and execute it on the developer's machine. Patched in `vitest@3.2.6`.
+
+Reachable paths (5, all dev-only):
+
+- `apps/api > vitest@3.2.4`
+- `apps/back-office > vitest@3.2.4`
+- `apps/pos > vitest@3.2.4`
+- `packages/payments > vitest@3.2.4`
+- `packages/schemas > vitest@3.2.4`
+
+**Practical risk for Kassa: very low.**
+
+- Every workspace `package.json` script runs `vitest run` (CI mode); no `--ui` flag, no `test:ui` script.
+- `@vitest/ui` is **not installed** anywhere in the monorepo (grep across all `package.json` files and the lockfile).
+- CI uses `vitest run` exclusively (no UI).
+
+The CVSS 9.8 reflects the worst-case (developer with `vitest --ui` open and visiting an attacker-controlled page in the same browser session). Kassa's actual exposure is the *possibility* of a developer manually opting in. Fix is a one-liner — the workspaces already declare `vitest: ^3.2.0`, so `pnpm update -r vitest` should lift to 3.2.6 (or a precise override mirrors KASA-332 / KASA-333). KASA-379 tracks it.
+
+### 9.5 Remediation status
+
+| Track | Child issue | Title                                                            | Status     | Notes (2026-06-12)                                                                                          |
+|:------|:------------|:-----------------------------------------------------------------|:-----------|:------------------------------------------------------------------------------------------------------------|
+| A     | KASA-186    | Bump vitest 2.1.9 → 3.x                                          | **done**   | Unchanged from KASA-331.                                                                                     |
+| B     | KASA-187    | Bump vite-plugin-pwa 0.21.2 → 1.x                                | backlog    | **Still backlog.** Now the last open multi-advisory bump (clears high serialize-javascript, moderate serialize-javascript, high @babel SystemJS). Three routine audits in a row this has carried over.       |
+| C     | KASA-188    | Drop @esbuild-kit shim from drizzle-kit dep tree                 | **done**   | Landed since KASA-331. Cleared the remaining `esbuild` ≤0.24.2 path.                                         |
+| D     | KASA-189    | CI gate: `pnpm audit` on every lockfile change                   | backlog    | **Increasingly load-bearing**: third routine audit where it would have caught a new advisory at PR time, **first** where the slipped advisory is **prod-reachable high**. |
+| E     | KASA-332    | Override `brace-expansion` ≥5.0.6                                | **done**   | Landed since KASA-331. Prod tree now clean of brace-expansion.                                               |
+| F     | KASA-333    | Override `ws` ≥8.20.1                                            | **done**   | Landed since KASA-331.                                                                                       |
+| G     | KASA-378    | Override `@grpc/grpc-js` ≥1.14.4 (GHSA-5375-pq7m-f5r2 + GHSA-99f4-grh7-6pcq, prod) | backlog | **new** — both new prod-reachable advisories. Single `pnpm.overrides` entry clears all 12 paths × 2 advisories. |
+| H     | KASA-379    | Bump `vitest` ≥3.2.6 (GHSA-5xrq-8626-4rwp, dev `--ui` only)      | backlog    | **new** — critical CVSS but no live attack surface in Kassa's flows. `pnpm update -r vitest` is likely enough. |
+
+### 9.6 KASA-189 escalation note
+
+Three routine audits in a row (KASA-288, KASA-331, KASA-373) have surfaced advisories that landed in `pnpm-lock.yaml` between routine runs, and that a `pnpm audit --prod` gate on the lockfile-bump PR would have caught at merge time:
+
+- KASA-288 → GHSA-fv7c-fp4j-7gwp (high) via `@babel/preset-env`
+- KASA-331 → GHSA-jxxr-4gwj-5jf2 (moderate, prod) via `brace-expansion`
+- KASA-373 → GHSA-5375-pq7m-f5r2 + GHSA-99f4-grh7-6pcq (both high, prod) via `@grpc/grpc-js`
+
+KASA-189's cost has not changed; its value has gone up. Recommend the next audit cycle promote KASA-189's priority from `medium` → `high` if it is still backlog by KASA-396 (next routine).
+
+### 9.7 Cadence note
+
+This run lands 2026-06-12, eighteen days after KASA-331 (2026-05-25). The Paperclip routine fires the `Dependency and security audit` more frequently than §5's monthly cadence target — there have now been four runs in 39 days. §5 still documents the monthly intent; the audit doc treats the routine cadence as canonical and updates §9 each time. No tracker filed for this cadence drift; flag as a follow-up only.
+
+### 9.8 Next refresh
+
+- Next routine audit: whenever the Paperclip routine next fires.
+- Out-of-cycle: any new high or critical against `--prod` between now and then escalates to **P1** per [RUNBOOK-ONCALL.md](./RUNBOOK-ONCALL.md) §1 and should reopen this doc.
+- KASA-378 should land before the next routine to clear the prod high; KASA-379 should land before any developer turns on `vitest --ui`.
