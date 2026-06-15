@@ -1,10 +1,10 @@
 # Kassa dependency security audit — 2026-05-04
 
-Status: v3 (re-audit KASA-373, 2026-06-12). Prior revisions: KASA-331 / 2026-05-25 (§8), KASA-288 / 2026-05-18 (§7), KASA-185 / 2026-05-04 (§§1–6). Owner: Engineer. Companion docs: [TECH-STACK.md](./TECH-STACK.md), [RUNBOOK-ONCALL.md](./RUNBOOK-ONCALL.md), [CI-CD.md](./CI-CD.md).
+Status: v4 (re-audit KASA-389, 2026-06-15). Prior revisions: KASA-373 / 2026-06-12 (§9), KASA-331 / 2026-05-25 (§8), KASA-288 / 2026-05-18 (§7), KASA-185 / 2026-05-04 (§§1–6). Owner: Engineer. Companion docs: [TECH-STACK.md](./TECH-STACK.md), [RUNBOOK-ONCALL.md](./RUNBOOK-ONCALL.md), [CI-CD.md](./CI-CD.md).
 
-Latest re-audit (2026-06-12, origin/main `8656493`): production tree picks up its **first high-severity advisories** since v0 — two `@grpc/grpc-js@1.14.3` crash-DoS bugs (`GHSA-5375-pq7m-f5r2` + `GHSA-99f4-grh7-6pcq`, both CVSS 7.5) reach via `@opentelemetry/sdk-node → @opentelemetry/exporter-*-otlp-grpc`. Full-tree adds a new **critical** dev advisory (`GHSA-5xrq-8626-4rwp` on `vitest@3.2.4`, CVSS 9.8). Net movement vs. KASA-331: three new advisories (two prod high, one dev critical), three resolved (brace-expansion via KASA-332, ws via KASA-333, esbuild ≤0.24.2 via KASA-188). Remediation tracked under KASA-378 (`@grpc/grpc-js` override) and KASA-379 (vitest patch bump); KASA-187 / KASA-189 unchanged. See §9 for the diff. Per [RUNBOOK-ONCALL](./RUNBOOK-ONCALL.md) §1 the two prod highs are technically **P1**, but `apps/api/src/lib/otel.ts` instantiates the **OTLP/HTTP** exporter only — the gRPC client is in the tree but never `require()`d at runtime, so practical exploitability is near zero.
+Latest re-audit (2026-06-15, origin/main `47047ea`): **no movement in the prod tree** — still the two KASA-373 `@grpc/grpc-js@1.14.3` crash-DoS highs (`GHSA-5375-pq7m-f5r2` + `GHSA-99f4-grh7-6pcq`, both CVSS 7.5, still gated by KASA-378 with the same near-zero practical exploitability — `apps/api/src/lib/otel.ts` instantiates the OTLP/HTTP exporter only). Full-tree picks up two **new dev-only** esbuild advisories: `GHSA-gv7w-rqvm-qjhr` (high, Deno-only RCE — Kassa runs Node, **practical risk zero**) and `GHSA-g7r4-m6w7-qqqr` (low, Windows dev-server-only — Kassa deploys Linux). Both clear with a single `pnpm.overrides` pin `esbuild >=0.28.1`; tracked under **KASA-390**. No advisories resolved vs. KASA-373 (KASA-187 / 378 / 379 still backlog). See §10 for the diff. Per [RUNBOOK-ONCALL](./RUNBOOK-ONCALL.md) §1 nothing has flipped severity: the two prod highs were already known and the new high is dev-only Deno-only.
 
-Prior headline (KASA-331, 2026-05-25): production tree picked up its **first advisory** since v0 — `brace-expansion` GHSA-jxxr-4gwj-5jf2 (moderate, CVSS 6.5, CVE-2026-45149, published 2026-05-18) reaches via `@fastify/swagger-ui → @fastify/static → glob → minimatch`. Full-tree count was 2 high + 4 moderate across 908 deps. Net movement vs. KASA-288: two new moderates (`brace-expansion`, `ws`), no advisory resolutions. New remediation tracked under KASA-332 (brace-expansion override) and KASA-333 (ws override); existing KASA-187 / KASA-188 / KASA-189 unchanged. See §8 for the diff. Severity stayed sub-P1 per RUNBOOK-ONCALL §1 (no prod-reachable high or critical).
+Prior headline (KASA-373, 2026-06-12): production tree picked up its **first high-severity advisories** since v0 — two `@grpc/grpc-js@1.14.3` crash-DoS bugs (`GHSA-5375-pq7m-f5r2` + `GHSA-99f4-grh7-6pcq`, both CVSS 7.5) reach via `@opentelemetry/sdk-node → @opentelemetry/exporter-*-otlp-grpc`. Full-tree added a new **critical** dev advisory (`GHSA-5xrq-8626-4rwp` on `vitest@3.2.4`, CVSS 9.8). Net movement vs. KASA-331: three new advisories (two prod high, one dev critical), three resolved (brace-expansion via KASA-332, ws via KASA-333, esbuild ≤0.24.2 via KASA-188). Remediation tracked under KASA-378 / KASA-379; KASA-187 / KASA-189 unchanged. Per [RUNBOOK-ONCALL](./RUNBOOK-ONCALL.md) §1 the two prod highs are technically **P1**, but `apps/api/src/lib/otel.ts` instantiates the **OTLP/HTTP** exporter only — the gRPC client is in the tree but never `require()`d at runtime, so practical exploitability is near zero.
 
 Original v0 (2026-05-04, commit `9f4858b`) text follows below.
 
@@ -352,3 +352,93 @@ This run lands 2026-06-12, eighteen days after KASA-331 (2026-05-25). The Paperc
 - Next routine audit: whenever the Paperclip routine next fires.
 - Out-of-cycle: any new high or critical against `--prod` between now and then escalates to **P1** per [RUNBOOK-ONCALL.md](./RUNBOOK-ONCALL.md) §1 and should reopen this doc.
 - KASA-378 should land before the next routine to clear the prod high; KASA-379 should land before any developer turns on `vitest --ui`.
+
+---
+
+## 10. Re-audit log — 2026-06-15 (KASA-389)
+
+Routine audit (`Dependency and security audit`, originId `e00493d6`). Run against `origin/main` at commit `47047ea` with a fresh `pnpm install --frozen-lockfile` and `NODE_ENV` unset. Workspace dependency count unchanged from KASA-373 (885 full / 299 prod).
+
+### 10.1 Result summary
+
+| Scope                    | Total deps | Critical | High | Moderate | Low | Info |
+|:-------------------------|-----------:|---------:|-----:|---------:|----:|-----:|
+| `--prod` (deployed code) |        299 |        0 |    2 |        0 |   0 |    0 |
+| Full tree (incl. dev)    |        885 |        1 |    5 |        1 |   1 |    0 |
+
+**Headline.** **Prod tree unchanged** vs. KASA-373: same two `@grpc/grpc-js@1.14.3` highs (KASA-378). Full tree picks up two new **dev-only esbuild** advisories — `GHSA-gv7w-rqvm-qjhr` (high, Deno-only RCE) and `GHSA-g7r4-m6w7-qqqr` (low, Windows dev-server-only). Both share the same fix (`esbuild >=0.28.1`); bundled under KASA-390. No advisories were resolved between KASA-373 and this run — KASA-187 / KASA-378 / KASA-379 are all still backlog three days after the previous audit, which is below the round-trip latency the routine cadence (currently ~weekly) can compress.
+
+Severity classification: no flips vs. KASA-373. The two prod highs are the same near-zero-exploitability set described in §9.3 (still gated by KASA-378). The new high (`GHSA-gv7w-rqvm-qjhr`) is dev-only AND Deno-only — Kassa runs Node exclusively (verified: no `deno.json`, no Deno binary in CI, no `deno run` script in any `package.json`), so it is non-exploitable on our paths. The new low is Windows-only; production deploys to Fly.io (Linux).
+
+### 10.2 Diff vs. KASA-373 (2026-06-12)
+
+| Advisory                                  | Module                                    | KASA-373 (2026-06-12) | KASA-389 (2026-06-15) | Why                                                                                                                            |
+|:------------------------------------------|:------------------------------------------|:----------------------|:----------------------|:-------------------------------------------------------------------------------------------------------------------------------|
+| GHSA-gv7w-rqvm-qjhr (high, Deno RCE)       | `esbuild` 0.17.0–0.28.0                   | not present           | **new (dev only)**    | Published 2026-06-13. Patched in 0.28.1. Reaches via drizzle-kit, tsx, vite 7.3.2, vitest 3.2.4. Deno-specific exploit; **N/A to Kassa** (Node-only). KASA-390. |
+| GHSA-g7r4-m6w7-qqqr (low, Windows dev-server) | `esbuild` 0.27.3–0.28.0                | not present           | **new (dev only)**    | Same vendor advisory bundle as ↑; Windows-only. Same fix. Bundled into KASA-390.                                                |
+| GHSA-5375-pq7m-f5r2 (high, CVSS 7.5)      | `@grpc/grpc-js` 1.14.0–1.14.3             | present (prod)        | present (prod)        | Unchanged — KASA-378 still backlog. Three calendar days since previous audit, no remediation churn expected.                    |
+| GHSA-99f4-grh7-6pcq (high, CVSS 7.5)      | `@grpc/grpc-js` 1.14.0–1.14.3             | present (prod)        | present (prod)        | Unchanged — same as ↑, same KASA-378.                                                                                           |
+| GHSA-5xrq-8626-4rwp (critical, CVSS 9.8)  | `vitest` <3.2.6                           | present (dev)         | present (dev)         | Unchanged — KASA-379 still backlog. No `vitest --ui` usage in repo; non-exploitable.                                            |
+| GHSA-5c6j-r48x-rmvq (high, CVSS 8.1)      | `serialize-javascript` ≤7.0.2             | present (dev)         | present (dev)         | Unchanged — same `vite-plugin-pwa@0.21 > workbox-build@7.4` chain. KASA-187.                                                    |
+| GHSA-qj8w-gfj5-8c6v (moderate)            | `serialize-javascript` <7.0.5             | present (dev)         | present (dev)         | Unchanged — same chain. KASA-187.                                                                                               |
+| GHSA-fv7c-fp4j-7gwp (high, CVSS 8.2)      | `@babel/plugin-transform-modules-systemjs` | present (dev)         | present (dev)         | Unchanged — same `vite-plugin-pwa@0.21 > workbox-build@7.4 > @babel/preset-env` chain. KASA-187.                                |
+
+### 10.3 GHSA-gv7w-rqvm-qjhr — `esbuild` (high, Deno-only, dev-only)
+
+The advisory describes a Deno-runtime issue: esbuild's Deno entry point downloads its native binary from `NPM_CONFIG_REGISTRY` without integrity verification, so a hostile registry can serve a malicious binary that runs at install time. Patched in `esbuild@0.28.1`.
+
+Reachable paths (47, all dev/build/test, all Node-side): the same `drizzle-kit > tsx > esbuild@0.25.12 / 0.27.7` chain plus every workspace's `vitest@3.2.4 > vite@7.3.2 > esbuild@0.27.7` and tooling chain. Two finding versions land: `0.25.12` (drizzle-kit pull-through, single path) and `0.27.7` (everything else).
+
+**Practical risk for Kassa: zero.**
+
+- No `deno.json` / `deno.lock` / `deno.lockb` anywhere in the repo.
+- No `deno` binary required by any CI workflow (`grep -r 'deno' .github/workflows` returns nothing).
+- No `deno run` / `deno install` / `deno task` in any `package.json` script.
+- All esbuild invocations go through the Node-native binary (`esbuild` postinstall picks `@esbuild/linux-x64` / `darwin-arm64`), which is unaffected by the Deno-loader path.
+
+The fix is a single `pnpm.overrides` pin to `>=0.28.1`. KASA-390 carries it.
+
+### 10.4 GHSA-g7r4-m6w7-qqqr — `esbuild` (low, Windows dev-server)
+
+When `esbuild --serve` runs on Windows, a crafted request can read arbitrary files outside the served directory. Patched in `esbuild@0.28.1` (same release as ↑).
+
+Reachable paths: identical to §10.3 minus the `0.25.12` drizzle-kit chain (this advisory's vulnerable range starts at `0.27.3`).
+
+**Practical risk for Kassa: very low.**
+
+- Production deploys to Fly.io (Linux). No esbuild dev server runs anywhere in prod.
+- CI runs on Ubuntu runners. No Windows in CI.
+- Developer machines may include Windows, but `vite dev` / `esbuild --serve` are local-loopback by default (no `--host`).
+
+Same fix as §10.3, same KASA-390.
+
+### 10.5 Remediation status
+
+| Track | Child issue | Title                                                            | Status     | Notes (2026-06-15)                                                                                          |
+|:------|:------------|:-----------------------------------------------------------------|:-----------|:------------------------------------------------------------------------------------------------------------|
+| A     | KASA-186    | Bump vitest 2.1.9 → 3.x                                          | **done**   | Unchanged from KASA-373.                                                                                     |
+| B     | KASA-187    | Bump vite-plugin-pwa 0.21.2 → 1.x                                | backlog    | Unchanged. Still clears 3 advisories (high serialize-javascript, moderate serialize-javascript, high @babel SystemJS). Four routine audits in a row this has carried over. |
+| C     | KASA-188    | Drop @esbuild-kit shim from drizzle-kit dep tree                 | **done**   | Unchanged from KASA-373.                                                                                     |
+| D     | KASA-189    | CI gate: `pnpm audit` on every lockfile change                   | backlog    | **Promote to high.** Per §9.6 escalation criterion: four consecutive routine audits with at least one slipped advisory each. Filed PATCH below. |
+| E     | KASA-332    | Override `brace-expansion` ≥5.0.6                                | **done**   | Unchanged from KASA-373.                                                                                     |
+| F     | KASA-333    | Override `ws` ≥8.20.1                                            | **done**   | Unchanged from KASA-373.                                                                                     |
+| G     | KASA-378    | Override `@grpc/grpc-js` ≥1.14.4                                 | backlog    | Unchanged. Three calendar days since KASA-373 filed it — within normal triage latency.                       |
+| H     | KASA-379    | Bump `vitest` ≥3.2.6                                             | backlog    | Unchanged. Same triage window as KASA-378.                                                                   |
+| I     | KASA-390    | Override `esbuild` ≥0.28.1 (GHSA-gv7w-rqvm-qjhr + GHSA-g7r4-m6w7-qqqr) | backlog | **new** — both new dev-only advisories. Single `pnpm.overrides` entry; also removes the now-obsolete `@esbuild-kit/core-utils>esbuild` override left over from KASA-185 (the shim was deleted by KASA-188). |
+
+### 10.6 KASA-189 escalation
+
+This is the **fourth** consecutive routine audit (KASA-288, KASA-331, KASA-373, KASA-389) where a `pnpm audit` gate on the lockfile-bump PR would have caught a slipped advisory before merge. KASA-373 §9.6 set the trigger as "promote KASA-189 medium → high if still backlog by KASA-389." That trigger is met. PATCHing KASA-189 priority to `high` as part of this PR (separately from the doc).
+
+### 10.7 Cadence note
+
+This run lands 2026-06-15, three days after KASA-373 (2026-06-12). That is well below the §5 monthly intent. Per the §9.7 follow-up flag, the routine cadence is the canonical schedule and the §5 paragraph remains stale — still not creating a tracker for it; the cost of the routine fire is a single `pnpm audit` + a doc append, which is cheap.
+
+### 10.8 Next refresh
+
+- Next routine audit: whenever the Paperclip routine next fires.
+- Out-of-cycle: any new high or critical against `--prod` between now and then escalates to **P1** per [RUNBOOK-ONCALL.md](./RUNBOOK-ONCALL.md) §1 and should reopen this doc.
+- KASA-378 should land before the next routine to clear the prod highs (still the only prod-reachable open items).
+- KASA-379 should land before any developer turns on `vitest --ui`.
+- KASA-390 has no immediate exploitability deadline (Deno-only / Windows-only); pair with the next lockfile-touching PR to minimise churn.
+- KASA-189 (now high-priority) should land before the next routine audit, after which the value of routine audits drops sharply.
