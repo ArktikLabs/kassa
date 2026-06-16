@@ -30,7 +30,11 @@ async function seedEnrolledDevice(page: Page): Promise<void> {
 
 async function addItemAndPark(page: Page, label: string): Promise<void> {
   await page.getByTestId(`catalog-tile-${ITEM_ID}`).click();
-  await page.goto("/cart");
+  // KASA-347 — `page.goto("/cart")` is a full document load and resets the
+  // zustand cart store, so `cart-lines` would never render. Drive the same
+  // route swap through the bottom-nav TanStack `<Link>` to keep the active
+  // cart alive across navigations.
+  await page.getByRole("link", { name: "Keranjang", exact: true }).click();
   await expect(page.getByTestId("cart-lines")).toBeVisible();
   await page.getByTestId("cart-park-cta").click();
   const sheet = page.getByTestId("park-cart-sheet");
@@ -39,7 +43,7 @@ async function addItemAndPark(page: Page, label: string): Promise<void> {
   await sheet.getByTestId("park-cart-confirm").click();
   await expect(sheet).toBeHidden();
   await expect(page.getByTestId("cart-empty")).toBeVisible();
-  await page.goto("/catalog");
+  await page.getByRole("link", { name: "Katalog", exact: true }).click();
 }
 
 test("park 3 carts → reload → resume the second", async ({ page }) => {
@@ -50,7 +54,7 @@ test("park 3 carts → reload → resume the second", async ({ page }) => {
   await addItemAndPark(page, "Meja 2");
   await addItemAndPark(page, "Meja 3");
 
-  await page.goto("/cart");
+  await page.getByRole("link", { name: "Keranjang", exact: true }).click();
   const trayCta = page.getByTestId("cart-parked-tray-cta");
   await expect(trayCta).toBeVisible();
   await expect(trayCta).toContainText("3");
