@@ -218,30 +218,39 @@ export function createSyncRunner(opts: RunnerOptions): SyncRunner {
       try {
         const auth = opts.auth ? await opts.auth() : null;
         const outletId = opts.outletId ? await opts.outletId() : null;
-        pullResult = await pullAll(opts.database, {
-          baseUrl: opts.baseUrl,
-          outletId,
-          ...(opts.fetchImpl ? { fetchImpl: opts.fetchImpl } : {}),
-          status: opts.status,
-          isOnline: onlineSource.isOnline,
-          ...(opts.clock ? { clock: opts.clock } : {}),
-          auth,
-          ...(opts.onSentryError ? { onSentryError: opts.onSentryError } : {}),
-        });
-        pushResult = await runPush();
-        return { pull: pullResult, push: pushResult };
-      } catch (err) {
-        if (err instanceof SyncOfflineError) {
-          setOffline();
-          return { pull: pullResult, push: pushResult };
+        // KASA-347 — pull and push are independent. A pull failure (server
+        // down, parse error, stale schema) must not block the outbox drain,
+        // otherwise locally-queued mutations (sold-out toggles, voids,
+        // sales) sit forever until the next 60s interval tick.
+        try {
+          pullResult = await pullAll(opts.database, {
+            baseUrl: opts.baseUrl,
+            outletId,
+            ...(opts.fetchImpl ? { fetchImpl: opts.fetchImpl } : {}),
+            status: opts.status,
+            isOnline: onlineSource.isOnline,
+            ...(opts.clock ? { clock: opts.clock } : {}),
+            auth,
+            ...(opts.onSentryError ? { onSentryError: opts.onSentryError } : {}),
+          });
+        } catch (err) {
+          if (err instanceof SyncOfflineError) {
+            setOffline();
+            return { pull: pullResult, push: pushResult };
+          }
+          opts.status.update((s) => ({
+            ...s,
+            phase: { kind: "error", message: errorMessage(err), table: errorTable(err) },
+          }));
         }
-        const message = errorMessage(err);
-        const table = errorTable(err);
-        opts.status.update((s) => ({
-          ...s,
-          phase: { kind: "error", message, table },
-        }));
-        throw err;
+        try {
+          pushResult = await runPush();
+        } catch {
+          // runPush already reported phase=error and refreshed
+          // needs_attention; swallow so we still return the partial cycle
+          // result the callers expect.
+        }
+        return { pull: pullResult, push: pushResult };
       } finally {
         inFlight = null;
       }

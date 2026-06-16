@@ -36,7 +36,12 @@ test.describe("KASA-61 cash tender flow", () => {
     await expect(page.getByTestId("tender-change")).toHaveText(/0/);
     await page.getByTestId("tender-submit").click();
     await expect(page.getByTestId("receipt-preview")).toBeVisible();
-    await expect(page.getByTestId("receipt-print")).toBeVisible();
+    // KASA-347 — assert the actions container, not the Bluetooth print
+    // button specifically. KASA-309 made `receipt-pdf` primary when
+    // `navigator.bluetooth` is missing (headless Chromium, iPadOS), so
+    // `receipt-print` is conditionally not rendered. The actions row
+    // always renders; that's what we care about post-submit.
+    await expect(page.getByTestId("receipt-actions")).toBeVisible();
 
     // KASA-252 — WhatsApp share button. Pre-confirm, it renders as a
     // disabled <button> with the "waiting for sync" hint visible.

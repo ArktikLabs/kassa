@@ -5,6 +5,7 @@ import { useSoldOutToggle } from "../features/catalog/useSoldOutToggle";
 import { CartPanel } from "../features/cart/ui/CartPanel";
 import { BottomSheet } from "../shared/components/BottomSheet";
 import type { Item } from "../data/db/types";
+import { useSyncActions } from "../lib/sync-context";
 
 /*
  * POS tablet landscape splits catalog (left) and cart (right) per
@@ -15,12 +16,18 @@ export function CatalogScreen() {
   const intl = useIntl();
   const [longPressItem, setLongPressItem] = useState<Item | null>(null);
   const { setAvailability } = useSoldOutToggle();
+  const { triggerPush } = useSyncActions();
 
   const handleToggle = async () => {
     if (!longPressItem) return;
     const next = longPressItem.availability === "sold_out" ? "available" : "sold_out";
     setLongPressItem(null);
     await setAvailability(longPressItem, next);
+    // KASA-347 — the sync runner ticks every 60s, way past the AC for the
+    // "Habis" toggle landing on the server. Drain the catalog mutations
+    // immediately so the PATCH lands while the cashier is still looking
+    // at the tile they just greyed.
+    void triggerPush().catch(() => {});
   };
 
   const sheetTitle = longPressItem

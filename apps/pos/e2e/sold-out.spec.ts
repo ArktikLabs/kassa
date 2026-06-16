@@ -156,8 +156,13 @@ test.describe("KASA-248 sold-out toggle", () => {
     await longPress(page, `catalog-tile-${ITEM_ID}`);
     await page.getByTestId("catalog-sold-out-confirm").click();
     await expect(page.getByTestId(`catalog-tile-${ITEM_ID}-habis`)).toBeVisible({ timeout: 1_000 });
-    // Tap the now-greyed tile — should not add a cart line.
-    await page.getByTestId(`catalog-tile-${ITEM_ID}`).click();
+    // Tap the now-greyed tile — should not add a cart line. The tile is
+    // `aria-disabled` once flipped to sold-out, which Playwright's
+    // actionability check treats as not-enabled and would wait the full
+    // 30s timeout on a vanilla `click()`. `force: true` is correct here:
+    // the assertion below is about the cart staying empty, not about
+    // Playwright pretending the tile is interactive.
+    await page.getByTestId(`catalog-tile-${ITEM_ID}`).click({ force: true });
     // CartPanel renders an "empty" affordance when no lines exist (see
     // i18n key `cart.empty.heading`). The Bahasa string is "Keranjang
     // kosong" — match on it to confirm the cart did not grow.
