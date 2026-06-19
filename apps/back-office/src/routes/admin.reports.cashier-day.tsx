@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { FormattedMessage, useIntl } from "react-intl";
 import type { CashierDayResponse } from "@kassa/schemas/reports";
 import { DataTable, type DataTableColumn } from "../components/DataTable";
@@ -11,6 +11,30 @@ import {
 } from "../data/api/cashier-day";
 import { useOutlets } from "../data/useStore";
 import { formatRupiah } from "../lib/format";
+
+/**
+ * KASA-385 — cross-midnight void overhang. When a day-(N-1) sale is voided
+ * on day-N and the original cashier had no fresh sales on day-N, that
+ * cashier's row carries `netIdr < 0`. We surface it in the danger token
+ * (`text-danger-fg`) with an Indonesian a11y label ("defisit") so the
+ * owner reads the deficit at a glance — clamping to zero would hide it.
+ */
+function NetIdrValue({ netIdr }: { netIdr: number }) {
+  const intl = useIntl();
+  const text = formatRupiah(netIdr);
+  if (netIdr < 0) {
+    return (
+      <output
+        data-testid="cashier-day-net-defisit"
+        aria-label={intl.formatMessage({ id: "cashier_day.net.defisit_aria" })}
+        className="font-semibold text-danger-fg"
+      >
+        {text}
+      </output>
+    );
+  }
+  return <>{text}</>;
+}
 
 /*
  * Back-office per-cashier daily sales report (KASA-368).
@@ -166,7 +190,7 @@ export function AdminCashierDayScreen() {
       key: "net",
       header: <FormattedMessage id="cashier_day.col.net" />,
       numeric: true,
-      render: (r) => formatRupiah(r.netIdr),
+      render: (r) => <NetIdrValue netIdr={r.netIdr} />,
     },
     {
       key: "voids",
@@ -338,7 +362,10 @@ function TotalsCard({ report }: { report: CashierDayResponse }) {
       <dl className="mt-3 grid gap-3 laptop:grid-cols-4">
         <Stat labelId="cashier_day.totals.sale_count" value={String(report.totals.saleCount)} />
         <Stat labelId="cashier_day.totals.gross" value={formatRupiah(report.totals.grossIdr)} />
-        <Stat labelId="cashier_day.totals.net" value={formatRupiah(report.totals.netIdr)} />
+        <Stat
+          labelId="cashier_day.totals.net"
+          value={<NetIdrValue netIdr={report.totals.netIdr} />}
+        />
         <Stat
           labelId="cashier_day.totals.voids"
           value={`${report.totals.voidCount} · ${formatRupiah(report.totals.voidIdr)}`}
@@ -368,7 +395,7 @@ function TotalsCard({ report }: { report: CashierDayResponse }) {
   );
 }
 
-function Stat({ labelId, value }: { labelId: string; value: string }) {
+function Stat({ labelId, value }: { labelId: string; value: ReactNode }) {
   return (
     <div className="rounded-md bg-neutral-50 p-3">
       <dt className="text-xs font-semibold uppercase tracking-wide text-neutral-500">

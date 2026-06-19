@@ -20,6 +20,15 @@ import { z } from "zod";
 
 const uuidV7 = z.string().uuid();
 const rupiahInteger = z.number().int().nonnegative();
+/**
+ * Signed integer rupiah. Used for `netIdr` only, where the
+ * `grossIdr - voidIdr` identity can legitimately go negative when a
+ * day-(N-1) sale is voided on day-N and the original cashier had no fresh
+ * sales on day-N (KASA-385 — cross-midnight void overhang). All other
+ * money columns (`grossIdr`, `voidIdr`, tender amounts, `drawerExpectedIdr`)
+ * stay non-negative — only the derived `net` carries the signed contract.
+ */
+const signedRupiahInteger = z.number().int();
 const businessDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 
 export const cashierDayQuery = z
@@ -51,8 +60,15 @@ export const cashierDayRow = z
     saleCount: z.number().int().nonnegative(),
     /** Sum of `sales.totalIdr` for the row's non-voided sales (gross including PPN). */
     grossIdr: rupiahInteger,
-    /** `grossIdr - voidIdr` — what the cashier actually banked for the day. */
-    netIdr: rupiahInteger,
+    /**
+     * `grossIdr - voidIdr` — what the cashier actually banked for the day.
+     * Can be **negative** (cross-midnight void overhang, KASA-385): if cashier
+     * A was off on day-N but a day-(N-1) sale of theirs is voided on day-N,
+     * the row has `grossIdr=0`, `voidIdr>0`, so `netIdr<0`. The UI surfaces
+     * this as a "defisit" so the owner can act on it; clamping would hide
+     * the situation and de-reconcile from the EOD variance column.
+     */
+    netIdr: signedRupiahInteger,
     /** Sales whose `voidBusinessDate` falls on the query day for this cashier. */
     voidCount: z.number().int().nonnegative(),
     /** Sum of `sales.totalIdr` for the voided slice above. */
@@ -75,7 +91,12 @@ export const cashierDayTotals = z
   .object({
     saleCount: z.number().int().nonnegative(),
     grossIdr: rupiahInteger,
-    netIdr: rupiahInteger,
+    /**
+     * Day-wide `grossIdr - voidIdr`. Inherits the signed contract from the
+     * per-row `netIdr`: cross-midnight void overhang (KASA-385) can drag the
+     * totals below zero even when every individual row is non-negative.
+     */
+    netIdr: signedRupiahInteger,
     voidCount: z.number().int().nonnegative(),
     voidIdr: rupiahInteger,
     tenderMix: z.array(cashierDayTenderSlice),

@@ -370,6 +370,63 @@ describe("GET /v1/reports/cashier-day", () => {
     }
   });
 
+  /**
+   * KASA-385 — cross-midnight void overhang. Cashier A rings up Rp 50k on
+   * 2026-01-01, is off on 2026-01-02, the sale is voided on 2026-01-02.
+   * The day-N report attributes the void to A (KASA-122 PR2), so A's row
+   * has `gross=0`, `void=50000`, `net=-50000`. Without the signed schema
+   * (KASA-385) fastify-type-provider-zod 500s the outbound body.
+   */
+  it("returns netIdr<0 for a cross-midnight void overhang (KASA-385)", async () => {
+    const day1 = "2026-01-01";
+    const day2 = "2026-01-02";
+
+    // A's day-(N-1) sale: lives on day1, gets voided on day2.
+    seedSale(h.repo, {
+      saleId: "01890abc-1234-7def-8000-00000000a501",
+      cashierStaffId: CASHIER_SITI,
+      businessDate: day1,
+      totalIdr: 50_000,
+      status: "voided",
+      voidBusinessDate: day2,
+      tenders: [{ method: "cash", amountIdr: 50_000 }],
+    });
+
+    const res = await h.app.inject({
+      method: "GET",
+      url: `/v1/reports/cashier-day?outletId=${OUTLET_A}&businessDate=${day2}`,
+      headers: staffHeaders(),
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = res.json() as {
+      rows: Array<{
+        cashierStaffId: string;
+        grossIdr: number;
+        netIdr: number;
+        voidCount: number;
+        voidIdr: number;
+      }>;
+      totals: {
+        grossIdr: number;
+        netIdr: number;
+        voidCount: number;
+        voidIdr: number;
+      };
+    };
+    expect(body.rows).toHaveLength(1);
+    const a = body.rows[0]!;
+    expect(a.cashierStaffId).toBe(CASHIER_SITI);
+    expect(a.grossIdr).toBe(0);
+    expect(a.voidCount).toBe(1);
+    expect(a.voidIdr).toBe(50_000);
+    expect(a.netIdr).toBe(-50_000);
+
+    expect(body.totals.grossIdr).toBe(0);
+    expect(body.totals.voidIdr).toBe(50_000);
+    expect(body.totals.netIdr).toBe(-50_000);
+  });
+
   it("returns an empty bucket when outletId belongs to another merchant (no cross-tenant leak)", async () => {
     // Wrong-merchant outlet id: the staff principal is MERCHANT but the
     // query targets an outlet owned by OTHER_MERCHANT. Since the service
@@ -469,6 +526,45 @@ describe("GET /v1/reports/cashier-day/export.csv", () => {
       headers: staffHeaders({ "x-staff-role": "cashier" }),
     });
     expect(res.statusCode).toBe(403);
+  });
+
+  /**
+   * KASA-385 — cross-midnight void overhang in CSV form. The `net` column
+   * needs a leading `-` so a bookkeeper opening the file in Excel-id /
+   * LibreOffice still reads it as a signed integer.
+   */
+  it("writes a leading `-` on net when the day carries a cross-midnight void overhang", async () => {
+    const day1 = "2026-01-01";
+    const day2 = "2026-01-02";
+    seedSale(h.repo, {
+      saleId: "01890abc-1234-7def-8000-00000000b501",
+      cashierStaffId: CASHIER_SITI,
+      businessDate: day1,
+      totalIdr: 50_000,
+      status: "voided",
+      voidBusinessDate: day2,
+      tenders: [{ method: "cash", amountIdr: 50_000 }],
+    });
+
+    const res = await h.app.inject({
+      method: "GET",
+      url: `/v1/reports/cashier-day/export.csv?outletId=${OUTLET_A}&businessDate=${day2}`,
+      headers: staffHeaders(),
+    });
+
+    expect(res.statusCode).toBe(200);
+    const lines = res.body.replace(/^﻿/, "").split("\r\n");
+    // header + 1 data row + totals + trailing ""
+    expect(lines).toHaveLength(4);
+    const dataCells = lines[1]!.split(";");
+    expect(dataCells[0]).toBe("Siti Rahayu");
+    expect(dataCells[2]).toBe("0"); // gross
+    expect(dataCells[3]).toBe("-50000"); // net
+    expect(dataCells[5]).toBe("50000"); // void_total
+    const totalsCells = lines[2]!.split(";");
+    expect(totalsCells[0]).toBe("Total");
+    expect(totalsCells[2]).toBe("0"); // gross
+    expect(totalsCells[3]).toBe("-50000"); // net
   });
 
   it("emits a CSV with only a totals row when no sales exist for the day", async () => {

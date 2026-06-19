@@ -123,3 +123,89 @@ test("manager views per-cashier daily report and triggers CSV export", async ({ 
   expect(href).toContain("/v1/reports/cashier-day/export.csv");
   expect(href).toContain(`businessDate=${TODAY}`);
 });
+
+/**
+ * KASA-385 — cross-midnight void overhang. Cashier A sells on day-(N-1),
+ * is off on day-N, A's sale is voided on day-N. The day-N report shows
+ * A's row with `grossIdr=0`, `voidIdr=50000`, `netIdr=-50000` and the UI
+ * has to surface the row as a "defisit" (danger token + aria-label) so
+ * the owner doesn't miss the deficit while skimming the table.
+ */
+test("renders cross-midnight void overhang as a defisit cell", async ({ page }) => {
+  await page.route("**/v1/auth/session/login", async (route: Route) => {
+    if (route.request().method() !== "POST") {
+      await route.fallback();
+      return;
+    }
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      headers: { "set-cookie": "kassa_session=stub; Path=/; HttpOnly" },
+      body: JSON.stringify({
+        email: "siti@warungpusat.id",
+        displayName: "Siti Rahayu",
+        role: "manager",
+        merchantId: MERCHANT_ID,
+        issuedAt: "2026-05-29T00:00:00.000+07:00",
+      }),
+    });
+  });
+
+  await page.route("**/v1/reports/cashier-day?**", async (route: Route) => {
+    if (route.request().url().includes("export.csv")) {
+      await route.fallback();
+      return;
+    }
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        outletId: OUTLET,
+        businessDate: TODAY,
+        rows: [
+          {
+            cashierStaffId: CASHIER_SITI,
+            cashierName: "Siti Rahayu",
+            saleCount: 0,
+            grossIdr: 0,
+            netIdr: -50_000,
+            voidCount: 1,
+            voidIdr: 50_000,
+            tenderMix: [],
+            drawerExpectedIdr: null,
+          },
+        ],
+        totals: {
+          saleCount: 0,
+          grossIdr: 0,
+          netIdr: -50_000,
+          voidCount: 1,
+          voidIdr: 50_000,
+          tenderMix: [],
+          drawerExpectedIdr: null,
+        },
+      }),
+    });
+  });
+
+  await page.goto("/login");
+  await page.getByLabel("Email").fill("siti@warungpusat.id");
+  await page.getByLabel("Kata sandi").fill("welcome-to-kassa");
+  await page.getByRole("button", { name: "Masuk" }).click();
+  await expect(page.getByRole("heading", { name: "Dasbor harian", level: 1 })).toBeVisible();
+
+  await page.getByRole("link", { name: "Laporan kasir" }).click();
+  await expect(
+    page.getByRole("heading", { name: "Laporan harian per kasir", level: 1 }),
+  ).toBeVisible();
+
+  await expect(page.getByText("Siti Rahayu")).toBeVisible();
+
+  // Both row + totals card carry the defisit testid with a localized aria.
+  const defisit = page.getByTestId("cashier-day-net-defisit");
+  await expect(defisit.first()).toHaveAttribute("aria-label", "defisit");
+  await expect(defisit).toHaveCount(2);
+  for (const cell of await defisit.all()) {
+    await expect(cell).toHaveClass(/text-danger-fg/);
+  }
+});
