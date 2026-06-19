@@ -1,4 +1,5 @@
 import argon2 from "argon2";
+import { SALE_LIST_PAGE_LIMIT_DEFAULT, SALE_LIST_PAGE_LIMIT_MAX } from "@kassa/schemas";
 import { withSpan } from "../../lib/otel.js";
 import { InvalidPageTokenError, decodePageToken } from "../../lib/page-token.js";
 import { uuidv7 } from "../../lib/uuid.js";
@@ -784,6 +785,46 @@ export class SalesService {
   ): Promise<readonly Sale[]> {
     const sales = await this.repository.listSalesByBusinessDate(merchantId, outletId, businessDate);
     return sales.filter((s) => !s.synthetic);
+  }
+
+  /**
+   * KASA-266 — opaque-cursor paged variant consumed by `GET /v1/sales`.
+   * Validates the token shape eagerly so a tampered cursor surfaces as a
+   * typed `invalid_page_token` SalesError (route maps it to 400) instead
+   * of falling through to a 500 from the repository's filter. Synthetic
+   * filtering happens at the repository so pagination is over the
+   * merchant-visible set — same posture as the non-paged variant above.
+   */
+  async listSalesByBusinessDatePage(input: {
+    merchantId: string;
+    outletId: string;
+    businessDate: string;
+    pageToken?: string | undefined;
+    limit?: number | undefined;
+  }): Promise<{ records: readonly Sale[]; nextPageToken: string | null }> {
+    const rawLimit = input.limit ?? SALE_LIST_PAGE_LIMIT_DEFAULT;
+    const limit = Math.max(1, Math.min(SALE_LIST_PAGE_LIMIT_MAX, rawLimit));
+
+    let pageToken: string | null = null;
+    if (input.pageToken) {
+      try {
+        decodePageToken(input.pageToken);
+        pageToken = input.pageToken;
+      } catch (err) {
+        if (err instanceof InvalidPageTokenError) {
+          throw new SalesError("invalid_page_token", err.message);
+        }
+        throw err;
+      }
+    }
+
+    return this.repository.listSalesByBusinessDatePage({
+      merchantId: input.merchantId,
+      outletId: input.outletId,
+      businessDate: input.businessDate,
+      pageToken,
+      limit,
+    });
   }
 
   /**

@@ -97,13 +97,40 @@ export interface SalesRepository {
   /**
    * Every sale bucketed to (merchant, outlet, businessDate). Stable ordering
    * by `createdAt` so EOD breakdown rollups are deterministic. Consumed by
-   * the EOD service via the `SalesReader` port; no other caller today.
+   * the EOD service via the `SalesReader` port; the back-office reads
+   * through the paged variant below so EOD's unpaginated contract stays
+   * frozen (KASA-266 scope decision — EOD reconciliation needs the whole
+   * bucket atomically and would be wrong with a cursor walk).
    */
   listSalesByBusinessDate(
     merchantId: string,
     outletId: string,
     businessDate: string,
   ): Promise<readonly Sale[]>;
+  /**
+   * KASA-266 — opaque-cursor paged variant of `listSalesByBusinessDate`
+   * consumed by `GET /v1/sales` so the back-office can scale past the
+   * 50/day/outlet bucket cap. Ordering is `(createdAt ASC, id ASC)`; the
+   * cursor encodes the last row's `(createdAt, id)` so a resumed page
+   * returns rows strictly greater than the boundary (no duplicate, no
+   * skipped row across pages, deterministic across calls).
+   *
+   * Synthetic sales (KASA-151 / KASA-71 production probes) are excluded
+   * at the repository level so pagination is over the merchant-visible
+   * set — otherwise a probe row sandwiched between real rows would yield
+   * a short page even when more real rows remain.
+   *
+   * An outlet that does not belong to the caller's merchant returns an
+   * empty page so cross-tenant existence is indistinguishable from a
+   * genuinely empty bucket, mirroring the unpaginated method.
+   */
+  listSalesByBusinessDatePage(input: {
+    merchantId: string;
+    outletId: string;
+    businessDate: string;
+    pageToken: string | null;
+    limit: number;
+  }): Promise<{ records: readonly Sale[]; nextPageToken: string | null }>;
   /**
    * Lookup by server saleId. Returns null if the sale does not exist or
    * belongs to a different merchant — the route handler maps that to 404

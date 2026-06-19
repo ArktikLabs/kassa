@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { AdminSalesScreen, applyClientFilters } from "../src/routes/admin.sales";
-import { enumerateBusinessDays } from "../src/data/api/sales";
+import { enumerateBusinessDays, fetchSalesBucket, fetchSalesHistory } from "../src/data/api/sales";
 import { renderAt } from "./harness";
 import { getSnapshot, resetStore } from "../src/data/store";
 import { saveSession } from "../src/lib/session";
@@ -153,7 +153,7 @@ function mockFetchByQuery(map: (url: URL) => SaleResponse[]) {
     const url = new URL(input);
     const records = map(url);
     return Promise.resolve(
-      new Response(JSON.stringify({ records }), {
+      new Response(JSON.stringify({ records, nextPageToken: null }), {
         status: 200,
         headers: { "content-type": "application/json" },
       }),
@@ -219,6 +219,152 @@ describe("applyClientFilters", () => {
       cashierIds: [CASHIER_NIGHT],
     });
     expect(out).toHaveLength(0);
+  });
+});
+
+describe("fetchSalesBucket (KASA-266 cursor walk)", () => {
+  beforeEach(() => {
+    vi.stubEnv("VITE_API_BASE_URL", "https://api.kassa.test");
+  });
+
+  it("drains the bucket across N pages until nextPageToken is null", async () => {
+    const expectedIds: string[] = Array.from(
+      { length: 12 },
+      (_, i) => `01890abc-1234-7def-8000-00000000f${i.toString(16).padStart(3, "0")}`,
+    );
+    // Server slices the seed list into pages of 5 and emits opaque
+    // server-side cursors as `cursor-1`, `cursor-2`. The client must
+    // round-trip whichever token it received last; the test asserts the
+    // walk concatenates without dup or skip and stops on null.
+    const pageMap = new Map<
+      string | null,
+      { records: SaleResponse[]; nextPageToken: string | null }
+    >();
+    pageMap.set(null, {
+      records: expectedIds.slice(0, 5).map((id) => mkSale({ saleId: id })),
+      nextPageToken: "cursor-1",
+    });
+    pageMap.set("cursor-1", {
+      records: expectedIds.slice(5, 10).map((id) => mkSale({ saleId: id })),
+      nextPageToken: "cursor-2",
+    });
+    pageMap.set("cursor-2", {
+      records: expectedIds.slice(10).map((id) => mkSale({ saleId: id })),
+      nextPageToken: null,
+    });
+
+    const seenTokens: (string | null)[] = [];
+    const fetchMock = vi.fn().mockImplementation((input: string) => {
+      const url = new URL(input);
+      const token = url.searchParams.get("pageToken");
+      seenTokens.push(token);
+      const page = pageMap.get(token);
+      if (!page) throw new Error(`unexpected pageToken ${token}`);
+      return Promise.resolve(
+        new Response(JSON.stringify(page), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      );
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const out = await fetchSalesBucket({ outletId: "outlet-1", businessDate: "2026-05-11" });
+
+    expect(out.records.map((r) => r.saleId)).toEqual(expectedIds);
+    expect(out.nextPageToken).toBeNull();
+    expect(seenTokens).toEqual([null, "cursor-1", "cursor-2"]);
+    expect(new Set(out.records.map((r) => r.saleId)).size).toBe(expectedIds.length);
+  });
+
+  it("fetchSalesHistory drains each bucket independently and merges descending", async () => {
+    // Two single-day buckets, each one with a 2-page cursor. The merged
+    // history must include all four sales sorted by createdAt descending.
+    // Outlet ids must be UUIDv7-shaped so the wire-level `saleListResponse`
+    // validation in `fetchSalesBucket` accepts the fixture payloads.
+    const OUTLET_A_ID = "01890abc-1234-7def-8000-00000000aaa1";
+    const OUTLET_B_ID = "01890abc-1234-7def-8000-00000000bbb1";
+    const sales = {
+      "outlet-A:0": mkSale({
+        saleId: "01890abc-1234-7def-8000-00000000aa01",
+        outletId: OUTLET_A_ID,
+        createdAt: "2026-05-11T08:00:00.000+07:00",
+      }),
+      "outlet-A:1": mkSale({
+        saleId: "01890abc-1234-7def-8000-00000000aa02",
+        outletId: OUTLET_A_ID,
+        createdAt: "2026-05-11T09:00:00.000+07:00",
+      }),
+      "outlet-B:0": mkSale({
+        saleId: "01890abc-1234-7def-8000-00000000bb01",
+        outletId: OUTLET_B_ID,
+        createdAt: "2026-05-11T07:30:00.000+07:00",
+      }),
+      "outlet-B:1": mkSale({
+        saleId: "01890abc-1234-7def-8000-00000000bb02",
+        outletId: OUTLET_B_ID,
+        createdAt: "2026-05-11T10:00:00.000+07:00",
+      }),
+    };
+
+    const fetchMock = vi.fn().mockImplementation((input: string) => {
+      const url = new URL(input);
+      const outletId = url.searchParams.get("outletId") ?? "";
+      const token = url.searchParams.get("pageToken");
+      if (outletId === OUTLET_A_ID) {
+        if (token === null) {
+          return Promise.resolve(
+            new Response(JSON.stringify({ records: [sales["outlet-A:0"]], nextPageToken: "a-1" }), {
+              status: 200,
+              headers: { "content-type": "application/json" },
+            }),
+          );
+        }
+        if (token === "a-1") {
+          return Promise.resolve(
+            new Response(JSON.stringify({ records: [sales["outlet-A:1"]], nextPageToken: null }), {
+              status: 200,
+              headers: { "content-type": "application/json" },
+            }),
+          );
+        }
+      }
+      if (outletId === OUTLET_B_ID) {
+        if (token === null) {
+          return Promise.resolve(
+            new Response(JSON.stringify({ records: [sales["outlet-B:0"]], nextPageToken: "b-1" }), {
+              status: 200,
+              headers: { "content-type": "application/json" },
+            }),
+          );
+        }
+        if (token === "b-1") {
+          return Promise.resolve(
+            new Response(JSON.stringify({ records: [sales["outlet-B:1"]], nextPageToken: null }), {
+              status: 200,
+              headers: { "content-type": "application/json" },
+            }),
+          );
+        }
+      }
+      throw new Error(`unexpected request: outlet=${outletId} token=${token}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const out = await fetchSalesHistory({
+      outletIds: [OUTLET_A_ID, OUTLET_B_ID],
+      from: "2026-05-11",
+      to: "2026-05-11",
+    });
+
+    expect(out.records.map((r) => r.saleId)).toEqual([
+      "01890abc-1234-7def-8000-00000000bb02",
+      "01890abc-1234-7def-8000-00000000aa02",
+      "01890abc-1234-7def-8000-00000000aa01",
+      "01890abc-1234-7def-8000-00000000bb01",
+    ]);
+    expect(out.nextPageToken).toBeNull();
+    expect(fetchMock).toHaveBeenCalledTimes(4);
   });
 });
 

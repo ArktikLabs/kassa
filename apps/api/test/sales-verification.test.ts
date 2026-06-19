@@ -453,7 +453,7 @@ describe("GET /v1/sales", () => {
       headers: { "x-kassa-merchant-id": MERCHANT },
     });
     expect(res.statusCode).toBe(200);
-    expect(res.json()).toEqual({ records: [] });
+    expect(res.json()).toEqual({ records: [], nextPageToken: null });
   });
 
   it("returns an empty list when called by a different merchant", async () => {
@@ -465,7 +465,7 @@ describe("GET /v1/sales", () => {
       headers: { "x-kassa-merchant-id": OTHER_MERCHANT },
     });
     expect(res.statusCode).toBe(200);
-    expect(res.json()).toEqual({ records: [] });
+    expect(res.json()).toEqual({ records: [], nextPageToken: null });
   });
 
   it("includes void/refund lifecycle in the listed records", async () => {

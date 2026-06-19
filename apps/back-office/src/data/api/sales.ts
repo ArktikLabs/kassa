@@ -1,14 +1,18 @@
 /*
- * Sales-history API client (KASA-249).
+ * Sales-history API client (KASA-249 + KASA-266).
  *
- * Wraps `GET /v1/sales?outletId=&businessDate=` — the existing single-day
- * single-outlet read path defined by `@kassa/schemas/sync`'s
- * `saleListQuery` / `saleListResponse`. The back-office sales-history
- * page needs a multi-day, multi-outlet view, so this client fans the
- * request out across `(outletId × businessDate)` and the page merges
- * + filters the results in memory. The server already paginates by
- * (merchant, outlet, day) bucket; the acceptance suite caps the bucket
- * at 50 sales/day/outlet so the fan-out is bounded.
+ * Wraps `GET /v1/sales?outletId=&businessDate=` — defined by
+ * `@kassa/schemas`'s `saleListQuery` / `saleListResponse`. The back-office
+ * sales-history page needs a multi-day, multi-outlet view, so this client
+ * fans the request out across `(outletId × businessDate)` and the page
+ * merges + filters the results in memory.
+ *
+ * KASA-266 — each `(outlet, day)` bucket now drains its server-side cursor
+ * via opaque `pageToken` / `nextPageToken` until the server reports the
+ * bucket exhausted (`nextPageToken === null`). Pilot merchants below the
+ * 50/day/outlet cap still close in a single round-trip per bucket; only
+ * the outliers (>50) trigger a second hit. The fan-out is parallel across
+ * buckets, sequential within a bucket so the cursor stays deterministic.
  *
  * Error envelope mirrors the dashboard client (KASA-237) so the page
  * can render the same "ask DevOps to wire the deploy" UX without a
@@ -43,6 +47,20 @@ export interface FetchSalesBucketInput {
   businessDate: string;
 }
 
+/**
+ * KASA-266 — bound the cursor walk per bucket so a server bug that loops
+ * `nextPageToken` forever (or a tampered cursor) can't hang the page.
+ * 40 × 200 = 8 000 rows, well above any single (outlet, day) bucket we'd
+ * expect to surface in a back-office session.
+ */
+const MAX_PAGES_PER_BUCKET = 40;
+
+/**
+ * Drain one `(outletId, businessDate)` bucket, walking the server cursor
+ * until `nextPageToken === null`. Returns the concatenated records in
+ * server-emitted (createdAt ASC) order. The outer fan-out re-sorts the
+ * merged result descending for table display.
+ */
 export async function fetchSalesBucket(
   input: FetchSalesBucketInput,
   { signal, fetchImpl }: { signal?: AbortSignal; fetchImpl?: typeof fetch } = {},
@@ -53,24 +71,39 @@ export async function fetchSalesBucket(
       "VITE_API_BASE_URL is not set; the back-office cannot reach the Kassa API.",
     );
   }
-  const params = new URLSearchParams();
-  params.set("outletId", input.outletId);
-  params.set("businessDate", input.businessDate);
-
   const doFetch = fetchImpl ?? globalThis.fetch.bind(globalThis);
-  let response: Response;
-  try {
-    const init: RequestInit = { method: "GET", credentials: "include" };
-    if (signal) init.signal = signal;
-    response = await doFetch(`${apiBaseUrl()}/v1/sales?${params.toString()}`, init);
-  } catch (err) {
-    throw new SalesFetchError(
-      "network_error",
-      err instanceof Error ? err.message : "network error",
-    );
-  }
+  const allRecords: SaleListResponse["records"] = [];
+  let pageToken: string | null = null;
+  let pages = 0;
+  while (true) {
+    pages += 1;
+    if (pages > MAX_PAGES_PER_BUCKET) {
+      throw new SalesFetchError(
+        "unknown",
+        `sales cursor walk exceeded ${MAX_PAGES_PER_BUCKET} pages for outlet ${input.outletId}/${input.businessDate}`,
+      );
+    }
+    const params = new URLSearchParams();
+    params.set("outletId", input.outletId);
+    params.set("businessDate", input.businessDate);
+    if (pageToken !== null) params.set("pageToken", pageToken);
 
-  if (response.ok) {
+    let response: Response;
+    try {
+      const init: RequestInit = { method: "GET", credentials: "include" };
+      if (signal) init.signal = signal;
+      response = await doFetch(`${apiBaseUrl()}/v1/sales?${params.toString()}`, init);
+    } catch (err) {
+      throw new SalesFetchError(
+        "network_error",
+        err instanceof Error ? err.message : "network error",
+      );
+    }
+
+    if (!response.ok) {
+      throw await toFetchError(response);
+    }
+
     let body: unknown;
     try {
       body = await response.json();
@@ -89,9 +122,15 @@ export async function fetchSalesBucket(
         response.status,
       );
     }
-    return parsed.data;
+    for (const record of parsed.data.records) allRecords.push(record);
+    if (parsed.data.nextPageToken === null) {
+      return { records: allRecords, nextPageToken: null };
+    }
+    pageToken = parsed.data.nextPageToken;
   }
+}
 
+async function toFetchError(response: Response): Promise<SalesFetchError> {
   let code: SalesFetchErrorCode = "unknown";
   let message = `sales fetch failed (HTTP ${response.status})`;
   try {
@@ -115,8 +154,7 @@ export async function fetchSalesBucket(
     if (response.status === 401) code = "unauthorized";
     else if (response.status === 403) code = "forbidden";
   }
-
-  throw new SalesFetchError(code, message, response.status);
+  return new SalesFetchError(code, message, response.status);
 }
 
 export interface FetchSalesHistoryInput {
@@ -145,7 +183,7 @@ export async function fetchSalesHistory(
 ): Promise<SaleListResponse> {
   const dates = enumerateBusinessDays(input.from, input.to);
   if (dates.length === 0 || input.outletIds.length === 0) {
-    return { records: [] };
+    return { records: [], nextPageToken: null };
   }
   const buckets: FetchSalesBucketInput[] = [];
   for (const outletId of input.outletIds) {
@@ -153,10 +191,15 @@ export async function fetchSalesHistory(
       buckets.push({ outletId, businessDate });
     }
   }
+  // Parallel across buckets; inside `fetchSalesBucket` each bucket walks
+  // its own cursor sequentially so the page boundary is deterministic.
   const pages = await Promise.all(buckets.map((b) => fetchSalesBucket(b, options)));
   const records = pages.flatMap((p) => p.records);
   records.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
-  return { records };
+  // `nextPageToken` is per-bucket on the wire; once every bucket has been
+  // drained there is no aggregate cursor to expose, so the merged result
+  // always reports `null`.
+  return { records, nextPageToken: null };
 }
 
 /**

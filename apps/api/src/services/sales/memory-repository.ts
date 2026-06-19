@@ -31,6 +31,18 @@ export class InMemorySalesRepository implements SalesRepository {
   seedMerchants(merchants: readonly Merchant[]): void {
     for (const merchant of merchants) this.merchants.set(merchant.id, merchant);
   }
+  /**
+   * Test helper for KASA-266 — push fully-formed Sale rows into the repo
+   * without going through the submit pipeline. Used by the cursor-walk
+   * unit test to seed bucket sizes that would be prohibitively slow to
+   * stand up via 100+ HTTP submits. Production code never calls this.
+   */
+  seedSales(sales: readonly Sale[]): void {
+    for (const sale of sales) {
+      this.sales.set(sale.id, sale);
+      this.saleIdByLocal.set(`${sale.merchantId}::${sale.localSaleId}`, sale.id);
+    }
+  }
   seedLedger(entries: readonly LedgerAppendInput[], idGenerator: () => string): void {
     for (const entry of entries) {
       this.ledger.push({
@@ -128,6 +140,52 @@ export class InMemorySalesRepository implements SalesRepository {
       }
     }
     return matches.sort((a, b) => (a.createdAt < b.createdAt ? -1 : 1));
+  }
+
+  async listSalesByBusinessDatePage(input: {
+    merchantId: string;
+    outletId: string;
+    businessDate: string;
+    pageToken: string | null;
+    limit: number;
+  }): Promise<{ records: readonly Sale[]; nextPageToken: string | null }> {
+    // Synthetic rows are filtered here, before pagination, so a probe row
+    // sandwiched between real rows never shortens a page (see the
+    // repository-port docstring on KASA-266).
+    const matches = [...this.sales.values()]
+      .filter(
+        (sale) =>
+          sale.merchantId === input.merchantId &&
+          sale.outletId === input.outletId &&
+          sale.businessDate === input.businessDate &&
+          !sale.synthetic,
+      )
+      .sort((a, b) => {
+        if (a.createdAt !== b.createdAt) return a.createdAt < b.createdAt ? -1 : 1;
+        return a.id < b.id ? -1 : 1;
+      });
+
+    let boundary: { createdAt: string; id: string } | null = null;
+    if (input.pageToken) {
+      const decoded = decodePageToken(input.pageToken);
+      boundary = { createdAt: decoded.a, id: decoded.i };
+    }
+
+    const filtered = matches.filter((sale) => {
+      if (!boundary) return true;
+      if (sale.createdAt > boundary.createdAt) return true;
+      if (sale.createdAt === boundary.createdAt) return sale.id > boundary.id;
+      return false;
+    });
+
+    const page = filtered.slice(0, input.limit);
+    let nextPageToken: string | null = null;
+    if (filtered.length > input.limit && page.length > 0) {
+      const last = page[page.length - 1] as Sale;
+      nextPageToken = encodePageToken({ a: last.createdAt, i: last.id });
+    }
+
+    return { records: page, nextPageToken };
   }
 
   async recordSale(input: {

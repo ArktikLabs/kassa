@@ -5452,7 +5452,7 @@
         "tags": [
           "sales"
         ],
-        "description": "Two modes under one path:\n\n- `outletId` + `businessDate` returns every sale (including voids and refunds) recorded for the (merchant, outlet, day) bucket. No pagination — the bucket key caps cardinality at one outlet's daily volume.\n- `outletId` + `receiptCode` is the KASA-370 cross-device find-sale fallback. Cashier input is stripped of non-alphanumerics and uppercased before matching the last six chars of `localSaleId`. Returns the single matching sale in the same shape as `GET /v1/sales/{saleId}`, or 404 `sale_not_found` with copy `Struk tidak ditemukan.`. The match is outlet-scoped: a code that collides with a sibling outlet's sale stays a 404.\n\nExactly one of `businessDate` or `receiptCode` must be supplied (422 otherwise).",
+        "description": "Two modes under one path:\n\n- `outletId` + `businessDate` returns every sale (including voids and refunds) recorded for the (merchant, outlet, day) bucket. The bucket is paged via an opaque `pageToken` (round-tripped from `nextPageToken`) and an optional `limit` (default 50, max 200). Existing clients that omit both parameters get the first `limit=50` records exactly as before (additive change — KASA-266). `nextPageToken` is `null` once the bucket is exhausted.\n- `outletId` + `receiptCode` is the KASA-370 cross-device find-sale fallback. Cashier input is stripped of non-alphanumerics and uppercased before matching the last six chars of `localSaleId`. Returns the single matching sale in the same shape as `GET /v1/sales/{saleId}`, or 404 `sale_not_found` with copy `Struk tidak ditemukan.`. The match is outlet-scoped: a code that collides with a sibling outlet's sale stays a 404. `pageToken` is not valid in this mode (validation rejects it 422).\n\nExactly one of `businessDate` or `receiptCode` must be supplied (422 otherwise). A tampered `pageToken` surfaces as 400 `invalid_page_token`.",
         "responses": {
           "200": {
             "description": "Default Response",
@@ -5702,10 +5702,17 @@
                             ],
                             "additionalProperties": false
                           }
+                        },
+                        "nextPageToken": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 512,
+                          "nullable": true
                         }
                       },
                       "required": [
-                        "records"
+                        "records",
+                        "nextPageToken"
                       ],
                       "additionalProperties": false
                     },
@@ -5947,6 +5954,44 @@
                       "additionalProperties": false
                     }
                   ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Standard Kassa API error envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "description": "Machine-readable error code, snake_case."
+                        },
+                        "message": {
+                          "type": "string",
+                          "description": "Human-readable error message."
+                        },
+                        "details": {
+                          "description": "Optional structured detail payload."
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Standard Kassa API error envelope."
                 }
               }
             }
