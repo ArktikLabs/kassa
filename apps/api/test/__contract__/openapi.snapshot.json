@@ -9278,8 +9278,7 @@
                             "minimum": 0
                           },
                           "netIdr": {
-                            "type": "integer",
-                            "minimum": 0
+                            "type": "integer"
                           },
                           "voidCount": {
                             "type": "integer",
@@ -9350,8 +9349,7 @@
                           "minimum": 0
                         },
                         "netIdr": {
-                          "type": "integer",
-                          "minimum": 0
+                          "type": "integer"
                         },
                         "voidCount": {
                           "type": "integer",
