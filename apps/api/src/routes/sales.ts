@@ -271,8 +271,12 @@ export function salesRoutes(deps: SalesRouteDeps) {
             "Two modes under one path:\n\n" +
             "- `outletId` + `businessDate` returns every sale (including " +
             "voids and refunds) recorded for the (merchant, outlet, day) " +
-            "bucket. No pagination — the bucket key caps cardinality at " +
-            "one outlet's daily volume.\n" +
+            "bucket. The bucket is paged via an opaque `pageToken` " +
+            "(round-tripped from `nextPageToken`) and an optional `limit` " +
+            "(default 50, max 200). Existing clients that omit both " +
+            "parameters get the first `limit=50` records exactly as " +
+            "before (additive change — KASA-266). `nextPageToken` is " +
+            "`null` once the bucket is exhausted.\n" +
             "- `outletId` + `receiptCode` is the KASA-370 cross-device " +
             "find-sale fallback. Cashier input is stripped of non-" +
             "alphanumerics and uppercased before matching the last six " +
@@ -280,15 +284,18 @@ export function salesRoutes(deps: SalesRouteDeps) {
             "the same shape as `GET /v1/sales/{saleId}`, or 404 " +
             "`sale_not_found` with copy `Struk tidak ditemukan.`. The " +
             "match is outlet-scoped: a code that collides with a sibling " +
-            "outlet's sale stays a 404.\n\n" +
+            "outlet's sale stays a 404. `pageToken` is not valid in this " +
+            "mode (validation rejects it 422).\n\n" +
             "Exactly one of `businessDate` or `receiptCode` must be " +
-            "supplied (422 otherwise).",
+            "supplied (422 otherwise). A tampered `pageToken` surfaces " +
+            "as 400 `invalid_page_token`.",
           response: {
             // Dual-shape 200: the list mode returns `saleListResponse`;
             // the receiptCode mode returns a single `saleResponse`. The
             // Zod serializer compiler picks whichever branch matches the
             // outgoing body.
             200: z.union([saleListResponse, saleResponse]),
+            400: errorBodySchema,
             401: errorBodySchema,
             404: errorBodySchema,
             422: errorBodySchema,
@@ -320,14 +327,31 @@ export function salesRoutes(deps: SalesRouteDeps) {
         }
         // saleListQuery.refine guarantees `businessDate` is present whenever
         // `receiptCode` is not.
-        const sales = await deps.service.listSalesByBusinessDate(
-          merchantId,
-          req.query.outletId,
-          req.query.businessDate as string,
-        );
-        const body: SaleListResponse = { records: sales.map(toSaleWire) };
-        reply.code(200).send(body);
-        return reply;
+        try {
+          const page = await deps.service.listSalesByBusinessDatePage({
+            merchantId,
+            outletId: req.query.outletId,
+            businessDate: req.query.businessDate as string,
+            pageToken: req.query.pageToken,
+            limit: req.query.limit,
+          });
+          const body: SaleListResponse = {
+            records: page.records.map(toSaleWire),
+            nextPageToken: page.nextPageToken,
+          };
+          reply.code(200).send(body);
+          return reply;
+        } catch (err) {
+          if (err instanceof SalesError && err.code === "invalid_page_token") {
+            // Mirror the stock-ledger error mapping (400 on a tampered
+            // token). 400 not 422 here — the token is server-issued, so a
+            // malformed one is a malformed request, not a validation
+            // mismatch the client could "correct".
+            sendError(reply, 400, err.code, err.message, err.details);
+            return reply;
+          }
+          throw err;
+        }
       },
     );
 

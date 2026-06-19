@@ -484,6 +484,16 @@ export const receiptCodeQueryParam = z
   );
 
 /**
+ * KASA-266 — bucket page-size defaults for `GET /v1/sales`. The acceptance
+ * suite (KASA-68) tops out at 50 sales/day/outlet; the default mirrors that
+ * so v0 pilots that don't pass `limit` keep the historic single-page shape.
+ * The hard ceiling stays well below the snapshot bucket cap so a tampered
+ * caller can't drag the server into an unbounded scan.
+ */
+export const SALE_LIST_PAGE_LIMIT_DEFAULT = 50;
+export const SALE_LIST_PAGE_LIMIT_MAX = 200;
+
+/**
  * `GET /v1/sales?outletId=...` is two endpoints under one path. With
  * `businessDate` it is the EOD-aligned day bucket lister (KASA-122); with
  * `receiptCode` it is the cross-device find-sale fallback (KASA-370) the
@@ -491,29 +501,43 @@ export const receiptCodeQueryParam = z
  * to a kitchen tablet on the same outlet. The two modes are mutually
  * exclusive — the refine rejects both / neither so the handler can dispatch
  * by checking `receiptCode` alone.
+ *
+ * KASA-266 — the businessDate mode also takes an opaque `pageToken` (round-
+ * tripped from a prior response's `nextPageToken`) and a per-page `limit`.
+ * Both are additive; existing clients that omit them get the first
+ * `SALE_LIST_PAGE_LIMIT_DEFAULT` records exactly as today. `pageToken` is
+ * only valid alongside `businessDate` — the receiptCode mode returns a
+ * single sale and has no cursor surface.
  */
 export const saleListQuery = z
   .object({
     outletId: uuidV7Typed,
     businessDate: businessDate.optional(),
     receiptCode: receiptCodeQueryParam.optional(),
+    pageToken: z.string().min(1).max(512).optional(),
+    limit: z.coerce.number().int().min(1).max(SALE_LIST_PAGE_LIMIT_MAX).optional(),
   })
   .strict()
   .refine((q) => (q.businessDate ? 1 : 0) + (q.receiptCode ? 1 : 0) === 1, {
     message: "exactly one of `businessDate` or `receiptCode` must be provided",
     path: ["businessDate"],
+  })
+  .refine((q) => !(q.pageToken && q.receiptCode), {
+    message: "pageToken is only valid with businessDate, not receiptCode",
+    path: ["pageToken"],
   });
 export type SaleListQuery = z.infer<typeof saleListQuery>;
 
 /**
- * No pagination on the list endpoint: the bucket key (merchant, outlet,
- * businessDate) caps cardinality at one outlet's daily sale volume — the
- * acceptance suite tops out at 50 sales/day/outlet. If real-world merchants
- * later breach that, add `pageToken` here without breaking the wire.
+ * KASA-266 — `nextPageToken` is the opaque cursor a client round-trips into
+ * the next request's `pageToken`. `null` means the bucket is exhausted; the
+ * back-office stops the per-(outlet, day) drain on that signal. The cursor
+ * is server-issued — pre-KASA-266 callers see it as a black-box string.
  */
 export const saleListResponse = z
   .object({
     records: z.array(saleResponse),
+    nextPageToken: z.string().min(1).max(512).nullable(),
   })
   .strict();
 export type SaleListResponse = z.infer<typeof saleListResponse>;
