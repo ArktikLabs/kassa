@@ -223,6 +223,58 @@ describe("AdminCashierDayScreen", () => {
     expect(link.href).toContain("businessDate=2026-05-29");
   });
 
+  /**
+   * KASA-385 — cross-midnight void overhang. Cashier A was off on the
+   * filter day but a day-(N-1) sale of theirs got voided today. The row
+   * comes back with `grossIdr=0`, `voidIdr=50000`, `netIdr=-50000`. The
+   * UI must render the cell with the danger token and an a11y label so
+   * an owner skimming the report catches the deficit.
+   */
+  it("flags a cross-midnight void overhang with text-danger-fg + aria-label=defisit", async () => {
+    const fetchMock = mockFetchOk(
+      buildReport({
+        rows: [
+          {
+            cashierStaffId: CASHIER_SITI,
+            cashierName: "Siti Rahayu",
+            saleCount: 0,
+            grossIdr: 0,
+            netIdr: -50_000,
+            voidCount: 1,
+            voidIdr: 50_000,
+            tenderMix: [],
+            drawerExpectedIdr: null,
+          },
+        ],
+        totals: {
+          saleCount: 0,
+          grossIdr: 0,
+          netIdr: -50_000,
+          voidCount: 1,
+          voidIdr: 50_000,
+          tenderMix: [],
+          drawerExpectedIdr: null,
+        },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderAt("/reports/cashier-day", [
+      { path: "/reports/cashier-day", component: AdminCashierDayScreen },
+    ]);
+
+    await waitFor(() => expect(screen.getByText("Siti Rahayu")).toBeInTheDocument());
+
+    const defisitCells = screen.getAllByTestId("cashier-day-net-defisit");
+    // One in the data row, one in the totals card.
+    expect(defisitCells.length).toBeGreaterThanOrEqual(2);
+    for (const cell of defisitCells) {
+      expect(cell).toHaveAttribute("aria-label", "defisit");
+      expect(cell.className).toContain("text-danger-fg");
+      expect(cell.textContent ?? "").toMatch(/[-−].*50\.000|\(Rp\s?50\.000\)/);
+    }
+  });
+
   it("surfaces an inline error when the API returns 401", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(JSON.stringify({ error: { code: "unauthorized", message: "no" } }), {

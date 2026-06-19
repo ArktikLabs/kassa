@@ -101,4 +101,59 @@ describe("cashierDayResponse", () => {
     });
     expect(out.success).toBe(true);
   });
+
+  /**
+   * KASA-385 — cross-midnight void overhang. Cashier A sells Rp 50k on
+   * day-(N-1), is off on day-N, A's sale is voided on day-N. The day-N
+   * report attributes the void to A (KASA-122 PR2) so A's row carries
+   * `grossIdr=0`, `voidIdr=50000`, `netIdr=-50000` and the totals
+   * inherit the negative net. Schema must round-trip the row + totals.
+   */
+  it("accepts a row whose netIdr is negative (cross-midnight void overhang)", () => {
+    const out = cashierDayResponse.safeParse({
+      outletId: VALID.outletId,
+      businessDate: VALID.businessDate,
+      rows: [
+        {
+          cashierStaffId: "01890abc-1234-7def-8000-000000000020",
+          cashierName: "Cashier A",
+          saleCount: 0,
+          grossIdr: 0,
+          netIdr: -50_000,
+          voidCount: 1,
+          voidIdr: 50_000,
+          tenderMix: [],
+          drawerExpectedIdr: null,
+        },
+      ],
+      totals: {
+        saleCount: 0,
+        grossIdr: 0,
+        netIdr: -50_000,
+        voidCount: 1,
+        voidIdr: 50_000,
+        tenderMix: [],
+        drawerExpectedIdr: null,
+      },
+    });
+    expect(out.success).toBe(true);
+    if (out.success) {
+      expect(out.data.rows[0]?.netIdr).toBe(-50_000);
+      expect(out.data.totals.netIdr).toBe(-50_000);
+    }
+  });
+
+  it("still rejects a negative grossIdr or voidIdr (only netIdr is signed)", () => {
+    const negGross = cashierDayResponse.safeParse({
+      ...VALID,
+      rows: [{ ...VALID.rows[0], grossIdr: -1 }],
+    });
+    expect(negGross.success).toBe(false);
+
+    const negVoid = cashierDayResponse.safeParse({
+      ...VALID,
+      totals: { ...VALID.totals, voidIdr: -1 },
+    });
+    expect(negVoid.success).toBe(false);
+  });
 });
