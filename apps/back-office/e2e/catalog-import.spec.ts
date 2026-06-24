@@ -25,7 +25,10 @@ test("owner imports a catalog CSV end-to-end", async ({ page }) => {
   await page.getByLabel("Email").fill("siti@warungpusat.id");
   await page.getByLabel("Kata sandi").fill("welcome-to-kassa");
   await page.getByRole("button", { name: "Masuk" }).click();
-  await expect(page.getByRole("heading", { name: "Outlet", level: 1 })).toBeVisible();
+  // KASA-406 — KASA-368 changed the post-login landing from "Outlet" to
+  // "Dasbor harian" (per-cashier daily report). Cashier-day spec already
+  // asserts the new heading; this one drifted.
+  await expect(page.getByRole("heading", { name: "Dasbor harian", level: 1 })).toBeVisible();
 
   await page.goto("/admin/catalog/import");
   await expect(page.getByRole("heading", { name: "Impor katalog (CSV)" })).toBeVisible();

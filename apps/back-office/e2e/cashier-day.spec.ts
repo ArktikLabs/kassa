@@ -109,8 +109,11 @@ test("manager views per-cashier daily report and triggers CSV export", async ({ 
     page.getByRole("heading", { name: "Laporan harian per kasir", level: 1 }),
   ).toBeVisible();
 
-  await expect(page.getByText("Siti Rahayu")).toBeVisible();
-  await expect(page.getByText("Dewi Lestari")).toBeVisible();
+  // KASA-406 — KASA-183 added the operator name to the global banner, so
+  // "Siti Rahayu" now resolves to two elements (banner span + table cell).
+  // Scope to the report-row cell so strict mode passes.
+  await expect(page.getByRole("cell", { name: "Siti Rahayu" })).toBeVisible();
+  await expect(page.getByRole("cell", { name: "Dewi Lestari" })).toBeVisible();
 
   // Totals card pins the day's roll-up.
   const totals = page.getByTestId("cashier-day-totals");

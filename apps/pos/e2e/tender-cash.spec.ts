@@ -130,6 +130,13 @@ test.describe("KASA-61 cash tender flow", () => {
     // the assertion without hiding the regression behind a Playwright
     // retry.
     await expect(page.getByTestId("receipt-preview")).toBeVisible({ timeout: 15_000 });
+    // KASA-406 — mirror the online happy path: assert the actions row,
+    // not the print button specifically. KASA-309 made `receipt-pdf`
+    // primary when `navigator.bluetooth` is missing (headless Chromium),
+    // so `receipt-print` is conditionally not rendered. The actions
+    // container is the stable post-submit anchor that confirms the
+    // ReceiptScreen finished mounting.
+    await expect(page.getByTestId("receipt-actions")).toBeVisible();
     await expect(page.locator('[data-state="offline"]')).toBeVisible();
   });
 
